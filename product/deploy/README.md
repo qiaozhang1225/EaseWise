@@ -2,6 +2,8 @@
 
 这套流程是按 `EaseWise` 当前实际情况设计的，不直接复用旧项目命名，也不和服务器上的 `phoneqimen` 目录混用。
 
+当前线上事实与固定入口另见：`product/docs/deployment-runbook.md`
+
 ## 当前判断
 
 - 服务器 `123.57.72.212` 目前已经有 `nginx + systemd + python3.10`

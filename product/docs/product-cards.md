@@ -14,6 +14,17 @@
   - current product truth baseline for the `EaseWise` repository
 - `product/docs/admin-prd.md`
   - current admin-console planning baseline for local testing and operations
+- `product/docs/deployment-runbook.md`
+  - current deployment memory, server facts, release commands, and rollback entry
+
+## Ops Memory
+
+- Deployment single source of truth: `product/docs/deployment-runbook.md`
+- Current public entry: `http://123.57.72.212`
+- Current online service name: `easewise-api`
+- Current online app root: `/opt/easewise/app`
+- Current online data path: `/opt/easewise/shared/app.db`
+- When deployment is mentioned in a future session, read `product/docs/deployment-runbook.md` first before asking for server details again
 
 ## Governance Rules
 
