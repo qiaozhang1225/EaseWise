@@ -1,0 +1,223 @@
+{
+  "version": "0.4.0",
+  "digit_mapping": {
+    "0": {
+      "stem": "癸",
+      "palace": {
+        "male": "坎",
+        "female": "离"
+      },
+      "star": {
+        "male": "天蓬",
+        "female": "天英"
+      },
+      "door": {
+        "male": "休门",
+        "female": "景门"
+      },
+      "god": {
+        "male": "九天",
+        "female": "九地"
+      }
+    },
+    "1": {
+      "stem": "甲",
+      "palace": "坎",
+      "star": "天蓬",
+      "door": "休门",
+      "god": "值符"
+    },
+    "2": {
+      "stem": "乙",
+      "palace": "坤",
+      "star": "天芮",
+      "door": "死门",
+      "god": "腾蛇"
+    },
+    "3": {
+      "stem": "丙",
+      "palace": "震",
+      "star": "天冲",
+      "door": "伤门",
+      "god": "太阴"
+    },
+    "4": {
+      "stem": "丁",
+      "palace": "巽",
+      "star": "天辅",
+      "door": "杜门",
+      "god": "六合"
+    },
+    "5": {
+      "stem": "戊",
+      "palace": {
+        "male": "坎",
+        "female": "离"
+      },
+      "star": "天禽",
+      "door": "死门",
+      "god": "白虎"
+    },
+    "6": {
+      "stem": "己",
+      "palace": "乾",
+      "star": "天心",
+      "door": "开门",
+      "god": "玄武"
+    },
+    "7": {
+      "stem": "庚",
+      "palace": "兑",
+      "star": "天柱",
+      "door": "惊门",
+      "god": "九地"
+    },
+    "8": {
+      "stem": "辛",
+      "palace": "艮",
+      "star": "天任",
+      "door": "生门",
+      "god": "九天"
+    },
+    "9": {
+      "stem": "壬",
+      "palace": "离",
+      "star": "天英",
+      "door": "景门",
+      "god": "值符+九天"
+    }
+  },
+  "palace_elements": {
+    "坎": "water",
+    "坤": "earth",
+    "震": "wood",
+    "巽": "wood",
+    "乾": "metal",
+    "兑": "metal",
+    "艮": "earth",
+    "离": "fire"
+  },
+  "door_elements": {
+    "休门": "water",
+    "死门": "earth",
+    "伤门": "wood",
+    "杜门": "wood",
+    "开门": "metal",
+    "惊门": "metal",
+    "生门": "earth",
+    "景门": "fire"
+  },
+  "stem_elements": {
+    "甲": "wood",
+    "乙": "wood",
+    "丙": "fire",
+    "丁": "fire",
+    "戊": "earth",
+    "己": "earth",
+    "庚": "metal",
+    "辛": "metal",
+    "壬": "water",
+    "癸": "water"
+  },
+  "weights": {
+    "palace_door": {
+      "palace_generates_door": 14,
+      "same_element": 12,
+      "door_generates_palace": 10,
+      "unrelated": 9,
+      "palace_controls_door": 7,
+      "door_controls_palace": 4
+    },
+    "palace_context": {
+      "borrowed_palace_cap": 6
+    },
+    "god": {
+      "值符": 15,
+      "值符+九天": 15,
+      "六合": 13,
+      "太阴": 13,
+      "九天": 12,
+      "九地": 10,
+      "玄武": 10,
+      "腾蛇": 6,
+      "白虎": 8
+    },
+    "god_context": {
+      "borrowed_god_cap": 5
+    },
+    "star": {
+      "天心": 15,
+      "天任": 15,
+      "天辅": 15,
+      "天英": 12,
+      "天冲": 11,
+      "天禽": 10,
+      "天蓬": 9,
+      "天柱": 8,
+      "天芮": 5
+    },
+    "star_context": {
+      "borrowed_star_cap": 6
+    },
+    "door": {
+      "生门": 15,
+      "休门": 15,
+      "开门": 15,
+      "景门": 12,
+      "惊门": 10,
+      "杜门": 8,
+      "伤门": 7,
+      "死门": 5
+    },
+    "door_context": {
+      "borrowed_door_cap": 5
+    },
+    "stem_pair": {
+      "same_stem": 8,
+      "same_element": 11,
+      "heaven_generates_earth": 15,
+      "earth_generates_heaven": 13,
+      "heaven_controls_earth": 8,
+      "earth_controls_heaven": 6,
+      "unrelated": 10
+    },
+    "stem_context": {
+      "trigger_tomb_penalty": 2,
+      "heaven_tomb_penalty": 3,
+      "earth_tomb_penalty": 3,
+      "double_result_tomb_penalty": 2
+    },
+    "trigger_alignment_bonus": 1,
+    "harms": {
+      "base": 25,
+      "palace_emptiness": 12,
+      "god_emptiness": 9,
+      "star_emptiness": 7,
+      "door_emptiness": 12,
+      "other_emptiness": 3,
+      "door_pressure": 8,
+      "tomb": 6,
+      "trigger_tomb": 2,
+      "heaven_tomb": 3,
+      "earth_tomb": 3,
+      "door_empty_with_result_tomb": 5,
+      "door_empty_with_double_result_tomb": 4,
+      "punishment_hit": 8
+    },
+    "patterns": {
+      "triple_same": 4,
+      "peach_blossom_111_999": 4,
+      "pair_69_96": 6,
+      "pair_25_95": 8,
+      "pair_27_99_92": 5,
+      "tail_repeat_bias": 3
+    }
+  },
+  "caps": {
+    "pair_25_95": 75,
+    "general_69_96": 90,
+    "stacked_27_99_92": 78,
+    "palace_empty_with_door_pressure": 72,
+    "multiple_heavy_harms": 70
+  }
+}
