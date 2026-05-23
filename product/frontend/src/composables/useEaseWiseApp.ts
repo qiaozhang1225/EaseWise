@@ -259,6 +259,10 @@ async function refreshAppData(): Promise<void> {
 }
 
 async function bootstrapApp(): Promise<void> {
+  if (state.initialized) {
+    return;
+  }
+
   if (bootstrapPromise) {
     return bootstrapPromise;
   }

@@ -620,6 +620,7 @@ async function handleEvaluate(preparedPhone?: string): Promise<void> {
   if (!cleanPhone) {
     return;
   }
+  const selectedGender = gender.value;
 
   errorType.value = 'none';
   errorDetail.value = '';
@@ -631,7 +632,7 @@ async function handleEvaluate(preparedPhone?: string): Promise<void> {
     await bootstrapApp();
     const review = await submitPhoneReview({
       phone: cleanPhone,
-      gender: gender.value,
+      gender: selectedGender,
       include_markdown: true,
     });
     const completedReview = await startReviewPolling(review);
