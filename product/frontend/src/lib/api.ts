@@ -94,8 +94,17 @@ function resolveApiBaseUrl(): string {
   }
 
   if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-    return `${protocol}//${window.location.hostname}:8000`;
+    const {hostname, origin, port, protocol} = window.location;
+    const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
+    const isPrivateLan = /^(10|127|172\.(1[6-9]|2\d|3[01])|192\.168)\./.test(hostname);
+    const isDevPort = port === '3000' || port === '5173';
+
+    if (isDevPort || isLocalHost || isPrivateLan) {
+      const resolvedProtocol = protocol === 'https:' ? 'https:' : 'http:';
+      return `${resolvedProtocol}//${hostname}:8000`;
+    }
+
+    return origin.replace(/\/+$/, '');
   }
 
   return 'http://127.0.0.1:8000';
