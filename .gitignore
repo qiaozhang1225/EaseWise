@@ -19,6 +19,9 @@ dist/
 # Env
 .env
 .env.local
+product/deploy/targets/*.env
+!product/deploy/targets/*.env.example
+product/deploy/targets/*.server.env
 
 # Local credentials
 *.pem
