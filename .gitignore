@@ -10,6 +10,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+*.db
 
 # Node
 node_modules/
@@ -19,3 +20,5 @@ dist/
 .env
 .env.local
 
+# Local credentials
+*.pem
