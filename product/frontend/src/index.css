@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;600;700&family=Noto+Sans:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Noto Serif", serif;
+  --font-sans: "Noto Sans", sans-serif;
+
+  --color-brand-primary: #4F46E5;
+  --color-brand-primary-strong: #4338CA;
+  --color-brand-secondary: #64748B;
+  --color-brand-paper: #F3F5FB;
+  --color-brand-ink: #1F2937;
+  --color-brand-ink-strong: #0F172A;
+  --color-brand-accent: #FDE68A;
+  --color-brand-gold-fixed: #F59E0B;
+  
+  --spacing-margin-mobile: 16px;
+  --spacing-section-padding: 24px;
+}
+
+@layer base {
+  body {
+    @apply bg-brand-paper text-brand-ink font-sans antialiased;
+    background-image: radial-gradient(#CBD5E1 0.5px, transparent 0.5px);
+    background-size: 20px 20px;
+    min-height: 100dvh;
+  }
+}
+
+.oriental-pattern {
+  background-image: radial-gradient(#F59E0B 0.5px, transparent 0.5px);
+  background-size: 24px 24px;
+  opacity: 0.05;
+}
+
+.hairline-border {
+  border: 0.5px solid rgba(79, 70, 229, 0.15);
+}
+
+.qimen-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  background-color: #CBD5E1;
+}
+
+.qimen-cell {
+  aspect-ratio: 1/1;
+  background-color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 4px;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
