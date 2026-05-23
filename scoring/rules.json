@@ -1,5 +1,5 @@
 {
-  "version": "0.4.0",
+  "version": "0.5.0",
   "digit_mapping": {
     "0": {
       "stem": "癸",
@@ -21,7 +21,7 @@
       }
     },
     "1": {
-      "stem": "甲",
+      "stem": "戊",
       "palace": "坎",
       "star": "天蓬",
       "door": "休门",
@@ -108,11 +108,10 @@
     "景门": "fire"
   },
   "stem_elements": {
-    "甲": "wood",
+    "戊": "earth",
     "乙": "wood",
     "丙": "fire",
     "丁": "fire",
-    "戊": "earth",
     "己": "earth",
     "庚": "metal",
     "辛": "metal",

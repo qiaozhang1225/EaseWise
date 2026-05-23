@@ -59,7 +59,6 @@ TOMB_PALACES = {
     "庚": "艮",
     "辛": "巽",
     "壬": "巽",
-    "甲": "坤",
     "癸": "坤",
 }
 PUNISHMENT_PALACES = {

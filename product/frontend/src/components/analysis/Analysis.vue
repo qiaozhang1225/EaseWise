@@ -112,6 +112,7 @@ const skipFutureReviewConfirm = ref(
 const pollingReviewId = ref<string | null>(null);
 let disposed = false;
 let pollingPromise: Promise<ReviewRecord> | null = null;
+let lastCompletedReviewId: string | null = null;
 
 const waitingSteps = [
   {
@@ -223,8 +224,8 @@ const boardRelationCards = computed<BoardRelationCard[]>(() => {
       valueClass: (relations?.palace_door_relation || '').includes('克') ? 'text-red-600' : 'text-brand-ink-strong',
     },
     {
-      label: '尾干关系',
-      labelTop: '尾干',
+      label: '天地关系',
+      labelTop: '天地',
       labelBottom: '关系',
       value: compactStemRelationValue(relations?.stem_pair_relation || '待生成'),
       valueClass: (relations?.stem_pair_relation || '').includes('克') ? 'text-amber-700' : 'text-brand-gold-fixed',
@@ -412,7 +413,16 @@ function applyCompletedReviewState(review: ReviewRecord, options: { showToastOnC
   errorDetail.value = '';
   closeReviewConfirmDialog();
   appState.value = 'result';
-  activeAspect.value = resolveDefaultAspectIndex(reviewAspects.value);
+  const aspects = reviewAspects.value;
+  const shouldPreserveActiveAspect =
+    lastCompletedReviewId === review.id &&
+    activeAspect.value >= 0 &&
+    activeAspect.value < aspects.length;
+
+  activeAspect.value = shouldPreserveActiveAspect
+    ? activeAspect.value
+    : resolveDefaultAspectIndex(aspects);
+  lastCompletedReviewId = review.id;
 
   if (options.showToastOnComplete) {
     showToast('评测完成，可查看整体结果与重点维度。');
@@ -906,30 +916,30 @@ async function handleExportImage(): Promise<void> {
       ctx.font = 'bold 24px serif';
       ctx.fillText(truncateText(palace.direction, 6), leftBoxX + leftBoxSize / 2, leftBoxY + 138);
 
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#FEE2E2';
-      roundRect(ctx, leftBoxX + 18, leftBoxY + 172, 82, 28, 8);
-      ctx.fill();
-      ctx.fillStyle = '#B91C1C';
-      ctx.font = 'bold 16px serif';
-      ctx.fillText(truncateText(palace.door, 6), leftBoxX + 32, leftBoxY + 191);
-
       ctx.strokeStyle = '#E5E7EB';
       ctx.beginPath();
-      ctx.moveTo(leftBoxX + 160, leftBoxY + 176);
-      ctx.lineTo(leftBoxX + 160, leftBoxY + 202);
+      ctx.moveTo(leftBoxX + 66, leftBoxY + 176);
+      ctx.lineTo(leftBoxX + 66, leftBoxY + 202);
       ctx.stroke();
       ctx.textAlign = 'center';
       ctx.fillStyle = '#4F46E5';
       ctx.font = 'bold 13px monospace';
-      ctx.fillText(truncateText(palace.heavenStem, 4), leftBoxX + 188, leftBoxY + 182);
+      ctx.fillText(truncateText(palace.heavenStem, 4), leftBoxX + 38, leftBoxY + 182);
       ctx.strokeStyle = '#CBD5E1';
       ctx.beginPath();
-      ctx.moveTo(leftBoxX + 174, leftBoxY + 186);
-      ctx.lineTo(leftBoxX + 202, leftBoxY + 186);
+      ctx.moveTo(leftBoxX + 24, leftBoxY + 186);
+      ctx.lineTo(leftBoxX + 52, leftBoxY + 186);
       ctx.stroke();
       ctx.fillStyle = '#475569';
-      ctx.fillText(truncateText(palace.earthStem, 4), leftBoxX + 188, leftBoxY + 200);
+      ctx.fillText(truncateText(palace.earthStem, 4), leftBoxX + 38, leftBoxY + 200);
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#FEE2E2';
+      roundRect(ctx, leftBoxX + 118, leftBoxY + 172, 82, 28, 8);
+      ctx.fill();
+      ctx.fillStyle = '#B91C1C';
+      ctx.font = 'bold 16px serif';
+      ctx.fillText(truncateText(palace.door, 6), leftBoxX + 132, leftBoxY + 191);
 
       ctx.fillStyle = '#FFFFFF';
       ctx.strokeStyle = '#E5E7EB';
@@ -1099,7 +1109,7 @@ function sleep(ms: number): Promise<void> {
     <transition name="fade">
       <div
         v-if="toast"
-        class="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-brand-ink-strong text-white px-4 py-2.5 rounded-full text-[13px] shadow-lg font-medium flex items-center gap-2 max-w-[90%] whitespace-nowrap"
+        class="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-brand-ink-strong text-white px-4 py-2.5 rounded-full font-ui text-body shadow-lg font-medium flex items-center gap-2 max-w-[90%] whitespace-nowrap"
       >
         <AlertCircle :size="15" class="text-brand-accent shrink-0" />
         <span>{{ toast }}</span>
@@ -1112,21 +1122,21 @@ function sleep(ms: number): Promise<void> {
         key="input-form"
         class="px-margin-mobile space-y-5 pt-3.5"
       >
-        <section class="bg-white rounded-2xl p-4.5 border border-gray-100 shadow-sm relative overflow-hidden text-left">
+        <section class="bg-white rounded-2xl p-4.5 border border-gray-100 shadow-sm relative overflow-hidden text-left font-ui">
           <div class="absolute -right-3 -top-3 w-16 h-16 bg-brand-primary/5 rounded-full"></div>
           <div class="flex items-center gap-2 mb-2">
             <span class="w-2 h-2 bg-brand-primary rounded-full animate-ping"></span>
-            <span class="text-brand-gold-fixed text-[11px] font-bold uppercase tracking-wider">奇门遁甲手机号综合测评</span>
+            <span class="text-brand-gold-fixed font-brand text-caption font-bold tracking-wide leading-none">奇门遁甲手机号综合测评</span>
           </div>
-          <p class="text-[12px] text-brand-secondary leading-relaxed">
+          <p class="text-body text-brand-secondary leading-relaxed">
             输入手机号和性别后，系统会给出整体评分、盘面概览等信息，帮助你更快了解这个号码是否适合长期使用。
           </p>
         </section>
 
-        <form class="space-y-5" @submit.prevent="handleReviewSubmitIntent">
+        <form class="space-y-5 font-ui" @submit.prevent="handleReviewSubmitIntent">
           <section class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-4 text-left">
             <div class="space-y-1.5">
-              <label class="text-[11.5px] font-extrabold text-brand-secondary tracking-wide uppercase flex items-center gap-1">
+              <label class="text-caption font-extrabold text-brand-secondary tracking-wide flex items-center gap-1">
                 <span>手机号码 (中国的11位手机号)</span>
                 <span class="text-red-500">*</span>
               </label>
@@ -1136,13 +1146,13 @@ function sleep(ms: number): Promise<void> {
                   type="tel"
                   maxlength="11"
                   enterkeyhint="go"
-                  class="w-full bg-brand-paper hover:bg-white text-brand-ink-strong focus:bg-white text-[15px] font-bold p-3.5 rounded-xl border border-gray-100 focus:border-brand-primary outline-none transition-all placeholder-gray-400 font-sans shadow-inner tracking-wider"
+                  class="w-full bg-brand-paper hover:bg-white text-brand-ink-strong focus:bg-white font-ui text-title font-bold p-3.5 rounded-xl border border-gray-100 focus:border-brand-primary outline-none transition-all placeholder-gray-400 shadow-inner tracking-wider"
                   placeholder="请输入11位中国手机号码"
                 />
                 <span
                   v-if="phoneNumber.length > 0"
                   @click="phoneNumber = ''"
-                  class="absolute right-4 top-1/2 -translate-y-1/2 p-1 bg-gray-200 hover:bg-gray-300 text-gray-500 rounded-full cursor-pointer text-[10px] w-4 h-4 flex items-center justify-center font-bold"
+                  class="absolute right-4 top-1/2 -translate-y-1/2 p-1 bg-gray-200 hover:bg-gray-300 text-gray-500 rounded-full cursor-pointer text-micro w-4 h-4 flex items-center justify-center font-bold select-none"
                 >
                   ×
                 </span>
@@ -1150,12 +1160,12 @@ function sleep(ms: number): Promise<void> {
             </div>
 
             <div class="space-y-1.5">
-              <label class="text-[11.5px] font-extrabold text-brand-secondary tracking-wide uppercase">性别</label>
+              <label class="text-caption font-extrabold text-brand-secondary tracking-wide">性别</label>
               <div class="grid grid-cols-2 bg-brand-paper p-1 rounded-xl border border-gray-150/40">
                 <button
                   type="button"
                   @click="gender = 'male'"
-                  class="py-2 text-[12.5px] font-bold rounded-lg cursor-pointer transition-all outline-none"
+                  class="py-2 text-body font-bold rounded-lg cursor-pointer transition-all outline-none"
                   :class="gender === 'male' ? 'bg-white text-brand-primary shadow-sm border border-gray-100' : 'text-brand-secondary hover:text-brand-primary'"
                 >
                   男
@@ -1163,7 +1173,7 @@ function sleep(ms: number): Promise<void> {
                 <button
                   type="button"
                   @click="gender = 'female'"
-                  class="py-2 text-[12.5px] font-bold rounded-lg cursor-pointer transition-all outline-none"
+                  class="py-2 text-body font-bold rounded-lg cursor-pointer transition-all outline-none"
                   :class="gender === 'female' ? 'bg-white text-brand-primary shadow-sm border border-gray-100' : 'text-brand-secondary hover:text-brand-primary'"
                 >
                   女
@@ -1175,15 +1185,16 @@ function sleep(ms: number): Promise<void> {
           <section class="space-y-3 pt-1">
             <button
               type="submit"
-              class="w-full py-3.5 bg-brand-primary hover:bg-brand-primary-strong text-white rounded-xl text-[14px] font-bold shadow-md cursor-pointer outline-none transition-all active:scale-[0.985] flex items-center justify-center gap-1.5"
+              class="w-full py-3.5 bg-brand-primary hover:bg-brand-primary-strong text-white rounded-xl font-ui text-body font-bold shadow-md cursor-pointer outline-none transition-all active:scale-[0.985] flex items-center justify-center gap-1.5"
               :disabled="!phoneNumber || state.booting"
             >
               <Sparkles :size="15" fill="currentColor" />
-              <span>{{ state.booting ? '正在连接本地 API...' : `立即扣除 ${effectiveBaseReviewPoints} 积分深度起盘测算` }}</span>
+              <span v-if="state.booting">正在连接本地 API...</span>
+              <span v-else>立即扣除 <span class="font-ui">{{ effectiveBaseReviewPoints }}</span> 积分深度起盘测算</span>
             </button>
           </section>
 
-          <footer class="bg-gray-50/70 p-3.5 rounded-xl border border-gray-100/70 text-[11px] text-brand-secondary leading-relaxed text-center">
+          <footer class="bg-gray-50/70 p-3.5 rounded-xl border border-gray-100/70 font-ui text-caption text-brand-secondary leading-relaxed text-center">
             <p class="font-bold">使用说明：</p>
             <p class="mt-1">
               当前评测仅支持中国大陆11位手机号。
@@ -1205,11 +1216,11 @@ function sleep(ms: number): Promise<void> {
         </div>
 
         <div class="space-y-2">
-          <p class="text-[11px] font-bold text-brand-primary">
+          <p class="font-ui text-caption font-bold text-brand-primary">
             阶段 {{ Math.min(waitingPhase + 1, waitingSteps.length) }}/{{ waitingSteps.length }}
           </p>
-          <h4 class="font-serif text-[17px] font-bold text-brand-ink-strong">正在生成评测结果...</h4>
-          <p class="text-[12.5px] text-brand-secondary leading-relaxed max-w-[85%] mx-auto">
+          <h4 class="font-brand text-heading-2 font-bold text-brand-ink-strong leading-tight">正在生成评测结果...</h4>
+          <p class="font-ui text-body text-brand-secondary leading-relaxed max-w-[85%] mx-auto">
             {{ waitingMessage }}
           </p>
         </div>
@@ -1229,15 +1240,15 @@ function sleep(ms: number): Promise<void> {
             :class="index === waitingPhase ? 'bg-white border-brand-primary/20 shadow-sm' : index < waitingPhase ? 'bg-brand-primary/5 border-brand-primary/10' : 'bg-white/70 border-gray-100'"
           >
             <div
-              class="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold shrink-0"
+              class="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full font-ui text-micro font-bold shrink-0"
               :class="index < waitingPhase ? 'bg-brand-primary text-white' : index === waitingPhase ? 'bg-brand-primary/10 text-brand-primary' : 'bg-gray-100 text-brand-secondary'"
             >
               <CheckCircle2 v-if="index < waitingPhase" :size="12" />
               <span v-else>{{ index + 1 }}</span>
             </div>
             <div class="space-y-1">
-              <p class="text-[12px] font-bold text-brand-ink-strong">{{ step.title }}</p>
-              <p class="text-[11px] text-brand-secondary leading-relaxed">{{ index === waitingPhase ? waitingMessage : step.desc }}</p>
+              <p class="font-ui text-body font-bold text-brand-ink-strong">{{ step.title }}</p>
+              <p class="font-ui text-caption text-brand-secondary leading-relaxed">{{ index === waitingPhase ? waitingMessage : step.desc }}</p>
             </div>
           </div>
         </div>
@@ -1251,7 +1262,7 @@ function sleep(ms: number): Promise<void> {
         <section class="flex items-center justify-between">
           <button
             @click="resetToInput"
-            class="py-2 px-3.5 bg-white border border-gray-100 hover:bg-gray-50 text-brand-secondary rounded-lg text-[12px] font-bold cursor-pointer outline-none transition-all flex items-center gap-1 shadow-sm"
+            class="py-2 px-3.5 bg-white border border-gray-100 hover:bg-gray-50 text-brand-secondary rounded-lg font-ui text-body font-bold cursor-pointer outline-none transition-all flex items-center gap-1 shadow-sm"
           >
             <ArrowLeft :size="13" />
             <span>重新评测</span>
@@ -1259,7 +1270,7 @@ function sleep(ms: number): Promise<void> {
 
           <button
             @click="handleExportImage"
-            class="py-2 px-3.5 bg-brand-primary hover:bg-brand-primary-strong text-white rounded-lg text-[12px] font-bold cursor-pointer outline-none transition-all flex items-center gap-1 shadow-sm"
+            class="py-2 px-3.5 bg-brand-primary hover:bg-brand-primary-strong text-white rounded-lg font-ui text-body font-bold cursor-pointer outline-none transition-all flex items-center gap-1 shadow-sm"
             :disabled="exportingImage"
           >
             <Download :size="13" />
@@ -1271,14 +1282,14 @@ function sleep(ms: number): Promise<void> {
           <div class="min-w-0 flex-1 space-y-0.5">
             <div class="flex items-center gap-1">
               <span class="inline-block w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-              <span class="text-brand-secondary font-mono text-[11px] font-bold uppercase tracking-wider">评测已完成</span>
+              <span class="text-brand-secondary font-ui text-caption font-bold tracking-wide">评测已完成</span>
             </div>
 
             <div class="flex items-center gap-2 flex-wrap">
-              <h3 class="min-w-0 truncate text-[18px] leading-tight font-bold font-serif text-brand-ink-strong">
-                号码：{{ reviewPhoneDisplay }}
+              <h3 class="min-w-0 truncate text-title-lg leading-tight font-bold text-brand-ink-strong">
+                <span class="font-brand">号码：</span><span class="font-brand">{{ reviewPhoneDisplay }}</span>
               </h3>
-              <span class="inline-flex items-center rounded-full bg-brand-paper px-2 py-0.5 text-[11px] font-bold text-brand-secondary shrink-0">
+              <span class="inline-flex items-center rounded-full bg-brand-paper px-2 py-0.5 font-ui text-caption font-bold text-brand-secondary shrink-0">
                 性别 · {{ reviewGenderDisplay }}
               </span>
             </div>
@@ -1286,59 +1297,59 @@ function sleep(ms: number): Promise<void> {
 
           <div class="text-center shrink-0">
             <div class="w-[72px] h-[72px] rounded-full border-[2.5px] border-brand-accent flex flex-col items-center justify-center bg-brand-primary text-white shadow-md">
-              <span class="text-[9.5px] opacity-85 leading-none">综合评分</span>
-              <span class="text-[27px] font-serif font-black text-brand-accent mt-0.5 leading-none">{{ reviewScore }}</span>
+              <span class="font-ui text-micro opacity-85 leading-none">综合评分</span>
+              <span class="font-brand text-display-lg font-black text-brand-accent mt-0.5 leading-none">{{ reviewScore }}</span>
             </div>
           </div>
         </section>
 
         <section class="space-y-2.5">
-          <h4 class="font-serif text-[12px] font-bold text-brand-secondary tracking-wider uppercase flex items-center gap-1.5 text-left">
+          <h4 class="font-brand text-body font-bold text-brand-secondary tracking-wide flex items-center gap-1.5 text-left">
             <Star :size="13" class="text-brand-primary fill-current shrink-0" />
             <span>奇门遁甲：立体定盘局象</span>
           </h4>
 
-          <div class="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm space-y-3.5 font-serif text-brand-ink-strong">
+          <div class="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm space-y-3.5 font-brand text-brand-ink-strong">
             <div class="grid grid-cols-[160px_minmax(0,1fr)] gap-4 items-stretch">
               <div class="relative w-[160px] h-[160px] bg-brand-paper border border-brand-primary/20 rounded-xl px-4 py-3.5 flex flex-col justify-between text-left shadow-sm shrink-0">
-                <div class="absolute -left-3.5 top-1/2 -translate-y-1/2 w-7 h-9 bg-brand-primary border border-brand-primary-strong text-white rounded-md shadow-md flex items-center justify-center font-serif text-[15px] font-black tracking-[0.08em] z-10 select-none">
+                <div class="absolute -left-3.5 top-1/2 -translate-y-1/2 w-7 h-9 bg-brand-primary border border-brand-primary-strong text-white rounded-md shadow-md flex items-center justify-center font-brand text-title font-black tracking-[0.08em] leading-none z-10 select-none">
                   {{ singlePalaceData.trigger }}
                 </div>
 
-                <div class="flex justify-between items-center text-[12.5px] leading-tight select-none z-10 gap-2">
-                  <span class="px-1.5 py-0.5 bg-purple-500/10 text-purple-700 font-serif text-[13.5px] font-black rounded-md leading-none">
+                <div class="flex justify-between items-center text-title leading-tight select-none z-10 gap-2">
+                  <span class="px-1.5 py-0.5 bg-purple-500/10 text-purple-700 font-brand text-body font-black rounded-md leading-none">
                     {{ singlePalaceData.deity }}
                   </span>
-                  <span class="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-700 font-serif text-[13.5px] font-black rounded-md leading-none">
+                  <span class="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-700 font-brand text-body font-black rounded-md leading-none">
                     {{ singlePalaceData.star }}
                   </span>
                 </div>
 
                 <div class="absolute inset-0 flex items-center justify-center pointer-events-none select-none opacity-[0.05] z-0">
-                  <span class="font-serif font-black text-[60px] tracking-widest">
+                  <span class="font-brand font-black text-watermark tracking-widest leading-none">
                     {{ singlePalaceData.palaceShort }}
                   </span>
                 </div>
 
                 <div class="text-center z-10 py-0.5">
-                  <p class="font-serif font-bold text-slate-400 text-[12px] leading-none mb-1 tracking-[0.18em]">
+                  <p class="font-brand font-bold text-slate-400 text-body leading-none mb-1 tracking-[0.18em]">
                     {{ singlePalaceData.palaceName }}
                   </p>
-                  <p class="font-serif font-black text-brand-primary-strong text-[21px] leading-none">
+                  <p class="font-brand font-black text-brand-primary-strong text-heading-plus leading-none">
                     {{ singlePalaceData.direction }}
                   </p>
                 </div>
 
-                <div class="flex justify-between items-end text-[14px] font-black z-10 leading-none gap-3">
-                  <span class="px-2 py-1 bg-red-500/10 text-red-700 rounded-md font-serif text-[13.5px] font-black leading-none">
-                    {{ singlePalaceData.door }}
-                  </span>
-
-                  <div class="flex flex-col items-center justify-center text-[15px] font-serif font-black leading-none border-l border-gray-200 pl-2.5 select-none shrink-0 min-w-[38px]">
+                <div class="flex justify-between items-end text-title font-black z-10 leading-none gap-3">
+                  <div class="flex flex-col items-center justify-center text-title font-brand font-black leading-none border-r border-gray-200 pr-2.5 select-none shrink-0 min-w-[38px]">
                     <span class="text-brand-primary tracking-[0.08em]">{{ singlePalaceData.heavenStem }}</span>
                     <span class="w-5 border-t border-gray-300 my-1"></span>
                     <span class="text-brand-secondary tracking-[0.08em]">{{ singlePalaceData.earthStem }}</span>
                   </div>
+
+                  <span class="px-2 py-1 bg-red-500/10 text-red-700 rounded-md font-brand text-body font-black leading-none">
+                    {{ singlePalaceData.door }}
+                  </span>
                 </div>
               </div>
 
@@ -1348,11 +1359,11 @@ function sleep(ms: number): Promise<void> {
                   :key="item.label"
                   class="bg-brand-paper hover:bg-gray-50/70 px-3 py-2.5 border border-gray-100/55 rounded-xl transition-all grid grid-cols-[42px_minmax(0,1fr)] items-center gap-2 text-left"
                 >
-                  <div class="font-serif text-[13px] text-brand-secondary font-black leading-none flex flex-col gap-1.5 pl-1">
+                  <div class="font-brand text-body text-brand-secondary font-black leading-none flex flex-col gap-1.5 pl-1">
                     <span>{{ item.labelTop }}</span>
                     <span>{{ item.labelBottom }}</span>
                   </div>
-                  <p class="font-serif font-black text-[20px] leading-none text-right min-w-0" :class="item.valueClass">
+                  <p class="font-brand font-black text-heading-1 leading-none text-right min-w-0" :class="item.valueClass">
                     {{ item.value }}
                   </p>
                 </div>
@@ -1362,13 +1373,13 @@ function sleep(ms: number): Promise<void> {
             <div class="space-y-1.5 text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
               <div class="flex items-center gap-1.5 border-b border-gray-100/60 pb-1">
                 <span class="w-1.5 h-3.5 bg-amber-500 rounded-sm"></span>
-                <h5 class="font-serif text-[12.5px] font-black text-brand-ink-strong tracking-wide">四害干扰特征</h5>
+                <h5 class="font-brand text-body font-black text-brand-ink-strong tracking-wide">四害干扰特征</h5>
               </div>
               <div class="flex flex-nowrap gap-1.5 overflow-x-auto pb-1">
                 <span
                   v-for="harm in boardHarmBadges"
                   :key="harm.label"
-                  class="px-2.5 py-0.5 font-serif text-[11px] font-black rounded-md border whitespace-nowrap shrink-0"
+                  class="px-2.5 py-0.5 font-brand text-caption font-black rounded-md border whitespace-nowrap shrink-0"
                   :class="harm.toneClass"
                 >
                   {{ harm.label }} {{ harm.compactValue }}
@@ -1376,14 +1387,14 @@ function sleep(ms: number): Promise<void> {
               </div>
             </div>
 
-            <div class="bg-amber-500/[0.02] border border-amber-100/70 rounded-xl p-3 space-y-2 text-left text-[12.5px] font-serif transition-all">
+            <div class="bg-amber-500/[0.02] border border-amber-100/70 rounded-xl p-3 space-y-2 text-left text-body font-brand transition-all">
               <div class="flex flex-wrap items-center gap-2 select-none">
-                <span class="text-[12px] text-brand-secondary/80 font-black shrink-0">特殊组合:</span>
+                <span class="text-body text-brand-secondary/80 font-black shrink-0">特殊组合:</span>
                 <div class="flex flex-wrap gap-1.5">
                   <span
                     v-for="combo in (boardSpecialCombos.length ? boardSpecialCombos : ['当前未检出明显特殊组合'])"
                     :key="combo"
-                    class="px-2 py-0.5 font-serif text-[11.5px] font-black bg-amber-500/10 text-amber-700 border border-amber-200/50 rounded-md"
+                    class="px-2 py-0.5 font-brand text-caption font-black bg-amber-500/10 text-amber-700 border border-amber-200/50 rounded-md"
                   >
                     {{ combo }}
                   </span>
@@ -1391,12 +1402,12 @@ function sleep(ms: number): Promise<void> {
               </div>
 
               <div class="flex flex-wrap items-center gap-2 select-none">
-                <span class="text-[12px] text-brand-secondary/80 font-black shrink-0">结构封顶:</span>
+                <span class="text-body text-brand-secondary/80 font-black shrink-0">结构封顶:</span>
                 <div class="flex flex-wrap gap-1.5">
                   <span
                     v-for="item in boardStructureCapTags"
                     :key="item"
-                    class="px-2 py-0.5 font-serif text-[11.5px] font-black bg-amber-500/10 text-amber-700 border border-amber-200/50 rounded-md"
+                    class="px-2 py-0.5 font-brand text-caption font-black bg-amber-500/10 text-amber-700 border border-amber-200/50 rounded-md"
                   >
                     {{ item }}
                   </span>
@@ -1407,40 +1418,40 @@ function sleep(ms: number): Promise<void> {
         </section>
 
         <section class="space-y-2 text-left">
-          <h4 class="text-[12px] font-bold text-brand-secondary tracking-wider uppercase flex items-center gap-1.5">
+          <h4 class="font-brand text-body font-bold text-brand-secondary tracking-wide flex items-center gap-1.5">
             <Sparkles :size="13" class="text-brand-primary shrink-0" />
             <span>{{ boardAnalysisTitle }}</span>
           </h4>
 
-          <div class="bg-white rounded-2xl p-4.5 border border-gray-100 shadow-sm space-y-3">
+          <div class="bg-white rounded-2xl p-4.5 border border-gray-100 shadow-sm space-y-3 font-ui">
             <div class="bg-brand-primary/5 rounded-xl border border-brand-primary/10 p-3">
-              <p class="text-[12px] font-bold text-brand-primary-strong">{{ summaryTitle }}</p>
-              <p class="mt-1 text-[13px] text-brand-ink leading-relaxed">
+              <p class="font-brand text-body font-bold text-brand-primary-strong">{{ summaryTitle }}</p>
+              <p class="mt-1 text-body text-brand-ink leading-relaxed">
                 {{ summaryContent }}
               </p>
             </div>
             <div class="bg-brand-paper/70 rounded-xl border border-gray-100 p-3">
-              <p class="text-[11px] font-bold text-brand-secondary uppercase tracking-wider">盘面主轴</p>
-              <p class="mt-1 text-[12px] font-bold text-brand-ink leading-relaxed">{{ boardMainAxis }}</p>
-              <p class="mt-2 text-[12px] text-brand-secondary leading-relaxed">
+              <p class="font-brand text-caption font-bold text-brand-secondary tracking-wide">盘面主轴</p>
+              <p class="mt-1 text-body font-bold text-brand-ink leading-relaxed">{{ boardMainAxis }}</p>
+              <p class="mt-2 text-body text-brand-secondary leading-relaxed">
                 核心矛盾：{{ boardMainContradiction }}
               </p>
             </div>
-            <p class="text-[12px] text-brand-secondary leading-relaxed">
+            <p class="text-body text-brand-secondary leading-relaxed">
               {{ boardAnalysisContent }}
             </p>
           </div>
         </section>
 
         <section class="bg-brand-primary p-5.5 rounded-2xl text-white shadow-sm space-y-4 text-left">
-          <h4 class="text-[15px] font-bold flex items-center gap-2">
+          <h4 class="font-ui text-title font-bold flex items-center gap-2">
             <Lightbulb :size="18" class="text-brand-accent shrink-0 animate-pulse" />
             <span>长期使用建议 / 稳定性判断</span>
           </h4>
-          <div class="inline-flex items-center rounded-full bg-white/12 px-3 py-1 text-[11px] font-bold text-brand-accent">
+          <div class="inline-flex items-center rounded-full bg-white/12 px-3 py-1 font-ui text-caption font-bold text-brand-accent">
             {{ stabilityLabel }}：{{ stabilityValue }}
           </div>
-          <ul class="space-y-3 text-[12px] opacity-90 leading-relaxed font-sans">
+          <ul class="space-y-3 font-ui text-body opacity-90 leading-relaxed">
             <li v-for="advice in longTermAdvice" :key="advice" class="flex gap-2">
               <CheckCircle2 :size="16" class="text-brand-accent shrink-0" fill="currentColor" stroke="#4F46E5" />
               <span>{{ advice }}</span>
@@ -1450,12 +1461,12 @@ function sleep(ms: number): Promise<void> {
 
         <section ref="aspectSectionRef" class="space-y-2">
           <div class="flex justify-between items-baseline text-left">
-            <h4 class="text-[12px] font-bold text-brand-secondary tracking-wider uppercase flex items-center gap-1.5">
+            <h4 class="font-brand text-body font-bold text-brand-secondary tracking-wide flex items-center gap-1.5">
               <Clock :size="13" class="text-brand-primary shrink-0" />
               <span>九个重点维度</span>
             </h4>
-            <span class="text-[10px] text-brand-secondary">
-              余积分: <span class="text-brand-primary-strong font-black font-sans">{{ userPoints }}</span>
+            <span class="font-ui text-micro text-brand-secondary">
+              余积分: <span class="text-brand-primary-strong font-ui font-black">{{ userPoints }}</span>
             </span>
           </div>
 
@@ -1464,7 +1475,7 @@ function sleep(ms: number): Promise<void> {
               v-for="(aspect, idx) in reviewAspects"
               :key="aspect.aspect_id"
               @click="handleAspectClick(idx)"
-              class="relative h-[34px] px-2 rounded-xl text-[10.5px] font-extrabold flex items-center justify-between gap-1 transition-all outline-none cursor-pointer border"
+              class="relative h-[34px] px-2 rounded-xl font-ui text-micro font-extrabold flex items-center justify-between gap-1 transition-all outline-none cursor-pointer border"
               :class="[
                 activeAspect === idx
                   ? 'bg-brand-primary text-white border-transparent shadow-sm'
@@ -1488,7 +1499,7 @@ function sleep(ms: number): Promise<void> {
               <div class="shrink-0 flex items-center">
                 <span
                   v-if="aspect.is_unlocked"
-                  class="text-[8.5px] font-black px-1 py-0.5 rounded-sm leading-none shrink-0"
+                  class="text-tiny font-black px-1 py-0.5 rounded-sm leading-none shrink-0 select-none"
                   :class="[
                     activeAspect === idx
                       ? 'bg-white/20 text-white'
@@ -1503,7 +1514,7 @@ function sleep(ms: number): Promise<void> {
                 </span>
                 <span
                   v-else
-                  class="text-[8px] font-bold px-1 py-0.5 rounded-sm leading-none shrink-0"
+                  class="text-tiny font-bold px-1 py-0.5 rounded-sm leading-none shrink-0 select-none"
                   :class="[
                     activeAspect === idx ? 'bg-white/20 text-white' : 'text-brand-gold-fixed bg-amber-50 border border-amber-200/50'
                   ]"
@@ -1526,34 +1537,34 @@ function sleep(ms: number): Promise<void> {
                 <div class="flex justify-between items-center pb-3 border-b border-gray-50">
                   <div class="flex items-center gap-2">
                     <component :is="selectedAspect.icon" :size="16" class="text-brand-primary shrink-0" />
-                    <span class="font-serif text-[15px] font-extrabold text-brand-ink-strong">
+                    <span class="font-brand text-title font-extrabold text-brand-ink-strong leading-tight">
                       {{ selectedAspect.title }} · 详细结果
                     </span>
                   </div>
-                  <span class="px-2.5 py-1 rounded-full text-[11px] font-bold" :class="selectedAspect.tint">
+                  <span class="px-2.5 py-1 rounded-full font-ui text-caption font-bold" :class="selectedAspect.tint">
                     综合考量：{{ selectedAspect.level || '已解锁' }}
                   </span>
                 </div>
 
-                <div class="space-y-3 text-[13px] text-brand-secondary">
+                <div class="space-y-3 font-ui text-body text-brand-secondary">
                   <div class="bg-brand-primary/5 p-3 rounded-xl border border-brand-primary/10">
-                    <p class="font-bold text-brand-primary-strong text-[13px]">核心判断</p>
+                    <p class="font-brand font-bold text-brand-primary-strong text-body">核心判断</p>
                     <p class="text-brand-ink mt-1 font-medium">{{ selectedAspect.core_judge }}</p>
                   </div>
 
                   <div>
-                    <p class="font-bold text-brand-ink-strong text-[13px] mb-1">详细说明</p>
+                    <p class="font-brand font-bold text-brand-ink-strong text-body mb-1">详细说明</p>
                     <p class="leading-relaxed whitespace-pre-line text-brand-secondary font-normal">
                       {{ selectedAspect.explain }}
                     </p>
                   </div>
 
-                  <div v-if="selectedAspect.signal" class="pt-2 border-t border-gray-50 flex items-baseline gap-2 text-[12px]">
-                    <span class="font-bold text-brand-gold-fixed text-[12px] shrink-0">提示信号：</span>
+                  <div v-if="selectedAspect.signal" class="pt-2 border-t border-gray-50 flex items-baseline gap-2 text-body">
+                    <span class="font-brand font-bold text-brand-gold-fixed text-body shrink-0">提示信号：</span>
                     <span class="text-brand-ink leading-relaxed font-semibold">{{ selectedAspect.signal }}</span>
                   </div>
 
-                  <div v-if="selectedAspect.suggestion" class="bg-amber-500/5 p-3 rounded-xl border border-amber-500/10 text-amber-800 text-[12px] leading-relaxed flex items-start gap-1.5">
+                  <div v-if="selectedAspect.suggestion" class="bg-amber-500/5 p-3 rounded-xl border border-amber-500/10 font-ui text-body text-amber-800 leading-relaxed flex items-start gap-1.5">
                     <Lightbulb :size="14" class="text-amber-600 shrink-0 mt-0.5" />
                     <div>
                       <span class="font-bold text-amber-700">使用建议: </span>
@@ -1568,26 +1579,26 @@ function sleep(ms: number): Promise<void> {
                   <Lock :size="22" class="animate-bounce" />
                 </div>
                 <div class="max-w-[85%] mx-auto">
-                  <h5 class="font-bold text-[15px] font-serif text-brand-ink-strong">
+                  <h5 class="font-brand font-bold text-title text-brand-ink-strong leading-tight">
                     查看「{{ selectedAspect.title }}」详细分析
                   </h5>
-                  <p class="text-[12px] text-brand-secondary mt-1 leading-relaxed">
-                    该维度属于深度内容，默认需要额外消耗 {{ selectedAspect.unlock_points || effectiveAspectUnlockPoints }} 积分后查看。
+                  <p class="font-ui text-body text-brand-secondary mt-1 leading-relaxed">
+                    该维度属于深度内容，默认需要额外消耗 <span class="font-ui">{{ selectedAspect.unlock_points || effectiveAspectUnlockPoints }}</span> 积分后查看。
                   </p>
                 </div>
                 <button
                   @click="handleUnlockAspect(activeAspect)"
-                  class="px-6 py-2.5 bg-brand-primary text-white rounded-full font-bold text-[13px] shadow-sm hover:bg-brand-primary-strong outline-none cursor-pointer flex items-center gap-1.5 mx-auto"
+                  class="px-6 py-2.5 bg-brand-primary text-white rounded-full font-ui text-body font-bold shadow-sm hover:bg-brand-primary-strong outline-none cursor-pointer flex items-center gap-1.5 mx-auto"
                 >
                   <Lock :size="12" fill="currentColor" />
-                  <span>消耗 {{ selectedAspect.unlock_points || effectiveAspectUnlockPoints }} 积分立即解锁</span>
+                  <span>消耗 <span class="font-ui">{{ selectedAspect.unlock_points || effectiveAspectUnlockPoints }}</span> 积分立即解锁</span>
                 </button>
               </div>
             </div>
 
             <div
               v-else
-              class="p-4 bg-white rounded-2xl border border-gray-100 text-center text-[12px] text-brand-secondary/80 flex items-center justify-center gap-1.5 shadow-sm"
+              class="p-4 bg-white rounded-2xl border border-gray-100 text-center font-ui text-body text-brand-secondary/80 flex items-center justify-center gap-1.5 shadow-sm"
             >
               <Sparkles :size="13" class="text-brand-primary" fill="currentColor" />
               <span>点击上方卡片，可查看或解锁对应维度的详细分析与使用建议。</span>
@@ -1596,13 +1607,13 @@ function sleep(ms: number): Promise<void> {
         </section>
 
         <section class="bg-white p-4.5 rounded-xl border border-gray-100 flex flex-col gap-3 text-center">
-          <span class="text-[11px] font-bold text-brand-secondary uppercase tracking-wider block">
+          <span class="font-ui text-caption font-bold text-brand-secondary tracking-wide block">
             —— 接下来，你可以继续查看以下内容 ——
           </span>
           <div class="grid grid-cols-2 gap-3">
             <button
               @click="emit('navigate-to-tab', 'agent')"
-              class="py-3 px-2 bg-brand-primary text-white rounded-lg text-[12px] font-bold hover:bg-brand-primary-strong transition-all cursor-pointer flex items-center justify-center gap-1.5 outline-none border-none"
+              class="py-3 px-2 bg-brand-primary text-white rounded-lg font-ui text-body font-bold hover:bg-brand-primary-strong transition-all cursor-pointer flex items-center justify-center gap-1.5 outline-none border-none"
             >
               <MessageSquare :size="14" />
               <span>有疑问，去问智能体</span>
@@ -1610,7 +1621,7 @@ function sleep(ms: number): Promise<void> {
 
             <button
               @click="handleSelectNextLockedAspect"
-              class="py-3 px-2 bg-white border border-brand-primary text-brand-primary rounded-lg text-[12px] font-bold hover:bg-brand-primary/5 transition-all cursor-pointer flex items-center justify-center gap-1.5 outline-none"
+              class="py-3 px-2 bg-white border border-brand-primary text-brand-primary rounded-lg font-ui text-body font-bold hover:bg-brand-primary/5 transition-all cursor-pointer flex items-center justify-center gap-1.5 outline-none"
             >
               <Plus :size="14" />
               <span>继续查看更多维度</span>
@@ -1627,12 +1638,12 @@ function sleep(ms: number): Promise<void> {
               <div class="w-8 h-8 rounded-full bg-brand-primary/10 flex items-center justify-center shrink-0">
                 <Sparkles :size="16" class="text-brand-primary animate-pulse" fill="currentColor" />
               </div>
-              <div class="font-sans">
-                <p class="text-[13px] font-black text-brand-ink-strong">联系客服获取后续支持</p>
-                <p class="text-[11px] text-brand-secondary mt-0.5">{{ customerServiceGuidance }}</p>
+              <div class="font-ui">
+                <p class="text-body font-bold text-brand-ink-strong">联系客服获取后续支持</p>
+                <p class="text-caption text-brand-secondary mt-0.5">{{ customerServiceGuidance }}</p>
               </div>
             </div>
-            <div class="text-brand-primary font-bold text-[11px] bg-brand-primary/10 group-hover:bg-brand-primary/20 px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
+            <div class="text-brand-primary font-ui font-bold text-caption bg-brand-primary/10 group-hover:bg-brand-primary/20 px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
               <span>复制</span>
               <Check v-if="copied" :size="10" />
               <Copy v-else :size="10" />
@@ -1651,10 +1662,10 @@ function sleep(ms: number): Promise<void> {
         </div>
 
         <div class="space-y-2.5 max-w-[90%] mx-auto">
-          <h3 class="font-serif text-[20px] font-bold text-brand-ink-strong">
+          <h3 class="font-brand text-heading-1 font-bold text-brand-ink-strong leading-tight">
             {{ resolveErrorTitle() }}
           </h3>
-          <p class="text-[13px] text-brand-secondary leading-relaxed font-sans">
+          <p class="font-ui text-body text-brand-secondary leading-relaxed">
             {{ resolveErrorBody() }}
           </p>
         </div>
@@ -1663,7 +1674,7 @@ function sleep(ms: number): Promise<void> {
           v-if="errorType === 'insufficient_points' || errorType === 'unlock_points_insufficient'"
           class="bg-white p-4.5 rounded-xl border border-gray-100 max-w-[95%] text-left space-y-3.5 shadow-sm"
         >
-          <div class="flex items-start gap-2 text-[12.5px] text-brand-secondary leading-relaxed font-sans">
+          <div class="flex items-start gap-2 font-ui text-body text-brand-secondary leading-relaxed">
             <Lightbulb :size="16" class="text-brand-primary shrink-0 mt-0.5" />
             <div>
               <span class="font-bold text-brand-ink-strong">联系客服支持: </span>
@@ -1671,14 +1682,14 @@ function sleep(ms: number): Promise<void> {
             </div>
           </div>
 
-          <div class="bg-brand-paper p-3 rounded-xl flex items-center justify-between border border-gray-100 font-sans">
-            <div class="text-left font-mono">
-              <p class="text-[10px] text-brand-secondary">客服联系方式：</p>
-              <p class="text-[14px] font-bold text-brand-ink-strong">{{ customerServiceContact }}</p>
+          <div class="bg-brand-paper p-3 rounded-xl flex items-center justify-between border border-gray-100 font-ui">
+            <div class="text-left font-data">
+              <p class="text-micro text-brand-secondary">客服联系方式：</p>
+              <p class="text-title font-bold text-brand-ink-strong">{{ customerServiceContact }}</p>
             </div>
             <button
               @click="handleCopyServiceContact"
-              class="px-3.5 py-1.5 bg-brand-primary text-white hover:bg-brand-primary-strong text-[11px] font-bold rounded-lg cursor-pointer outline-none flex items-center gap-1 shrink-0 transition-all shadow-sm"
+              class="px-3.5 py-1.5 bg-brand-primary text-white hover:bg-brand-primary-strong font-ui text-caption font-bold rounded-lg cursor-pointer outline-none flex items-center gap-1 shrink-0 transition-all shadow-sm"
             >
               <Check v-if="copied" :size="11" />
               <Copy v-else :size="11" />
@@ -1687,10 +1698,10 @@ function sleep(ms: number): Promise<void> {
           </div>
         </div>
 
-        <div class="w-full pt-2 flex flex-col gap-2.5 p-1 font-sans">
+        <div class="w-full pt-2 flex flex-col gap-2.5 p-1 font-ui">
           <button
             @click="errorType === 'unlock_points_insufficient' ? appState = 'result' : resetToInput()"
-            class="w-full py-3 bg-brand-primary text-white rounded-xl font-bold text-[14px] shadow-sm hover:bg-brand-primary-strong active:scale-[0.98] transition-all cursor-pointer outline-none border-none"
+            class="w-full py-3 bg-brand-primary text-white rounded-xl font-bold text-body shadow-sm hover:bg-brand-primary-strong active:scale-[0.98] transition-all cursor-pointer outline-none border-none"
           >
             <span>
               {{ errorType === 'unlock_points_insufficient' ? '返回评测结果' : '返回重新输入' }}
@@ -1700,7 +1711,7 @@ function sleep(ms: number): Promise<void> {
           <button
             v-if="errorType === 'insufficient_points' || errorType === 'unlock_points_insufficient'"
             @click="emit('navigate-to-tab', 'profile')"
-            class="w-full py-3 bg-white border border-brand-primary/20 text-brand-primary rounded-xl font-bold text-[14px] hover:bg-brand-primary/5 active:scale-[0.98] transition-all cursor-pointer outline-none"
+            class="w-full py-3 bg-white border border-brand-primary/20 text-brand-primary rounded-xl font-bold text-body hover:bg-brand-primary/5 active:scale-[0.98] transition-all cursor-pointer outline-none"
           >
             <span>前往个人中心查看积分</span>
           </button>
@@ -1711,7 +1722,7 @@ function sleep(ms: number): Promise<void> {
     <transition name="fade">
       <div
         v-if="showReviewConfirmDialog"
-        class="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 font-sans"
+        class="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 font-ui"
         @click.self="closeReviewConfirmDialog"
       >
         <div class="bg-white rounded-2xl p-5 max-w-xs w-[88%] border border-gray-100 shadow-xl space-y-3.5 transform transition-all relative">
@@ -1719,14 +1730,14 @@ function sleep(ms: number): Promise<void> {
             <div class="w-9 h-9 rounded-full bg-brand-primary/10 flex items-center justify-center text-brand-primary shrink-0">
               <Sparkles :size="18" fill="currentColor" />
             </div>
-            <h4 class="font-serif text-[17.5px] font-black text-brand-ink-strong leading-none">
+            <h4 class="font-brand text-heading-2 font-black text-brand-ink-strong leading-none">
               确认开始评测
             </h4>
           </div>
 
           <div class="px-1 text-center pt-1">
-            <p class="text-[14px] text-brand-secondary font-semibold leading-relaxed">
-              是否消耗 <span class="text-brand-primary font-black text-[15.5px] mx-0.5">{{ effectiveBaseReviewPoints }} 积分</span> 进行手机号评测？
+            <p class="text-body text-brand-secondary font-semibold leading-relaxed">
+              是否消耗 <span class="text-brand-primary font-ui font-black text-title mx-0.5">{{ effectiveBaseReviewPoints }}</span> 积分进行手机号评测？
             </p>
           </div>
 
@@ -1737,21 +1748,21 @@ function sleep(ms: number): Promise<void> {
                 type="checkbox"
                 class="w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/40 cursor-pointer accent-brand-primary"
               />
-              <span class="text-[12px] text-brand-secondary/90 font-extrabold">下次不再提示此信息</span>
+              <span class="text-body text-brand-secondary/90 font-extrabold">下次不再提示此信息</span>
             </label>
           </div>
 
-          <div class="flex gap-3 pt-1 text-[13px]">
+          <div class="flex gap-3 pt-1 text-body">
             <button
               type="button"
-              class="flex-1 py-2 border border-gray-200 text-gray-600 rounded-xl font-bold hover:bg-slate-50 transition-colors cursor-pointer outline-none select-none"
+              class="flex-1 py-2 border border-gray-200 text-gray-600 rounded-xl font-ui font-bold hover:bg-slate-50 transition-colors cursor-pointer outline-none select-none"
               @click="closeReviewConfirmDialog"
             >
               取消
             </button>
             <button
               type="button"
-              class="flex-1 py-2 bg-brand-primary hover:bg-brand-primary-strong text-white rounded-xl font-black shadow-sm transition-colors cursor-pointer outline-none select-none"
+              class="flex-1 py-2 bg-brand-primary hover:bg-brand-primary-strong text-white rounded-xl font-ui font-black shadow-sm transition-colors cursor-pointer outline-none select-none"
               @click="handleConfirmReview"
             >
               确认评测

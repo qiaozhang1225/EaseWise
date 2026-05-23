@@ -75,7 +75,7 @@ onMounted(() => {
     <transition name="fade-slide">
       <div 
         v-if="toast"
-        class="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-brand-ink-strong text-white px-4 py-2.5 rounded-full text-[13px] shadow-lg font-medium flex items-center gap-2 max-w-[90%] whitespace-nowrap"
+        class="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-brand-ink-strong text-white px-4 py-2.5 rounded-full font-ui text-body shadow-lg font-medium flex items-center gap-2 max-w-[90%] whitespace-nowrap"
       >
         <AlertCircle :size="15" class="text-brand-accent shrink-0" />
         <span>{{ toast }}</span>
@@ -85,36 +85,37 @@ onMounted(() => {
     <!-- Daily Almanac Card -->
     <section class="mb-4 mt-3">
       <div class="bg-white rounded-2xl p-4 border border-brand-paper shadow-sm relative">
-        <div class="absolute -top-2.5 left-5 bg-brand-gold-fixed text-white text-[9.5px] font-semibold px-3 py-0.5 rounded-md tracking-widest shadow-sm flex items-center gap-1.5 z-10 select-none">
+        <div class="absolute -top-2.5 left-5 bg-brand-gold-fixed text-white font-ui text-micro font-semibold px-3 py-0.5 rounded-md tracking-widest shadow-sm flex items-center gap-1.5 z-10 select-none">
           <span class="w-1.5 h-1.5 rounded-full bg-white/80 shrink-0 animate-pulse"></span>
           <span>今日黄历 · ALMANAC</span>
         </div>
 
-        <div class="absolute -top-2.5 right-5 bg-emerald-600 text-white text-[9.5px] font-semibold px-3 py-0.5 rounded-md tracking-widest shadow-sm flex items-center z-10 select-none">
-          <span>值神星君 · {{ tianShenTagText }}</span>
+        <div class="absolute -top-2.5 right-5 bg-emerald-600 text-white font-ui text-micro font-semibold px-3 py-0.5 rounded-md tracking-wide shadow-sm flex items-center z-10 select-none">
+          <span>值神星君 · </span>
+          <span class="font-brand leading-none">{{ tianShenTagText }}</span>
         </div>
 
         <div class="flex justify-between items-center mb-1 text-left pt-1.5 gap-4">
           <div class="shrink-0">
             <div class="flex items-baseline gap-1.5">
-              <span class="text-brand-ink-strong font-serif text-[22px] font-bold leading-none">{{ displayDate }}</span>
+              <span class="text-brand-ink-strong font-brand text-heading-plus font-bold leading-none">{{ displayDate }}</span>
             </div>
           </div>
           <div class="flex-1 max-w-[50%] min-w-[130px]">
             <div class="bg-brand-primary/10 px-3 py-1.5 rounded-xl border border-brand-primary/30 flex items-center justify-between gap-1.5 shadow-sm w-full">
               <div class="flex items-center gap-1.5">
                 <Sparkles :size="13" class="text-brand-gold-fixed fill-current shrink-0" />
-                <span class="text-[12px] font-extrabold text-brand-secondary">余币</span>
+                <span class="font-ui text-body font-extrabold text-brand-secondary">余币</span>
               </div>
-              <span class="text-[12px] font-extrabold text-brand-secondary whitespace-nowrap">
-                <span class="text-brand-primary-strong font-serif font-black text-[15px]">{{ points }}</span> 分
+              <span class="font-ui text-body font-extrabold text-brand-secondary whitespace-nowrap">
+                <span class="text-brand-primary-strong font-brand text-title font-extrabold">{{ points }}</span> 分
               </span>
             </div>
           </div>
         </div>
 
         <div class="mb-3.5 text-left pt-0.5 select-none animate-fadeIn">
-          <p class="text-brand-secondary/95 text-[11px] font-bold tracking-wide">
+          <p class="font-ui text-caption text-brand-secondary/95 font-bold tracking-wide">
             {{ almanacMetaText }}
           </p>
         </div>
@@ -122,32 +123,32 @@ onMounted(() => {
         <!-- Custom Auspicious Grid -->
         <div class="grid grid-cols-2 gap-3 py-2.5 border-t border-b border-gray-100/80 mb-2 text-left">
           <div class="flex items-start gap-1.5">
-            <div class="flex items-center gap-0.5 text-brand-primary font-bold text-[11px] mt-0.5 shrink-0">
+            <div class="flex items-center gap-0.5 text-brand-primary font-brand text-caption font-bold mt-0.5 shrink-0">
               <CheckCircle2 :size="13" class="text-brand-primary" fill="currentColor" stroke="white" />
               <span>宜:</span>
             </div>
             <div class="flex flex-wrap gap-1 flex-1">
-              <span v-for="v in visibleYiItems" :key="v" class="bg-brand-primary/5 text-brand-primary-strong text-[10px] px-1.5 py-0.5 rounded font-black animate-fadeIn">{{ v }}</span>
+              <span v-for="v in visibleYiItems" :key="v" class="bg-brand-primary/5 text-brand-primary-strong font-brand text-micro px-1.5 py-0.5 rounded font-bold animate-fadeIn">{{ v }}</span>
               <button
                 v-if="yiHasMore"
                 @click.stop="yiExpanded = !yiExpanded"
-                class="bg-brand-primary hover:bg-brand-primary/90 text-white text-[10px] px-1.5 py-0.5 rounded font-bold cursor-pointer transition-colors border-none select-none outline-none inline-flex items-center justify-center shadow-sm shrink-0"
+                class="bg-brand-primary hover:bg-brand-primary/90 text-white font-ui text-micro px-1.5 py-0.5 rounded font-bold cursor-pointer transition-colors border-none select-none outline-none inline-flex items-center justify-center shadow-sm shrink-0"
               >
                 {{ yiExpanded ? '收起' : '更多' }}
               </button>
             </div>
           </div>
           <div class="flex items-start gap-1.5 border-l border-gray-100 pl-2">
-            <div class="flex items-center gap-0.5 text-brand-gold-fixed font-bold text-[11px] mt-0.5 shrink-0">
+            <div class="flex items-center gap-0.5 text-brand-gold-fixed font-brand text-caption font-bold mt-0.5 shrink-0">
               <XCircle :size="13" class="text-brand-gold-fixed" fill="currentColor" stroke="white" />
               <span>忌:</span>
             </div>
             <div class="flex flex-wrap gap-1 flex-1">
-              <span v-for="v in visibleJiItems" :key="v" class="bg-amber-50 text-brand-gold-fixed text-[10px] px-1.5 py-0.5 rounded font-black animate-fadeIn">{{ v }}</span>
+              <span v-for="v in visibleJiItems" :key="v" class="bg-amber-50 text-brand-gold-fixed font-brand text-micro px-1.5 py-0.5 rounded font-bold animate-fadeIn">{{ v }}</span>
               <button
                 v-if="jiHasMore"
                 @click.stop="jiExpanded = !jiExpanded"
-                class="bg-brand-gold-fixed hover:bg-brand-gold-fixed/90 text-white text-[10px] px-1.5 py-0.5 rounded font-bold cursor-pointer transition-colors border-none select-none outline-none inline-flex items-center justify-center shadow-sm shrink-0"
+                class="bg-brand-gold-fixed hover:bg-brand-gold-fixed/90 text-white font-ui text-micro px-1.5 py-0.5 rounded font-bold cursor-pointer transition-colors border-none select-none outline-none inline-flex items-center justify-center shadow-sm shrink-0"
               >
                 {{ jiExpanded ? '收起' : '更多' }}
               </button>
@@ -156,14 +157,14 @@ onMounted(() => {
         </div>
 
         <!-- Heavy metaphysical data with clean lines -->
-        <div class="bg-brand-paper/50 rounded-xl p-2.5 text-[10.5px] text-brand-secondary space-y-1.5 font-sans text-left">
+        <div class="bg-brand-paper/50 rounded-xl p-2.5 font-ui text-caption text-brand-secondary space-y-1.5 text-left">
           <div class="flex justify-between items-baseline border-b border-gray-100 pb-1.5 gap-3">
             <span class="shrink-0">今日吉神：</span>
-            <span class="text-brand-ink font-medium leading-tight text-right">{{ jiShenText }}</span>
+            <span class="text-brand-ink font-brand font-medium leading-tight text-right">{{ jiShenText }}</span>
           </div>
           <div class="flex justify-between items-baseline gap-3">
             <span class="shrink-0">彭祖百忌：</span>
-            <span class="text-brand-ink font-medium leading-tight text-right">{{ pengzuSummary }}</span>
+            <span class="text-brand-ink font-brand font-medium leading-tight text-right">{{ pengzuSummary }}</span>
           </div>
         </div>
       </div>
@@ -175,17 +176,19 @@ onMounted(() => {
         @click="emit('phone-click')"
         class="w-full bg-brand-primary text-white rounded-2xl p-5 shadow-md flex items-center justify-between active:scale-[0.99] transition-transform text-left relative overflow-hidden cursor-pointer"
       >
-        <div class="absolute top-0 right-0 bg-brand-accent text-brand-ink-strong text-[10px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wider">
+        <div class="absolute top-0 right-0 bg-brand-accent text-brand-ink-strong font-ui text-micro font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wide">
           🔥 强烈推荐
         </div>
         <div class="flex flex-col gap-1.5 z-10 max-w-[70%]">
-          <span class="text-[18px] font-serif font-bold flex items-center gap-1.5">
+          <span class="font-brand text-title-lg font-bold leading-tight flex items-center gap-1.5">
             手机号解析
           </span>
-          <span class="text-white/80 text-[12px] leading-relaxed">
+          <span class="font-ui text-body text-white/80 leading-relaxed">
             输入11位手机号码，从整体评分、盘面信息和重点维度三个层面，快速了解这个号码是否适合长期使用。
           </span>
-          <span class="text-brand-accent text-[11px] font-bold mt-1">立即开始评测（默认消耗 {{ reviewBasePointsCost }} 积分）→</span>
+          <span class="font-ui text-caption text-brand-accent font-bold mt-1">
+            立即开始评测（默认消耗 <span class="font-ui">{{ reviewBasePointsCost }}</span> 积分）→
+          </span>
         </div>
         <div class="bg-white/15 p-4 rounded-full shrink-0 z-10">
           <Calculator :size="36" class="text-brand-accent shrink-0 animate-bounce" data-icon="dialpad" />
@@ -201,7 +204,7 @@ onMounted(() => {
         @click="showToast(`「${tool.name}」正在准备中，后续版本开放。`)"
         class="bg-white p-4.5 rounded-xl border border-gray-100 hover:border-gray-200 transition-all cursor-pointer select-none active:scale-[0.97] duration-150 flex flex-col items-center justify-center text-center relative group"
       >
-        <div class="absolute top-2 right-2 bg-gray-100 text-[9px] px-1.5 py-0.5 rounded text-brand-secondary font-bold tracking-tighter uppercase shrink-0">
+        <div class="absolute top-2 right-2 bg-gray-100 font-ui text-micro px-1.5 py-0.5 rounded text-brand-secondary font-bold tracking-tight uppercase shrink-0">
           Upcoming
         </div>
         
@@ -209,8 +212,8 @@ onMounted(() => {
           <component :is="tool.icon" :size="22" class="shrink-0" />
         </div>
         
-        <span class="font-bold text-brand-ink-strong text-[14px]">{{ tool.name }}</span>
-        <span class="text-[10px] text-brand-secondary mt-1">{{ tool.desc }}</span>
+        <span class="font-ui text-title font-bold text-brand-ink-strong">{{ tool.name }}</span>
+        <span class="font-ui text-micro text-brand-secondary mt-1">{{ tool.desc }}</span>
       </div>
     </section>
   </div>

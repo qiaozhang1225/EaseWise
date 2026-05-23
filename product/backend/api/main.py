@@ -805,6 +805,7 @@ def _resolve_review_public_view(
         if not isinstance(score_result, dict):
             return None
         base_view = build_phone_review_product_view(score_result, score_template)
+        base_view["rules_version"] = RULES.get("version")
 
     public_view = dict(base_view)
     aspects = [dict(item) for item in public_view.get("aspects", []) if isinstance(item, dict)]
@@ -882,6 +883,8 @@ def _build_review_board_response(payload: Any) -> ReviewBoardResponse | None:
 
 
 def _review_product_view_needs_refresh(payload: dict[str, Any]) -> bool:
+    if payload.get("rules_version") != RULES.get("version"):
+        return True
     board = payload.get("board")
     if not isinstance(board, dict):
         return True
@@ -1003,6 +1006,7 @@ def _run_review_generation(*, review_id: str, phone: str, gender: str, include_m
         bundle = build_scoring_bundle(result, include_markdown=include_markdown)
         bundle["score_template"]["product_render"] = build_product_review_render(bundle)
         bundle["score_template"]["product_view"] = build_phone_review_product_view(bundle["score_result"], bundle["score_template"])
+        bundle["score_template"]["product_view"]["rules_version"] = RULES.get("version")
 
         update_review_progress(review_id=review_id, progress_stage="finalizing", progress_message="正在整理最终结果", updated_at=_utc_now())
         complete_review(

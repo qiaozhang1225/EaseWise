@@ -55,7 +55,7 @@ onMounted(() => {
     <Header :title="title" />
     
     <!-- Main viewport -->
-    <main class="font-sans antialiased">
+    <main class="font-ui antialiased">
       <div v-if="activeTab === 'home'">
         <Home @phone-click="navigateToTab('phone')" />
       </div>

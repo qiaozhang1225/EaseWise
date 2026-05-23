@@ -23,7 +23,7 @@ const tabs = [
       :key="tab.id"
       type="button"
       @click="emit('update:activeTab', tab.id)"
-      class="flex flex-col items-center justify-center transition-all duration-200 outline-none w-20 py-1 cursor-pointer"
+      class="flex flex-col items-center justify-center transition-all duration-200 outline-none w-20 py-1 cursor-pointer font-ui"
       :class="activeTab === tab.id ? 'text-brand-primary font-semibold' : 'text-brand-secondary hover:text-brand-primary'"
       :data-icon="tab.id"
     >
@@ -31,7 +31,7 @@ const tabs = [
            :class="activeTab === tab.id ? 'bg-brand-primary/10 text-brand-primary' : 'text-brand-secondary'">
         <component :is="tab.icon" :size="22" class="shrink-0" />
       </div>
-      <span class="text-[11px] mt-1 tracking-wider">{{ tab.label }}</span>
+      <span class="text-caption mt-1 tracking-wide">{{ tab.label }}</span>
     </button>
   </nav>
 </template>

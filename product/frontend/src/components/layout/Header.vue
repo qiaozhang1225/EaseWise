@@ -22,7 +22,7 @@ const emit = defineEmits<{
         </button>
         <h1
           v-if="title"
-          class="font-serif text-[20px] font-bold text-brand-ink-strong tracking-wide"
+          class="font-brand text-heading-1 font-bold text-brand-ink-strong tracking-wide leading-tight"
         >
           {{ title ?? '易如反掌' }}
         </h1>
