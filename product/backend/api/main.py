@@ -1,0 +1,1112 @@
+﻿from __future__ import annotations
+
+import html
+import re
+from datetime import date, datetime, timezone
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+
+from product.backend.almanac import build_almanac_for_date, build_today_almanac
+from product.backend.llm import load_env_file
+from scoring.engine import load_rules, score_phone
+from scoring.services.bundle_service import build_scoring_bundle
+
+from .agent import build_agent_reply
+from .auth import build_session_expiry, exchange_wechat_code, hash_access_token, issue_access_token, require_authenticated_user, require_internal_admin_access, require_registered_user, resolve_authenticated_user
+from .config import APP_TITLE, APP_VERSION, allow_mock_wechat_login, get_cors_origins, get_database_path, get_public_base_url, get_wechat_oa_app_id
+from .database import InsufficientPointsError, adjust_points, complete_review, complete_usage_record, create_recharge_order, create_review_aspect_unlock, create_review_with_charge, create_session, ensure_schema, fail_review, fail_usage_record, get_internal_user, get_points_account, get_recharge_order, get_review, get_session_user_by_token_hash, get_user, list_points_ledger, list_recharge_orders, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, merge_guest_user_into_user, refund_points, review_recharge_order, update_review_progress, update_user_profile, upsert_guest_user, upsert_runtime_config_entry, upsert_wechat_user
+from .phone_review_view import build_phone_review_product_view
+from .product_review import build_product_review_render
+from .runtime_config import get_runtime_available_recharge_packages, get_runtime_guest_initial_points, get_runtime_initial_points, get_runtime_phone_review_aspect_order, get_runtime_phone_review_aspect_unlock_points_cost, get_runtime_phone_review_base_points_cost, get_runtime_phone_review_free_aspect_keys, get_runtime_phone_review_unlock_enforcement_enabled, is_module_enabled, normalize_channel_key, normalize_config_key, normalize_scope_key, normalize_scope_type, resolve_public_runtime_config
+from .schemas import AgentReplyRequest, AgentReplyResponse, AlmanacResponse, AuthLoginResponse, ComplianceConfigResponse, CurrentUserResponse, CustomerServiceConfigResponse, GuestSessionRequest, GuestSessionResponse, InternalUserListResponse, InternalUserResponse, ManualPointsAdjustRequest, ManualPointsAdjustResponse, ModuleRuntimeConfigResponse, PointsAccountResponse, PointsLedgerEntryResponse, PointsLedgerListResponse, PublicRuntimeConfigResponse, RechargeOrderCreateRequest, RechargeOrderListResponse, RechargeOrderResponse, RechargeOrderReviewRequest, RechargeOrderReviewResponse, RechargePackageListResponse, RechargePackageResponse, ReviewAspectResponse, ReviewAspectUnlockListResponse, ReviewAspectUnlockRequest, ReviewAspectUnlockResponse, ReviewBoardResponse, ReviewCreateRequest, ReviewLabelValueResponse, ReviewListResponse, ReviewRecordResponse, ReviewSummaryResponse, ReviewTextBlockResponse, RuntimeConfigEntryResponse, RuntimeConfigListResponse, RuntimeConfigUpsertRequest, RuntimeModulesConfigResponse, RuntimePointsConfigResponse, RuntimeRechargeConfigResponse, UsageRecordListResponse, UsageRecordResponse, UserProfileUpdateRequest, UserResponse, WeChatLoginRequest
+from .wechat_h5 import STATE_COOKIE_NAME, build_oauth_state, build_wechat_oauth_authorize_url, exchange_h5_oauth_code, h5_oauth_is_configured, is_wechat_browser
+
+PHONE_PATTERN = re.compile(r"^\d{11}$")
+TESTER_PAGE_PATH = Path(__file__).resolve().parent / "static" / "tester.html"
+load_env_file()
+RULES = load_rules()
+PHONE_REVIEW_BASE_SCENE = "phone_review_base"
+PHONE_REVIEW_BASE_REFUND_BIZ_TYPE = "phone_review_base_refund"
+PHONE_REVIEW_ASPECT_UNLOCK_SCENE = "phone_review_aspect_unlock"
+
+app = FastAPI(title=APP_TITLE, version=APP_VERSION)
+app.add_middleware(CORSMiddleware, allow_origins=get_cors_origins(), allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+
+@app.on_event("startup")
+def startup() -> None:
+    ensure_schema()
+
+
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    return FileResponse(TESTER_PAGE_PATH)
+
+
+@app.get("/h5/wechat-openid-test", include_in_schema=False)
+def h5_wechat_openid_test(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    mock_openid: str | None = None,
+    oauth_state: str | None = Cookie(default=None, alias=STATE_COOKIE_NAME),
+):
+    if allow_mock_wechat_login() and mock_openid:
+        return HTMLResponse(_render_h5_openid_page(title="H5 微信 OpenID 测试页", status="mock_success", body=f"当前为 mock 模式，展示的不是微信真实 OpenID。<br><br><code>{html.escape(mock_openid)}</code>", footnote="要验证真实 H5 微信 OpenID，必须使用微信公众号网页授权，并且在微信内打开。"))
+
+    if code:
+        if not state or not oauth_state or state != oauth_state:
+            return HTMLResponse(_render_h5_openid_page(title="H5 微信 OpenID 测试页", status="invalid_state", body="回调 state 校验失败，已拒绝本次 H5 OpenID 提取。请重新打开页面重试。", footnote="这是为了避免错误回调或重复回调。"), status_code=400)
+        try:
+            result = exchange_h5_oauth_code(code)
+        except HTTPException as exc:
+            return HTMLResponse(_render_h5_openid_page(title="H5 微信 OpenID 测试页", status="oauth_exchange_failed", body=f"微信网页授权换取 OpenID 失败：<br><br><code>{html.escape(str(exc.detail))}</code>", footnote="请检查公众号 AppID / Secret、网页授权域名，以及当前页面是否在微信内打开。"), status_code=exc.status_code)
+        response = HTMLResponse(_render_h5_openid_page(title="H5 微信 OpenID 测试页", status="oauth_success", body=f"已成功获取 H5 网页授权 OpenID：<br><br><code>{html.escape(result.openid)}</code>", footnote="注意：这里拿到的是微信公众号 H5 OpenID，不是小程序 OpenID。二者按 AppID 维度区分。"))
+        response.delete_cookie(STATE_COOKIE_NAME)
+        return response
+
+    if not h5_oauth_is_configured():
+        return HTMLResponse(_render_h5_openid_page(title="H5 微信 OpenID 测试页", status="not_configured", body=(
+            "当前服务还没有配置 H5 微信网页授权所需参数，所以这个页面现在无法自动获取真实微信 OpenID。<br><br>"
+            "需要补齐：<br>"
+            "1. 公众号 `AppID`<br>"
+            "2. 公众号 `AppSecret`<br>"
+            "3. `EASEWISE_PUBLIC_BASE_URL`，并使用可访问的正式域名，而不是裸 IP<br>"
+            "4. 微信后台配置 `网页授权域名`"
+        ), footnote="如果你要验证小程序 OpenID，请走小程序 `wx.login -> code2Session`，不要用纯 H5 页面代替。"))
+
+    if not is_wechat_browser(request.headers.get("user-agent")):
+        return HTMLResponse(_render_h5_openid_page(title="H5 微信 OpenID 测试页", status="not_in_wechat", body="当前页面不是在微信内打开，所以无法触发微信公众号网页授权拿 OpenID。", footnote="请把页面链接发到微信里，从微信客户端内打开后再测试。"))
+
+    state_token = build_oauth_state()
+    response = RedirectResponse(build_wechat_oauth_authorize_url(state_token), status_code=302)
+    response.set_cookie(STATE_COOKIE_NAME, state_token, max_age=600, httponly=True, samesite="Lax")
+    return response
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok", "database": str(get_database_path())}
+
+
+@app.post("/api/v1/guest/session", response_model=GuestSessionResponse)
+def create_guest_session(payload: GuestSessionRequest, request: Request) -> GuestSessionResponse:
+    now_text = _utc_now()
+    try:
+        guest_session = upsert_guest_user(
+            channel=payload.channel,
+            guest_key=payload.guest_key,
+            appid=payload.appid,
+            openid=payload.openid,
+            unionid=payload.unionid,
+            initial_points=get_runtime_guest_initial_points(),
+            now_text=now_text,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 409 if detail in {"guest_identity_conflict", "guest_identity_bound_to_registered_user"} else 422
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+
+    access_token = issue_access_token()
+    expires_at = build_session_expiry(now_text)
+    create_session(
+        user_id=str(guest_session["user"]["user_id"]),
+        token_hash=hash_access_token(access_token),
+        device_type=request.headers.get("X-Client-Platform"),
+        client_version=request.headers.get("X-Client-Version"),
+        ip=request.client.host if request.client else None,
+        expires_at=expires_at,
+        now_text=now_text,
+    )
+    return GuestSessionResponse(
+        access_token=access_token,
+        expires_at=expires_at,
+        channel=str(guest_session["channel"]),
+        guest_key=str(guest_session["guest_key"]),
+        user=_build_user_response(guest_session["user"]),
+        points=_build_points_response_from_user(guest_session["user"]),
+    )
+
+
+@app.post("/api/v1/auth/wechat/login", response_model=AuthLoginResponse)
+def login_with_wechat(payload: WeChatLoginRequest, request: Request) -> AuthLoginResponse:
+    exchange = exchange_wechat_code(payload.code)
+    now_text = _utc_now()
+    guest_user: dict[str, object] | None = None
+    if payload.guest_access_token:
+        guest_user = get_session_user_by_token_hash(hash_access_token(payload.guest_access_token), now_text=now_text, ip=request.client.host if request.client else None)
+        if guest_user is None:
+            raise HTTPException(status_code=401, detail="invalid_guest_access_token")
+        if str(guest_user.get("status") or "") != "guest":
+            raise HTTPException(status_code=422, detail="guest_access_token_must_belong_to_guest_user")
+
+    user = upsert_wechat_user(
+        appid=exchange.appid,
+        openid=exchange.openid,
+        unionid=exchange.unionid,
+        session_key=exchange.session_key,
+        nickname=payload.nickname,
+        avatar_url=payload.avatar_url,
+        initial_points=0 if guest_user is not None else get_runtime_initial_points(),
+        now_text=now_text,
+    )
+    if guest_user is not None and str(guest_user["user_id"]) != str(user["user_id"]):
+        merge_guest_user_into_user(guest_user_id=str(guest_user["user_id"]), target_user_id=str(user["user_id"]), now_text=now_text)
+        refreshed_user = get_user(str(user["user_id"]))
+        if refreshed_user is None:
+            raise HTTPException(status_code=500, detail="guest_merge_refresh_failed")
+        user = refreshed_user
+
+    access_token = issue_access_token()
+    expires_at = build_session_expiry(now_text)
+    create_session(user_id=str(user["user_id"]), token_hash=hash_access_token(access_token), device_type=request.headers.get("X-Client-Platform"), client_version=request.headers.get("X-Client-Version"), ip=request.client.host if request.client else None, expires_at=expires_at, now_text=now_text)
+    return AuthLoginResponse(access_token=access_token, expires_at=expires_at, user=_build_user_response(user), points=_build_points_response_from_user(user))
+
+
+@app.get("/api/v1/me", response_model=CurrentUserResponse)
+def get_me(current_user: dict[str, object] = Depends(require_authenticated_user)) -> CurrentUserResponse:
+    return CurrentUserResponse(user=_build_user_response(current_user), points=_build_points_response_from_user(current_user))
+
+
+@app.patch("/api/v1/me/profile", response_model=UserResponse)
+def patch_me_profile(payload: UserProfileUpdateRequest, current_user: dict[str, object] = Depends(require_registered_user)) -> UserResponse:
+    if payload.nickname is None and payload.avatar_url is None:
+        raise HTTPException(status_code=422, detail="nickname_or_avatar_required")
+    updated = update_user_profile(user_id=str(current_user["user_id"]), nickname=payload.nickname, avatar_url=payload.avatar_url, now_text=_utc_now())
+    if updated is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    return _build_user_response(updated)
+
+
+@app.get("/api/v1/me/points", response_model=PointsAccountResponse)
+def get_my_points(current_user: dict[str, object] = Depends(require_authenticated_user)) -> PointsAccountResponse:
+    points_account = get_points_account(str(current_user["user_id"]))
+    if points_account is None:
+        raise HTTPException(status_code=404, detail="points_account_not_found")
+    return _build_points_account_response(points_account)
+
+
+@app.get("/api/v1/me/points/ledger", response_model=PointsLedgerListResponse)
+def get_my_points_ledger(limit: int = Query(default=20, ge=1, le=100), current_user: dict[str, object] = Depends(require_authenticated_user)) -> PointsLedgerListResponse:
+    items = [_build_points_ledger_entry_response(item) for item in list_points_ledger(str(current_user["user_id"]), limit)]
+    return PointsLedgerListResponse(items=items)
+
+
+@app.get("/api/v1/recharge/packages", response_model=RechargePackageListResponse)
+def get_recharge_packages(request: Request, _: dict[str, object] = Depends(require_registered_user)) -> RechargePackageListResponse:
+    items = [_build_recharge_package_response(item) for item in get_runtime_available_recharge_packages(_resolve_request_channel(request))]
+    return RechargePackageListResponse(items=items)
+
+
+@app.post("/api/v1/recharge/orders", response_model=RechargeOrderResponse)
+def create_recharge_order_record(request: Request, payload: RechargeOrderCreateRequest, current_user: dict[str, object] = Depends(require_registered_user)) -> RechargeOrderResponse:
+    channel_key = _resolve_request_channel(request)
+    package = _find_available_recharge_package(package_key=payload.package_key, channel_key=channel_key)
+    if package is None:
+        raise HTTPException(status_code=404, detail="recharge_package_not_found")
+    try:
+        order = create_recharge_order(
+            order_id=uuid4().hex,
+            user_id=str(current_user["user_id"]),
+            channel=channel_key,
+            package_key=str(package["package_key"]),
+            package_title=str(package["title"]),
+            amount_cents=int(package["price_cents"]),
+            points_amount=int(package["points_amount"]),
+            bonus_points=int(package["bonus_points"]),
+            source=payload.source,
+            external_order_id=payload.external_order_id,
+            idempotency_key=payload.idempotency_key,
+            proof_url=payload.proof_url,
+            remark=payload.remark,
+            created_at=_utc_now(),
+        )
+    except ValueError as exc:
+        if str(exc) == "recharge_order_external_order_conflict":
+            raise HTTPException(status_code=409, detail="recharge_order_external_order_conflict") from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _build_recharge_order_response(order)
+
+
+@app.get("/api/v1/recharge/orders", response_model=RechargeOrderListResponse)
+def get_my_recharge_orders(
+    limit: int = Query(default=20, ge=1, le=100),
+    status: str | None = Query(default=None, max_length=32),
+    current_user: dict[str, object] = Depends(require_registered_user),
+) -> RechargeOrderListResponse:
+    items = [
+        _build_recharge_order_response(item)
+        for item in list_recharge_orders(limit=limit, user_id=str(current_user["user_id"]), status=status)
+    ]
+    return RechargeOrderListResponse(items=items)
+
+
+@app.get("/api/v1/recharge/orders/{order_id}", response_model=RechargeOrderResponse)
+def get_my_recharge_order_detail(order_id: str, current_user: dict[str, object] = Depends(require_registered_user)) -> RechargeOrderResponse:
+    return _build_recharge_order_response(_require_owned_recharge_order(order_id, current_user_id=str(current_user["user_id"])))
+
+
+@app.get("/api/v1/almanac/today", response_model=AlmanacResponse)
+def get_today_almanac() -> AlmanacResponse:
+    return AlmanacResponse(**build_today_almanac().to_dict())
+
+
+@app.get("/api/v1/almanac", response_model=AlmanacResponse)
+def get_almanac_by_date(date_text: str = Query(alias="date", description="YYYY-MM-DD")) -> AlmanacResponse:
+    try:
+        target_date = date.fromisoformat(date_text)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="date_must_be_yyyy_mm_dd") from exc
+    return AlmanacResponse(**build_almanac_for_date(target_date).to_dict())
+
+
+@app.get("/api/v1/runtime-config/public", response_model=PublicRuntimeConfigResponse)
+def get_public_runtime_config(channel: str | None = Query(default=None, max_length=128)) -> PublicRuntimeConfigResponse:
+    payload = resolve_public_runtime_config(channel)
+    return PublicRuntimeConfigResponse(
+        channel=payload["channel"],
+        points=RuntimePointsConfigResponse(**payload["points"]),
+        recharge=RuntimeRechargeConfigResponse(packages=[_build_recharge_package_response(item) for item in payload["recharge"]["packages"]]),
+        customer_service=CustomerServiceConfigResponse(**payload["customer_service"]),
+        compliance=ComplianceConfigResponse(**payload["compliance"]),
+        modules=RuntimeModulesConfigResponse(
+            phone_review=ModuleRuntimeConfigResponse(**payload["modules"]["phone_review"]),
+            agent=ModuleRuntimeConfigResponse(**payload["modules"]["agent"]),
+            almanac=ModuleRuntimeConfigResponse(**payload["modules"]["almanac"]),
+        ),
+    )
+
+
+@app.get("/api/v1/internal/runtime-config", response_model=RuntimeConfigListResponse)
+def get_internal_runtime_config(
+    scope_type: str | None = Query(default=None, max_length=32),
+    scope_key: str | None = Query(default=None, max_length=128),
+    _: None = Depends(require_internal_admin_access),
+) -> RuntimeConfigListResponse:
+    try:
+        normalized_scope_type = normalize_scope_type(scope_type) if scope_type else None
+        normalized_scope_key = normalize_scope_key(scope_key) if scope_key else None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    items = [RuntimeConfigEntryResponse(**item) for item in list_runtime_config_entries(scope_type=normalized_scope_type, scope_key=normalized_scope_key)]
+    return RuntimeConfigListResponse(items=items)
+
+
+@app.put("/api/v1/internal/runtime-config", response_model=RuntimeConfigListResponse)
+def put_internal_runtime_config(payload: RuntimeConfigUpsertRequest, _: None = Depends(require_internal_admin_access)) -> RuntimeConfigListResponse:
+    updated_at = _utc_now()
+    items: list[RuntimeConfigEntryResponse] = []
+    for entry in payload.entries:
+        try:
+            saved_entry = upsert_runtime_config_entry(
+                scope_type=normalize_scope_type(entry.scope_type),
+                scope_key=normalize_scope_key(entry.scope_key),
+                config_key=normalize_config_key(entry.config_key),
+                value=entry.value,
+                updated_at=updated_at,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        items.append(RuntimeConfigEntryResponse(**saved_entry))
+    return RuntimeConfigListResponse(items=items)
+
+
+@app.get("/api/v1/internal/users", response_model=InternalUserListResponse)
+def get_internal_users(
+    limit: int = Query(default=20, ge=1, le=100),
+    query: str | None = Query(default=None, max_length=128),
+    _: None = Depends(require_internal_admin_access),
+) -> InternalUserListResponse:
+    items = [_build_internal_user_response(item) for item in list_users(limit=limit, query=query)]
+    return InternalUserListResponse(items=items)
+
+
+@app.get("/api/v1/internal/users/{user_id}", response_model=InternalUserResponse)
+def get_internal_user_detail(user_id: str, _: None = Depends(require_internal_admin_access)) -> InternalUserResponse:
+    user = get_internal_user(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    return _build_internal_user_response(user)
+
+
+@app.get("/api/v1/internal/users/{user_id}/points/ledger", response_model=PointsLedgerListResponse)
+def get_internal_user_points_ledger(
+    user_id: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    _: None = Depends(require_internal_admin_access),
+) -> PointsLedgerListResponse:
+    user = get_user(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    items = [_build_points_ledger_entry_response(item) for item in list_points_ledger(user_id, limit)]
+    return PointsLedgerListResponse(items=items)
+
+
+@app.post("/api/v1/internal/users/{user_id}/points/adjust", response_model=ManualPointsAdjustResponse)
+def post_internal_user_points_adjust(
+    user_id: str,
+    payload: ManualPointsAdjustRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> ManualPointsAdjustResponse:
+    user = get_user(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    if payload.delta == 0:
+        raise HTTPException(status_code=422, detail="delta_must_not_be_zero")
+    try:
+        ledger = adjust_points(
+            user_id=user_id,
+            delta=payload.delta,
+            biz_type=payload.biz_type,
+            biz_id=payload.biz_id,
+            idempotency_key=payload.idempotency_key,
+            remark=payload.remark,
+            now_text=_utc_now(),
+        )
+    except InsufficientPointsError as exc:
+        raise HTTPException(status_code=402, detail="insufficient_points") from exc
+    if ledger is None:
+        raise HTTPException(status_code=500, detail="points_adjust_failed")
+    refreshed_user = get_internal_user(user_id)
+    points_account = get_points_account(user_id)
+    if refreshed_user is None or points_account is None:
+        raise HTTPException(status_code=500, detail="points_adjust_failed")
+    return ManualPointsAdjustResponse(
+        user=_build_internal_user_response(refreshed_user),
+        points=_build_points_account_response(points_account),
+        ledger=_build_points_ledger_entry_response(ledger),
+    )
+
+
+@app.get("/api/v1/internal/usage-records", response_model=UsageRecordListResponse)
+def get_internal_usage_records(
+    limit: int = Query(default=20, ge=1, le=100),
+    user_id: str | None = Query(default=None, max_length=64),
+    scene: str | None = Query(default=None, max_length=128),
+    status: str | None = Query(default=None, max_length=32),
+    _: None = Depends(require_internal_admin_access),
+) -> UsageRecordListResponse:
+    items = [
+        _build_usage_record_response(item)
+        for item in list_usage_records(limit=limit, user_id=user_id, scene=scene, status=status)
+    ]
+    return UsageRecordListResponse(items=items)
+
+
+@app.get("/api/v1/internal/recharge-orders", response_model=RechargeOrderListResponse)
+def get_internal_recharge_orders(
+    limit: int = Query(default=20, ge=1, le=100),
+    user_id: str | None = Query(default=None, max_length=64),
+    status: str | None = Query(default=None, max_length=32),
+    source: str | None = Query(default=None, max_length=64),
+    channel: str | None = Query(default=None, max_length=64),
+    _: None = Depends(require_internal_admin_access),
+) -> RechargeOrderListResponse:
+    items = [
+        _build_recharge_order_response(item)
+        for item in list_recharge_orders(limit=limit, user_id=user_id, status=status, source=source, channel=channel)
+    ]
+    return RechargeOrderListResponse(items=items)
+
+
+@app.get("/api/v1/internal/recharge-orders/{order_id}", response_model=RechargeOrderResponse)
+def get_internal_recharge_order_detail(order_id: str, _: None = Depends(require_internal_admin_access)) -> RechargeOrderResponse:
+    order = get_recharge_order(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="recharge_order_not_found")
+    return _build_recharge_order_response(order)
+
+
+@app.post("/api/v1/internal/recharge-orders/{order_id}/review", response_model=RechargeOrderReviewResponse)
+def post_internal_recharge_order_review(
+    order_id: str,
+    payload: RechargeOrderReviewRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> RechargeOrderReviewResponse:
+    try:
+        order, ledger = review_recharge_order(
+            order_id=order_id,
+            action=payload.action,
+            review_note=payload.review_note,
+            reviewed_by="internal_admin",
+            now_text=_utc_now(),
+        )
+    except RuntimeError as exc:
+        if str(exc) == "recharge_order_not_found":
+            raise HTTPException(status_code=404, detail="recharge_order_not_found") from exc
+        raise HTTPException(status_code=500, detail="recharge_order_review_failed") from exc
+    except ValueError as exc:
+        if str(exc) == "recharge_order_already_reviewed":
+            raise HTTPException(status_code=409, detail="recharge_order_already_reviewed") from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    points_account = get_points_account(str(order["user_id"]))
+    if points_account is None:
+        raise HTTPException(status_code=500, detail="recharge_order_review_failed")
+
+    return RechargeOrderReviewResponse(
+        order=_build_recharge_order_response(order),
+        points=_build_points_account_response(points_account),
+        ledger=_build_points_ledger_entry_response(ledger) if ledger is not None else None,
+    )
+
+
+@app.post("/api/v1/agent/reply", response_model=AgentReplyResponse)
+def create_agent_reply(request: Request, payload: AgentReplyRequest, current_user: dict[str, object] = Depends(require_registered_user)) -> AgentReplyResponse:
+    _ensure_module_available(module_key="agent", request=request)
+    reply_payload = build_agent_reply(message=payload.message, history=[item.model_dump() for item in payload.history], user_id=str(current_user["user_id"]))
+    return AgentReplyResponse(**reply_payload)
+
+
+@app.post("/api/v1/reviews", response_model=ReviewRecordResponse)
+def create_review_record(request: Request, background_tasks: BackgroundTasks, payload: ReviewCreateRequest, current_user: dict[str, object] | None = Depends(resolve_authenticated_user)) -> ReviewRecordResponse:
+    _ensure_module_available(module_key="phone_review", request=request)
+    normalized_phone = _normalize_phone(payload.phone)
+    review_id = uuid4().hex
+    created_at = _utc_now()
+    user_id = str(current_user["user_id"]) if current_user else None
+    channel_key = _resolve_request_channel(request)
+    points_cost = get_runtime_phone_review_base_points_cost(channel_key) if user_id else 0
+    try:
+        create_review_with_charge(
+            review_id=review_id,
+            user_id=user_id,
+            phone=normalized_phone,
+            gender=payload.gender,
+            status="processing",
+            created_at=created_at,
+            progress_stage="queued",
+            progress_message="评测任务已创建，等待开始",
+            points_cost=points_cost,
+            usage_scene=PHONE_REVIEW_BASE_SCENE,
+            request_payload_summary={"phone": normalized_phone, "gender": payload.gender, "include_markdown": payload.include_markdown} if user_id and points_cost > 0 else None,
+        )
+    except InsufficientPointsError as exc:
+        raise HTTPException(status_code=402, detail="insufficient_points") from exc
+    background_tasks.add_task(
+        _run_review_generation,
+        review_id=review_id,
+        phone=normalized_phone,
+        gender=payload.gender,
+        include_markdown=payload.include_markdown,
+        user_id=user_id,
+        points_cost=points_cost,
+    )
+    review = get_review(review_id)
+    if review is None:
+        raise HTTPException(status_code=500, detail="review_persistence_failed")
+    return _build_review_record_response(
+        review,
+        channel_key=channel_key,
+        current_user_id=str(current_user["user_id"]) if current_user else None,
+    )
+
+
+@app.get("/api/v1/reviews", response_model=ReviewListResponse)
+def list_review_records(limit: int = Query(default=20, ge=1, le=100), current_user: dict[str, object] = Depends(require_authenticated_user)) -> ReviewListResponse:
+    items = [_build_review_summary_response(item) for item in list_reviews(limit, user_id=str(current_user["user_id"]))]
+    return ReviewListResponse(items=items)
+
+
+@app.get("/api/v1/reviews/{review_id}", response_model=ReviewRecordResponse)
+def get_review_record(request: Request, review_id: str, current_user: dict[str, object] | None = Depends(resolve_authenticated_user)) -> ReviewRecordResponse:
+    review = get_review(review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="review_not_found")
+    review_user_id = str(review.get("user_id") or "")
+    current_user_id = str(current_user["user_id"]) if current_user else ""
+    if review_user_id and review_user_id != current_user_id:
+        raise HTTPException(status_code=404, detail="review_not_found")
+    return _build_review_record_response(review, channel_key=_resolve_request_channel(request), current_user_id=current_user_id or None)
+
+
+@app.get("/api/v1/reviews/{review_id}/aspect-unlocks", response_model=ReviewAspectUnlockListResponse)
+def get_review_aspect_unlock_status(
+    review_id: str,
+    request: Request,
+    current_user: dict[str, object] = Depends(require_authenticated_user),
+) -> ReviewAspectUnlockListResponse:
+    _ensure_module_available(module_key="phone_review", request=request)
+    channel_key = _resolve_request_channel(request)
+    review = _require_owned_review(review_id, current_user_id=str(current_user["user_id"]))
+    available_aspect_keys = _resolve_review_aspect_keys(review, channel_key=channel_key)
+    unlocked_items = [
+        _build_review_aspect_unlock_response(item)
+        for item in list_review_aspect_unlocks(review_id=review_id, user_id=str(current_user["user_id"]))
+    ]
+    unlocked_key_set = {item.aspect_key for item in unlocked_items}
+    public_view = _resolve_review_public_view(review, current_user_id=str(current_user["user_id"]), channel_key=channel_key)
+    return ReviewAspectUnlockListResponse(
+        items=unlocked_items,
+        available_aspect_keys=available_aspect_keys,
+        free_aspect_keys=_resolve_review_free_aspect_keys(available_aspect_keys, channel_key=channel_key),
+        unlocked_aspect_keys=[item for item in available_aspect_keys if item in unlocked_key_set],
+        aspect_unlock_points_cost=get_runtime_phone_review_aspect_unlock_points_cost(channel_key),
+        unlock_enforcement_enabled=get_runtime_phone_review_unlock_enforcement_enabled(channel_key),
+        aspects=_build_review_aspect_models(public_view),
+    )
+
+
+@app.post("/api/v1/reviews/{review_id}/aspect-unlocks", response_model=ReviewAspectUnlockResponse)
+def create_review_aspect_unlock_record(
+    review_id: str,
+    payload: ReviewAspectUnlockRequest,
+    request: Request,
+    current_user: dict[str, object] = Depends(require_authenticated_user),
+) -> ReviewAspectUnlockResponse:
+    _ensure_module_available(module_key="phone_review", request=request)
+    current_user_id = str(current_user["user_id"])
+    review = _require_owned_review(review_id, current_user_id=current_user_id)
+    channel_key = _resolve_request_channel(request)
+    available_aspect_keys = _resolve_review_aspect_keys(review, channel_key=channel_key)
+    normalized_aspect_key = payload.aspect_key.strip().lower()
+    if normalized_aspect_key not in available_aspect_keys:
+        raise HTTPException(status_code=422, detail="invalid_aspect_key")
+    free_aspect_keys = _resolve_review_free_aspect_keys(available_aspect_keys, channel_key=channel_key)
+    points_cost = 0 if normalized_aspect_key in free_aspect_keys else get_runtime_phone_review_aspect_unlock_points_cost(channel_key)
+    try:
+        unlock = create_review_aspect_unlock(
+            review_id=review_id,
+            user_id=current_user_id,
+            aspect_key=normalized_aspect_key,
+            points_cost=points_cost,
+            usage_scene=PHONE_REVIEW_ASPECT_UNLOCK_SCENE,
+            request_payload_summary={"aspect_key": normalized_aspect_key, "phone": review["phone"]},
+            now_text=_utc_now(),
+        )
+    except InsufficientPointsError as exc:
+        raise HTTPException(status_code=402, detail="insufficient_points") from exc
+    public_view = _resolve_review_public_view(review, current_user_id=current_user_id, channel_key=channel_key)
+    aspect_map = {item.aspect_id: item for item in _build_review_aspect_models(public_view)}
+    points_account = get_points_account(current_user_id)
+    return _build_review_aspect_unlock_response(
+        unlock,
+        points=_build_points_account_response(points_account) if points_account is not None else None,
+        aspect=aspect_map.get(normalized_aspect_key),
+    )
+
+
+@app.get("/api/v1/users/{user_id}", response_model=UserResponse, include_in_schema=False)
+def get_user_debug(user_id: str) -> UserResponse:
+    user = get_user(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    return _build_user_response(user)
+
+
+
+def _build_review_record_response(
+    review: dict[str, object],
+    *,
+    channel_key: str | None = None,
+    current_user_id: str | None = None,
+) -> ReviewRecordResponse:
+    public_view = _resolve_review_public_view(review, current_user_id=current_user_id, channel_key=channel_key)
+    return ReviewRecordResponse(
+        id=str(review["id"]),
+        report_id=str(review["id"]),
+        phone=str(review["phone"]),
+        phone_number=str(review["phone"]),
+        masked_phone=_mask_phone(str(review["phone"])),
+        gender=str(review["gender"]),
+        status=str(review["status"]),
+        progress_stage=review.get("progress_stage"),
+        progress_message=review.get("progress_message"),
+        score=_coerce_review_score(review, public_view),
+        summary=_build_review_text_block(public_view.get("summary") if public_view else None),
+        board=_build_review_board_response(public_view.get("board") if public_view else None),
+        board_analysis=_build_review_text_block(public_view.get("board_analysis") if public_view else None),
+        stability_judgement=_build_review_label_value(public_view.get("stability_judgement") if public_view else None),
+        long_term_advice=list(public_view.get("long_term_advice") or []) if public_view else [],
+        aspects=_build_review_aspect_models(public_view),
+        aspect_unlock_points=int(public_view.get("aspect_unlock_points")) if public_view and public_view.get("aspect_unlock_points") is not None else None,
+        free_aspect_keys=list(public_view.get("free_aspect_keys") or []) if public_view else [],
+        unlock_enforcement_enabled=bool(public_view.get("unlock_enforcement_enabled")) if public_view and public_view.get("unlock_enforcement_enabled") is not None else None,
+        score_result=review.get("score_result"),
+        score_template=review.get("score_template"),
+        score_markdown=review.get("score_markdown"),
+        error_message=review.get("error_message"),
+        created_at=str(review["created_at"]),
+        updated_at=str(review["updated_at"]),
+    )
+
+
+def _build_review_summary_response(review: dict[str, object]) -> ReviewSummaryResponse:
+    return ReviewSummaryResponse(
+        id=str(review["id"]),
+        report_id=str(review["id"]),
+        phone=str(review["phone"]),
+        phone_number=str(review["phone"]),
+        masked_phone=_mask_phone(str(review["phone"])),
+        gender=str(review["gender"]),
+        status=str(review["status"]),
+        progress_stage=review.get("progress_stage"),
+        progress_message=review.get("progress_message"),
+        score=_coerce_review_score(review),
+        error_message=review.get("error_message"),
+        created_at=str(review["created_at"]),
+        updated_at=str(review["updated_at"]),
+    )
+
+
+
+def _build_user_response(user: dict[str, object]) -> UserResponse:
+    return UserResponse(user_id=str(user["user_id"]), status=str(user["status"]), nickname=user.get("nickname"), avatar_url=user.get("avatar_url"), profile_completed=bool(user["profile_completed"]), created_at=str(user["created_at"]), updated_at=str(user["updated_at"]), last_active_at=str(user["last_active_at"]))
+
+
+
+def _build_internal_user_response(user: dict[str, object]) -> InternalUserResponse:
+    return InternalUserResponse(
+        user_id=str(user["user_id"]),
+        status=str(user["status"]),
+        nickname=user.get("nickname"),
+        avatar_url=user.get("avatar_url"),
+        profile_completed=bool(user["profile_completed"]),
+        points_balance=int(user.get("points_balance", 0) or 0),
+        frozen_balance=int(user.get("frozen_balance", 0) or 0),
+        created_at=str(user["created_at"]),
+        updated_at=str(user["updated_at"]),
+        last_active_at=str(user["last_active_at"]),
+        openid=user.get("openid"),
+        unionid=user.get("unionid"),
+        guest_channel=user.get("guest_channel"),
+        guest_key=user.get("guest_key"),
+        guest_appid=user.get("guest_appid"),
+        guest_openid=user.get("guest_openid"),
+        guest_unionid=user.get("guest_unionid"),
+    )
+
+
+
+def _build_points_account_response(points_account: dict[str, object]) -> PointsAccountResponse:
+    return PointsAccountResponse(
+        balance=int(points_account["balance"]),
+        frozen_balance=int(points_account["frozen_balance"]),
+        created_at=str(points_account["created_at"]) if points_account.get("created_at") else None,
+        updated_at=str(points_account["updated_at"]) if points_account.get("updated_at") else None,
+    )
+
+
+
+def _build_points_response_from_user(user: dict[str, object]) -> PointsAccountResponse:
+    return PointsAccountResponse(balance=int(user.get("points_balance", 0) or 0), frozen_balance=int(user.get("frozen_balance", 0) or 0), created_at=None, updated_at=None)
+
+
+
+def _build_points_ledger_entry_response(item: dict[str, object]) -> PointsLedgerEntryResponse:
+    return PointsLedgerEntryResponse(
+        ledger_id=str(item["ledger_id"]),
+        change_type=str(item["change_type"]),
+        delta=int(item["delta"]),
+        balance_after=int(item["balance_after"]),
+        biz_type=str(item["biz_type"]),
+        biz_id=item.get("biz_id"),
+        idempotency_key=item.get("idempotency_key"),
+        remark=item.get("remark"),
+        created_at=str(item["created_at"]),
+    )
+
+
+def _build_recharge_package_response(item: dict[str, object]) -> RechargePackageResponse:
+    return RechargePackageResponse(
+        package_key=str(item["package_key"]),
+        title=str(item["title"]),
+        description=item.get("description"),
+        price_cents=int(item["price_cents"]),
+        points_amount=int(item["points_amount"]),
+        bonus_points=int(item["bonus_points"]),
+        total_points=int(item["total_points"]),
+        enabled=bool(item.get("enabled", True)),
+        sort_order=int(item.get("sort_order", 0) or 0),
+    )
+
+
+
+def _build_recharge_order_response(item: dict[str, object]) -> RechargeOrderResponse:
+    return RechargeOrderResponse(
+        order_id=str(item["order_id"]),
+        user_id=str(item["user_id"]),
+        user_status=str(item["user_status"]) if item.get("user_status") else None,
+        user_nickname=item.get("user_nickname"),
+        channel=str(item["channel"]) if item.get("channel") else None,
+        status=str(item["status"]),
+        package_key=str(item["package_key"]),
+        package_title=str(item["package_title"]),
+        amount_cents=int(item["amount_cents"]),
+        points_amount=int(item["points_amount"]),
+        bonus_points=int(item["bonus_points"]),
+        total_points=int(item["total_points"]),
+        source=str(item["source"]),
+        external_order_id=str(item["external_order_id"]) if item.get("external_order_id") else None,
+        proof_url=str(item["proof_url"]) if item.get("proof_url") else None,
+        remark=item.get("remark"),
+        review_note=item.get("review_note"),
+        reviewed_by=str(item["reviewed_by"]) if item.get("reviewed_by") else None,
+        reviewed_at=str(item["reviewed_at"]) if item.get("reviewed_at") else None,
+        granted_ledger_id=str(item["granted_ledger_id"]) if item.get("granted_ledger_id") else None,
+        created_at=str(item["created_at"]),
+        updated_at=str(item["updated_at"]),
+    )
+
+
+
+def _build_usage_record_response(item: dict[str, object]) -> UsageRecordResponse:
+    return UsageRecordResponse(
+        usage_record_id=str(item["usage_record_id"]),
+        user_id=str(item["user_id"]),
+        scene=str(item["scene"]),
+        target_id=str(item["target_id"]) if item.get("target_id") else None,
+        points_cost=int(item["points_cost"]),
+        status=str(item["status"]),
+        request_payload_summary=item.get("request_payload_summary"),
+        result_summary=item.get("result_summary"),
+        created_at=str(item["created_at"]),
+        updated_at=str(item["updated_at"]),
+    )
+
+
+
+def _build_review_aspect_unlock_response(
+    item: dict[str, object],
+    *,
+    points: PointsAccountResponse | None = None,
+    aspect: ReviewAspectResponse | None = None,
+) -> ReviewAspectUnlockResponse:
+    return ReviewAspectUnlockResponse(
+        unlock_id=str(item["unlock_id"]),
+        review_id=str(item["review_id"]),
+        user_id=str(item["user_id"]),
+        aspect_key=str(item["aspect_key"]),
+        points_cost=int(item["points_cost"]),
+        usage_record_id=str(item["usage_record_id"]),
+        unlocked_at=str(item["unlocked_at"]),
+        points=points,
+        aspect=aspect,
+    )
+
+
+def _resolve_review_public_view(
+    review: dict[str, object],
+    *,
+    current_user_id: str | None,
+    channel_key: str | None,
+) -> dict[str, Any] | None:
+    score_template = review.get("score_template")
+    if not isinstance(score_template, dict):
+        return None
+
+    base_view = score_template.get("product_view")
+    if not isinstance(base_view, dict) or _review_product_view_needs_refresh(base_view):
+        score_result = review.get("score_result")
+        if not isinstance(score_result, dict):
+            return None
+        base_view = build_phone_review_product_view(score_result, score_template)
+
+    public_view = dict(base_view)
+    aspects = [dict(item) for item in public_view.get("aspects", []) if isinstance(item, dict)]
+    configured_order = get_runtime_phone_review_aspect_order(channel_key)
+    available_aspect_keys = [str(item.get("aspect_id") or "").strip() for item in aspects if str(item.get("aspect_id") or "").strip()]
+    ordered_aspect_keys = [item for item in configured_order if item in available_aspect_keys]
+    for item in available_aspect_keys:
+        if item not in ordered_aspect_keys:
+            ordered_aspect_keys.append(item)
+
+    aspect_map = {str(item.get("aspect_id")): item for item in aspects}
+    free_aspect_keys = _resolve_review_free_aspect_keys(ordered_aspect_keys, channel_key=channel_key)
+    unlock_enforcement_enabled = get_runtime_phone_review_unlock_enforcement_enabled(channel_key)
+    unlocked_key_set = set(ordered_aspect_keys if not unlock_enforcement_enabled else free_aspect_keys)
+    review_user_id = str(review.get("user_id") or "")
+
+    if current_user_id and review_user_id and current_user_id == review_user_id:
+        unlocked_items = list_review_aspect_unlocks(review_id=str(review["id"]), user_id=current_user_id)
+        unlocked_key_set.update(str(item["aspect_key"]) for item in unlocked_items)
+
+    ordered_aspects: list[dict[str, Any]] = []
+    unlock_points_cost = get_runtime_phone_review_aspect_unlock_points_cost(channel_key)
+    for aspect_key in ordered_aspect_keys:
+        aspect = dict(aspect_map[aspect_key])
+        is_unlocked = aspect_key in unlocked_key_set
+        aspect["is_unlocked"] = is_unlocked
+        aspect["unlock_points"] = 0 if aspect_key in free_aspect_keys else unlock_points_cost
+        if unlock_enforcement_enabled and not is_unlocked:
+            aspect["score"] = None
+            aspect["level"] = None
+            aspect["level_text"] = None
+            aspect["core_judge"] = None
+            aspect["explain"] = None
+            aspect["signal"] = None
+            aspect["suggestion"] = None
+        ordered_aspects.append(aspect)
+
+    public_view["aspects"] = ordered_aspects
+    public_view["aspect_order"] = ordered_aspect_keys
+    public_view["free_aspect_keys"] = free_aspect_keys
+    public_view["aspect_unlock_points"] = unlock_points_cost
+    public_view["unlock_enforcement_enabled"] = unlock_enforcement_enabled
+    return public_view
+
+
+def _build_review_text_block(payload: Any) -> ReviewTextBlockResponse | None:
+    if not isinstance(payload, dict):
+        return None
+    title = str(payload.get("title") or "").strip()
+    content = str(payload.get("content") or "").strip()
+    if not title and not content:
+        return None
+    return ReviewTextBlockResponse(title=title, content=content)
+
+
+def _build_review_label_value(payload: Any) -> ReviewLabelValueResponse | None:
+    if not isinstance(payload, dict):
+        return None
+    label = str(payload.get("label") or "").strip()
+    value = str(payload.get("value") or "").strip()
+    if not label and not value:
+        return None
+    return ReviewLabelValueResponse(label=label, value=value)
+
+
+def _build_review_board_response(payload: Any) -> ReviewBoardResponse | None:
+    if not isinstance(payload, dict):
+        return None
+    if not isinstance(payload.get("grid_cells"), list):
+        return None
+    try:
+        return ReviewBoardResponse(**payload)
+    except Exception:
+        return None
+
+
+def _review_product_view_needs_refresh(payload: dict[str, Any]) -> bool:
+    board = payload.get("board")
+    if not isinstance(board, dict):
+        return True
+    if not isinstance(board.get("grid_cells"), list):
+        if isinstance(board.get("cells"), list):
+            return True
+        return True
+    aspects = payload.get("aspects")
+    if isinstance(aspects, list):
+        for item in aspects:
+            if not isinstance(item, dict):
+                continue
+            if item.get("score") is None:
+                return True
+        return False
+    if isinstance(board.get("cells"), list):
+        return True
+    return True
+
+
+def _build_review_aspect_models(public_view: dict[str, Any] | None) -> list[ReviewAspectResponse]:
+    if not isinstance(public_view, dict):
+        return []
+    items = public_view.get("aspects")
+    if not isinstance(items, list):
+        return []
+    return [ReviewAspectResponse(**item) for item in items if isinstance(item, dict)]
+
+
+def _coerce_review_score(review: dict[str, object], public_view: dict[str, Any] | None = None) -> int | None:
+    if isinstance(public_view, dict) and public_view.get("score") is not None:
+        return int(public_view["score"])
+    score_template = review.get("score_template")
+    if not isinstance(score_template, dict):
+        return None
+    score_summary = score_template.get("score_summary")
+    if not isinstance(score_summary, dict) or score_summary.get("final_score") is None:
+        return None
+    return int(score_summary["final_score"])
+
+
+
+def _require_owned_recharge_order(order_id: str, *, current_user_id: str) -> dict[str, object]:
+    order = get_recharge_order(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="recharge_order_not_found")
+    if str(order.get("user_id") or "") != current_user_id:
+        raise HTTPException(status_code=404, detail="recharge_order_not_found")
+    return order
+
+
+
+def _find_available_recharge_package(*, package_key: str, channel_key: str | None) -> dict[str, object] | None:
+    normalized_package_key = package_key.strip()
+    if not normalized_package_key:
+        return None
+    for item in get_runtime_available_recharge_packages(channel_key):
+        if str(item.get("package_key") or "") == normalized_package_key:
+            return item
+    return None
+
+
+
+def _require_owned_review(review_id: str, *, current_user_id: str) -> dict[str, object]:
+    review = get_review(review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="review_not_found")
+    review_user_id = str(review.get("user_id") or "")
+    if not review_user_id or review_user_id != current_user_id:
+        raise HTTPException(status_code=404, detail="review_not_found")
+    if str(review.get("status")) != "completed" or not isinstance(review.get("score_template"), dict):
+        raise HTTPException(status_code=409, detail="review_not_ready_for_unlock")
+    return review
+
+
+
+def _resolve_review_aspect_keys(review: dict[str, object], *, channel_key: str | None) -> list[str]:
+    configured_order = get_runtime_phone_review_aspect_order(channel_key)
+    outline_keys: list[str] = []
+    score_template = review.get("score_template")
+    product_view = score_template.get("product_view") if isinstance(score_template, dict) else None
+    if isinstance(product_view, dict) and isinstance(product_view.get("aspects"), list):
+        for item in product_view["aspects"]:
+            if not isinstance(item, dict):
+                continue
+            normalized_key = str(item.get("aspect_id") or "").strip().lower()
+            if normalized_key and normalized_key not in outline_keys:
+                outline_keys.append(normalized_key)
+    review_outline = score_template.get("review_outline") if isinstance(score_template, dict) else None
+    if isinstance(review_outline, list):
+        for item in review_outline:
+            if not isinstance(item, dict):
+                continue
+            normalized_key = str(item.get("key") or "").strip().lower()
+            if normalized_key and normalized_key not in outline_keys:
+                outline_keys.append(normalized_key)
+    if not outline_keys:
+        return configured_order
+    ordered_keys = [item for item in configured_order if item in outline_keys]
+    for item in outline_keys:
+        if item not in ordered_keys:
+            ordered_keys.append(item)
+    return ordered_keys
+
+
+
+def _resolve_review_free_aspect_keys(available_aspect_keys: list[str], *, channel_key: str | None) -> list[str]:
+    available_key_set = set(available_aspect_keys)
+    return [item for item in get_runtime_phone_review_free_aspect_keys(channel_key) if item in available_key_set]
+
+
+
+def _run_review_generation(*, review_id: str, phone: str, gender: str, include_markdown: bool, user_id: str | None = None, points_cost: int = 0) -> None:
+    try:
+        update_review_progress(review_id=review_id, progress_stage="scoring", progress_message="正在计算基础盘面", updated_at=_utc_now())
+        result = score_phone(phone, gender, RULES)
+
+        update_review_progress(review_id=review_id, progress_stage="rendering", progress_message="正在生成产品解读", updated_at=_utc_now())
+        bundle = build_scoring_bundle(result, include_markdown=include_markdown)
+        bundle["score_template"]["product_render"] = build_product_review_render(bundle)
+        bundle["score_template"]["product_view"] = build_phone_review_product_view(bundle["score_result"], bundle["score_template"])
+
+        update_review_progress(review_id=review_id, progress_stage="finalizing", progress_message="正在整理最终结果", updated_at=_utc_now())
+        complete_review(
+            review_id=review_id,
+            status="completed",
+            score_result=bundle["score_result"],
+            score_template=bundle["score_template"],
+            score_markdown=bundle.get("score_markdown"),
+            updated_at=_utc_now(),
+        )
+    except Exception as exc:
+        fail_review(review_id=review_id, error_message=str(exc), updated_at=_utc_now())
+        if user_id and points_cost > 0:
+            refund_points(
+                user_id=user_id,
+                points_amount=points_cost,
+                biz_type=PHONE_REVIEW_BASE_REFUND_BIZ_TYPE,
+                biz_id=review_id,
+                idempotency_key=f"review:refund:{review_id}",
+                remark="phone_review_base_refund",
+                now_text=_utc_now(),
+            )
+            fail_usage_record(usage_record_id=review_id, result_summary={"status": "failed", "error_message": str(exc)}, updated_at=_utc_now())
+        return
+
+    if user_id and points_cost > 0:
+        complete_usage_record(usage_record_id=review_id, result_summary={"status": "completed"}, updated_at=_utc_now())
+
+
+
+def _normalize_phone(phone: str) -> str:
+    normalized_phone = "".join(character for character in phone if character.isdigit())
+    if not PHONE_PATTERN.fullmatch(normalized_phone):
+        raise HTTPException(status_code=422, detail="phone_must_be_11_digits")
+    return normalized_phone
+
+
+
+def _mask_phone(phone: str) -> str:
+    if len(phone) < 7:
+        return phone
+    return f"{phone[:3]}****{phone[-4:]}"
+
+
+def _resolve_request_channel(request: Request) -> str | None:
+    candidate_values = [request.headers.get("X-Client-Channel"), request.headers.get("X-Client-Platform")]
+    for candidate_value in candidate_values:
+        normalized_value = normalize_channel_key(candidate_value)
+        if normalized_value:
+            return normalized_value
+    return None
+
+
+def _ensure_module_available(*, module_key: str, request: Request) -> None:
+    if is_module_enabled(module_key, channel_key=_resolve_request_channel(request)):
+        return
+    raise HTTPException(status_code=403, detail="module_disabled")
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+
+def _render_h5_openid_page(*, title: str, status: str, body: str, footnote: str) -> str:
+    public_base_url = get_public_base_url() or "(未配置)"
+    oa_appid = get_wechat_oa_app_id() or "(未配置)"
+    return f"""<!doctype html>
+<html lang='zh-CN'>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>{html.escape(title)}</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; margin: 0; background: #f4f7fb; color: #1f2937; }}
+    .wrap {{ max-width: 760px; margin: 0 auto; padding: 24px; }}
+    .card {{ background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08); }}
+    .status {{ display: inline-block; padding: 6px 12px; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: 13px; margin-bottom: 12px; }}
+    .main {{ line-height: 1.8; font-size: 16px; }}
+    .tip {{ margin-top: 18px; font-size: 14px; color: #6b7280; line-height: 1.8; }}
+    code {{ background: #111827; color: #f9fafb; padding: 2px 6px; border-radius: 6px; word-break: break-all; }}
+    a {{ color: #2563eb; }}
+    ul {{ padding-left: 20px; }}
+  </style>
+</head>
+<body>
+  <div class='wrap'>
+    <div class='card'>
+      <div class='status'>{html.escape(status)}</div>
+      <h1>{html.escape(title)}</h1>
+      <div class='main'>{body}</div>
+      <div class='tip'>
+        <strong>说明</strong><br>
+        {html.escape(footnote)}
+        <br><br>
+        <strong>当前服务配置</strong>
+        <ul>
+          <li>公众号 AppID：<code>{html.escape(oa_appid)}</code></li>
+          <li>公网基础地址：<code>{html.escape(public_base_url)}</code></li>
+        </ul>
+        <strong>测试链接</strong><br>
+        mock 演示：<a href='/h5/wechat-openid-test?mock_openid=demo-h5-openid-123'>/h5/wechat-openid-test?mock_openid=demo-h5-openid-123</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
