@@ -25,3 +25,7 @@ product/deploy/targets/*.server.env
 
 # Local credentials
 *.pem
+
+# Local working docs
+background/
+*主档*.md
