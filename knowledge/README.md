@@ -12,13 +12,9 @@
 ## 目录结构
 
 - `shared/`：多方面共用的基础知识
-- `aspects/product/backend/career/`：事业专属知识
-- `aspects/product/backend/stability/`：稳定性专属知识
-- `aspects/product/backend/fortune/`：运势专属知识
-- `aspects/product/backend/health/`：健康专属知识
-- `aspects/product/backend/relationship/`：人际感情专属知识
-- `aspects/product/backend/learning/`：学习专属知识
-- `aspects/product/backend/suitable_job/`：适合职业专属知识
-- `sections/product/backend/board_description/`：盘面解释专属知识
+- `sections/phone_summary/`：手机号总评专属知识
+- `sections/stability/`：长期使用建议 / 稳定性判断专属知识
+- `sections/aspects/`：新版 12 个专项分与专项评价知识底座
+- `../archive/2026-05-27-unused-v1/`：旧专项知识和旧盘面说明知识归档
 
 后续其他方面也按同样方式继续扩展。

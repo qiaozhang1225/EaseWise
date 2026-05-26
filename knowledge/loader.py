@@ -4,8 +4,21 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Literal
 
-AspectName = Literal["career", "stability", "marriage", "wealth", "personality", "fortune", "health", "relationship", "learning", "suitable_job"]
-SectionName = Literal["board_description"]
+AspectSectionName = Literal[
+    "career",
+    "wealth",
+    "love",
+    "health",
+    "acad",
+    "fortune",
+    "investment",
+    "travel",
+    "social",
+    "family",
+    "personality",
+    "fengshui",
+]
+SectionName = Literal["phone_summary", "stability"]
 TonePack = Literal["customer", "professional"]
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,26 +47,6 @@ def load_shared_foundation() -> str:
     return _join(SHARED_FOUNDATION_FILES)
 
 
-def load_aspect_knowledge(aspect: AspectName) -> str:
-    return _read(f"aspects/{aspect}/judgement-knowledge.md")
-
-
-def load_aspect_style_examples(aspect: AspectName) -> str:
-    return _read(f"aspects/{aspect}/style-examples.md")
-
-
-def load_aspect_taxonomy(aspect: AspectName) -> str:
-    return _read(f"aspects/{aspect}/taxonomy.md")
-
-
-def load_aspect_output_contract(aspect: AspectName) -> str:
-    return _read(f"aspects/{aspect}/output-contract.md")
-
-
-def load_aspect_model_pack(aspect: AspectName, tone_pack: TonePack) -> str:
-    return _read(f"aspects/{aspect}/model-pack-{tone_pack}.md")
-
-
 def load_section_knowledge(section: SectionName) -> str:
     return _read(f"sections/{section}/judgement-knowledge.md")
 
@@ -72,3 +65,23 @@ def load_section_output_contract(section: SectionName) -> str:
 
 def load_section_model_pack(section: SectionName, tone_pack: TonePack) -> str:
     return _read(f"sections/{section}/model-pack-{tone_pack}.md")
+
+
+def load_aspect_section_knowledge(aspect: AspectSectionName) -> str:
+    return _read(f"sections/aspects/{aspect}/judgement-knowledge.md")
+
+
+def load_aspect_section_style_examples(aspect: AspectSectionName) -> str:
+    return _read(f"sections/aspects/{aspect}/style-examples.md")
+
+
+def load_aspect_section_taxonomy(aspect: AspectSectionName) -> str:
+    return _read(f"sections/aspects/{aspect}/taxonomy.md")
+
+
+def load_aspect_section_output_contract(aspect: AspectSectionName) -> str:
+    return _read(f"sections/aspects/{aspect}/output-contract.md")
+
+
+def load_aspect_section_model_pack(aspect: AspectSectionName, tone_pack: TonePack) -> str:
+    return _read(f"sections/aspects/{aspect}/model-pack-{tone_pack}.md")

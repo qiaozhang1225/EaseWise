@@ -29,3 +29,4 @@ product/deploy/targets/*.server.env
 # Local working docs
 background/
 *主档*.md
+archive/*/local-test-output/
