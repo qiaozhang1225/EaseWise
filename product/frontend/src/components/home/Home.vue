@@ -177,18 +177,23 @@ onMounted(() => {
         class="w-full bg-brand-primary text-white rounded-2xl p-5 shadow-md flex items-center justify-between active:scale-[0.99] transition-transform text-left relative overflow-hidden cursor-pointer"
       >
         <div class="absolute top-0 right-0 bg-brand-accent text-brand-ink-strong font-ui text-micro font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wide">
-          🔥 强烈推荐
+          奇门遁甲 · 智能推演
         </div>
         <div class="flex flex-col gap-1.5 z-10 max-w-[70%]">
           <span class="font-brand text-title-lg font-bold leading-tight flex items-center gap-1.5">
-            手机号解析
+            数字奇门手机号评测
           </span>
           <span class="font-ui text-body text-white/80 leading-relaxed">
-            输入11位手机号码，从整体评分、盘面信息和重点维度三个层面，快速了解这个号码是否适合长期使用。
+            输入你的 11 位手机号，解锁智能推演下的 13 项全面评测结果。
           </span>
-          <span class="font-ui text-caption text-brand-accent font-bold mt-1">
-            立即开始评测（默认消耗 <span class="font-ui">{{ reviewBasePointsCost }}</span> 积分）→
-          </span>
+          <div class="flex items-center gap-3 mt-1.5 flex-wrap">
+            <span class="font-ui text-caption text-brand-accent font-bold">
+              数字奇门手机号评测 →
+            </span>
+            <span class="px-2.5 py-1 bg-brand-accent/20 border border-brand-accent/40 rounded-lg font-ui text-micro font-bold text-brand-accent leading-none select-none shadow-sm">
+              消耗 {{ reviewBasePointsCost }} 积分
+            </span>
+          </div>
         </div>
         <div class="bg-white/15 p-4 rounded-full shrink-0 z-10">
           <Calculator :size="36" class="text-brand-accent shrink-0 animate-bounce" data-icon="dialpad" />

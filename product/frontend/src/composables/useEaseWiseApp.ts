@@ -320,7 +320,8 @@ async function unlockAspect(reviewId: string, aspectKey: string): Promise<Review
       persistPoints(unlockResponse.points);
     }
     await Promise.allSettled([refreshPointsLedger(), refreshReviewHistory()]);
-    return refreshCurrentReview(reviewId);
+    const review = await refreshCurrentReview(reviewId);
+    return review;
   });
 }
 

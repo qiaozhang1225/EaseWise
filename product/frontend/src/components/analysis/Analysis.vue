@@ -8,8 +8,6 @@ import {
   BookOpen,
   Users,
   Compass,
-  Scale,
-  Flame,
   ArrowLeft,
   Star,
   Clock,
@@ -42,6 +40,7 @@ type ErrorType =
   | 'insufficient_points'
   | 'unlock_points_insufficient'
   | 'request_failed'
+  | 'review_timeout'
   | 'review_failed';
 
 type DisplayAspect = ReviewAspect & {
@@ -103,6 +102,11 @@ const copied = ref(false);
 const exportingImage = ref(false);
 const currentProgressStage = ref<ReviewProgressStage | null>(null);
 const currentProgressMessage = ref('');
+const waitingVisualPhase = ref(0);
+const waitingPoemIndex = ref(0);
+const waitingProgressValue = ref(0);
+const pendingCompletedReview = ref<ReviewRecord | null>(null);
+const pendingCompletedReviewShouldToast = ref(false);
 const showReviewConfirmDialog = ref(false);
 const aspectSectionRef = ref<HTMLElement | null>(null);
 const skipReviewConfirmHint = ref(true);
@@ -110,33 +114,65 @@ const skipFutureReviewConfirm = ref(
   readStoredFlag(EASEWISE_STORAGE_KEYS.reviewConfirmSkipPrompt, EASEWISE_STORAGE_KEYS.legacyReviewConfirmSkipPrompt),
 );
 const pollingReviewId = ref<string | null>(null);
+const unlockingAspectKey = ref<string | null>(null);
+const unlockWaitingAspectKey = ref<string | null>(null);
+const unlockWaitingAttempt = ref(0);
 let disposed = false;
 let pollingPromise: Promise<ReviewRecord> | null = null;
 let lastCompletedReviewId: string | null = null;
+let waitingVisualTimers: ReturnType<typeof setTimeout>[] = [];
+let waitingPoemTimer: ReturnType<typeof setInterval> | null = null;
+let waitingProgressTimer: ReturnType<typeof setInterval> | null = null;
+let waitingStartedAt = 0;
+
+const ASPECT_UNLOCK_RETRY_LIMIT = 45;
+const ASPECT_UNLOCK_RETRY_DELAY_MS = 2000;
+const REVIEW_READY_RETRY_LIMIT = 180;
+const REVIEW_READY_RETRY_DELAY_MS = 1000;
+const REVIEW_TIMEOUT_MESSAGE = '评测时间比预期更长，请稍后在“我的”页面查看结果。';
+const WAITING_PHASE_DURATION_MS = 4000;
+const WAITING_POEM_INTERVAL_MS = 2000;
+const WAITING_PROGRESS_START_PERCENT = 6;
+const WAITING_PROGRESS_HOLD_PERCENT = 96;
 
 const waitingSteps = [
   {
-    title: '校验号码信息',
-    desc: '检查号码格式并准备本次评测参数',
+    title: '基础盘面生成中',
+    desc: '智能体正在完成基础评分和盘面定位',
   },
   {
-    title: '生成盘面结果',
-    desc: '整理综合评分、盘面概览和总评内容',
+    title: '宫门关系识别中',
+    desc: '智能体正在梳理宫位、九星八门与天地关系',
   },
   {
-    title: '整理重点维度',
-    desc: '准备长期使用建议和九个重点维度结果',
+    title: '风险结构扫描中',
+    desc: '智能体正在检查四害、特殊组合和结构封顶',
+  },
+  {
+    title: '综合评分评价中',
+    desc: '智能体正在根据奇门遁甲规则综合评价',
+  },
+  {
+    title: '总评建议生成中',
+    desc: '智能体正在通过大模型生成总评和长期使用建议',
+  },
+  {
+    title: '专项内容预热中',
+    desc: '智能体正在准备十二项专题评测',
   },
 ];
 
-const progressStageToPhase: Record<ReviewProgressStage, number> = {
-  queued: 0,
-  scoring: 0,
-  rendering: 1,
-  finalizing: 2,
-  completed: 2,
-  failed: 2,
-};
+const waitingPoemLines = [
+  '轩辕黄帝战蚩尤',
+  '逐鹿经年苦未休',
+  '偶梦天神授符诀',
+  '登坛致祭谨虔修',
+  '因命风后演成文',
+  '遁甲奇门从此始',
+];
+
+const WAITING_FINAL_PHASE_INDEX = waitingSteps.length - 1;
+const WAITING_LINEAR_PROGRESS_MS = WAITING_PHASE_DURATION_MS * WAITING_FINAL_PHASE_INDEX;
 
 const aspectUiMap: Record<string, { icon: Component; tint: string; textTint: string }> = {
   career: { icon: Shield, tint: 'bg-green-50 text-green-600', textTint: 'text-green-600' },
@@ -144,10 +180,13 @@ const aspectUiMap: Record<string, { icon: Component; tint: string; textTint: str
   love: { icon: Heart, tint: 'bg-green-50 text-green-600', textTint: 'text-green-600' },
   health: { icon: HeartPulse, tint: 'bg-amber-50 text-amber-600', textTint: 'text-amber-600' },
   acad: { icon: BookOpen, tint: 'bg-green-50 text-green-600', textTint: 'text-green-600' },
-  social: { icon: Users, tint: 'bg-blue-50 text-blue-600', textTint: 'text-blue-600' },
+  fortune: { icon: Star, tint: 'bg-amber-50 text-amber-600', textTint: 'text-amber-600' },
+  investment: { icon: TrendingUp, tint: 'bg-blue-50 text-blue-600', textTint: 'text-blue-600' },
   travel: { icon: Compass, tint: 'bg-red-50 text-red-600', textTint: 'text-red-600' },
-  law: { icon: Scale, tint: 'bg-amber-50 text-amber-600', textTint: 'text-amber-600' },
-  risk: { icon: Flame, tint: 'bg-green-50 text-green-600', textTint: 'text-green-600' },
+  social: { icon: Users, tint: 'bg-blue-50 text-blue-600', textTint: 'text-blue-600' },
+  family: { icon: Heart, tint: 'bg-green-50 text-green-600', textTint: 'text-green-600' },
+  personality: { icon: Sparkles, tint: 'bg-brand-paper text-brand-secondary', textTint: 'text-brand-secondary' },
+  fengshui: { icon: Compass, tint: 'bg-amber-50 text-amber-600', textTint: 'text-amber-600' },
 };
 
 const currentReview = computed(() => state.currentReview);
@@ -156,10 +195,20 @@ const effectiveBaseReviewPoints = computed(() => reviewBasePointsCost.value ?? D
 const effectiveAspectUnlockPoints = computed(
   () => currentReview.value?.aspect_unlock_points ?? aspectUnlockPointsCost.value ?? DEFAULT_ASPECT_UNLOCK_POINTS,
 );
-const waitingPhase = computed(() => currentProgressStage.value ? progressStageToPhase[currentProgressStage.value] : 0);
+const waitingPhase = computed(() => waitingVisualPhase.value);
+const waitingProgressMessage = computed(() => currentProgressMessage.value || waitingSteps[waitingPhase.value]?.desc || '正在准备本次评测内容，请稍候。');
 const waitingMessage = computed(
-  () => currentProgressMessage.value || waitingSteps[waitingPhase.value]?.desc || '正在准备本次评测内容，请稍候。',
+  () => {
+    const step = waitingSteps[waitingPhase.value];
+    if (waitingPhase.value < WAITING_FINAL_PHASE_INDEX) {
+      return step?.desc || '正在准备本次评测内容，请稍候。';
+    }
+    return waitingProgressMessage.value || step?.desc || '正在准备本次评测内容，请稍候。';
+  },
 );
+const waitingPoemLine = computed(() => waitingPoemLines[waitingPoemIndex.value] || waitingPoemLines[0]);
+const waitingProgressPercent = computed(() => waitingProgressValue.value);
+const waitingProgressPercentText = computed(() => Math.round(waitingProgressPercent.value));
 const activeBoardGridCell = computed(() => {
   const board = currentReview.value?.board;
   return board?.grid_cells.find((cell) => cell.is_active) ?? null;
@@ -167,7 +216,7 @@ const activeBoardGridCell = computed(() => {
 const reviewAspects = computed<DisplayAspect[]>(() =>
   (currentReview.value?.aspects ?? []).map((aspect) => ({
     ...aspect,
-    ...(aspectUiMap[aspect.aspect_id] || {
+    ...(aspectUiMap[aspect.aspect_key] || {
       icon: Sparkles,
       tint: 'bg-brand-paper text-brand-secondary',
       textTint: 'text-brand-secondary',
@@ -175,24 +224,46 @@ const reviewAspects = computed<DisplayAspect[]>(() =>
   })),
 );
 const selectedAspect = computed(() => reviewAspects.value[activeAspect.value] || null);
+const selectedAspectUnlockPending = computed(() => selectedAspect.value ? isAspectUnlockPending(selectedAspect.value) : false);
+const selectedAspectWaitingForGeneration = computed(
+  () => Boolean(selectedAspect.value && unlockWaitingAspectKey.value === selectedAspect.value.aspect_key),
+);
+const unlockWaitingAspect = computed(() =>
+  reviewAspects.value.find((aspect) => aspect.aspect_key === unlockWaitingAspectKey.value) || null,
+);
+const unlockWaitingAspectTitle = computed(
+  () => unlockWaitingAspect.value?.short_title || unlockWaitingAspect.value?.title || selectedAspect.value?.short_title || selectedAspect.value?.title || '专项内容',
+);
+const unlockProcessingTitle = computed(
+  () => selectedAspect.value?.short_title || selectedAspect.value?.title || unlockWaitingAspectTitle.value,
+);
+const unlockWaitingMessage = computed(() => {
+  if (!selectedAspectWaitingForGeneration.value) {
+    return '正在读取已经预热的专项结果，完成后会立即展示。';
+  }
+  if (unlockWaitingAttempt.value <= 1) {
+    return '这部分内容正在后台整理，完成后会自动解锁展示。';
+  }
+  return `专项内容仍在生成中，系统正在自动等待第 ${unlockWaitingAttempt.value} 次确认。`;
+});
+const unlockProcessingHeading = computed(
+  () => selectedAspectWaitingForGeneration.value ? `正在生成「${unlockWaitingAspectTitle.value}」` : `正在解锁「${unlockProcessingTitle.value}」`,
+);
 const reviewPhoneDisplay = computed(() => currentReview.value?.phone_number || phoneNumber.value);
 const reviewGenderDisplay = computed(() => (currentReview.value?.gender || gender.value) === 'male' ? '男' : '女');
 const reviewScore = computed(() => currentReview.value?.score ?? 0);
-const summaryTitle = computed(() => currentReview.value?.summary?.title || '整体判断');
-const summaryContent = computed(
-  () => currentReview.value?.summary?.content || '系统会根据盘面结果生成整体使用判断。',
+const phoneSummary = computed(() => currentReview.value?.phone_summary ?? null);
+const stabilityDetail = computed(() => currentReview.value?.stability_detail ?? null);
+const phoneSummaryTitle = computed(() => cleanDisplayText(phoneSummary.value?.title) || '系统会根据盘面结果生成总评。');
+const phoneSummaryRisk = computed(() => cleanDisplayText(phoneSummary.value?.risk) || '系统会根据盘面结果生成风险提醒。');
+const phoneSummaryUsageGuidance = computed(
+  () => cleanDisplayText(phoneSummary.value?.usage_guidance) || '系统会根据盘面结果生成使用建议。',
 );
-const boardAnalysisTitle = computed(() => currentReview.value?.board_analysis?.title || '盘面分析 / 总评');
-const boardAnalysisContent = computed(
-  () => currentReview.value?.board_analysis?.content || '盘面详细说明生成后会显示在这里。',
+const stabilityLabel = computed(
+  () => cleanDisplayText(stabilityDetail.value?.verdict) || resolveFallbackStabilityLabel(),
 );
-const stabilityLabel = computed(() => currentReview.value?.stability_judgement?.label || '稳定性判断');
 const stabilityValue = computed(
-  () => currentReview.value?.stability_judgement?.value || '结果生成后会显示稳定性判断',
-);
-const boardMainAxis = computed(() => currentReview.value?.board?.summary?.main_axis || '盘面主轴生成后会显示在这里。');
-const boardMainContradiction = computed(
-  () => currentReview.value?.board?.summary?.main_contradiction || '核心矛盾生成后会显示在这里。',
+  () => cleanDisplayText(stabilityDetail.value?.content) || '系统会根据盘面结果生成长期使用建议。',
 );
 const singlePalaceData = computed<BoardSinglePalaceDisplay>(() => {
   const board = currentReview.value?.board;
@@ -266,19 +337,71 @@ const boardStructureCapTags = computed(() => {
   }
   return [boardStructureCapText.value];
 });
-const longTermAdvice = computed(() => {
-  const advice = currentReview.value?.long_term_advice ?? [];
-  if (advice.length > 0) {
-    return advice;
+const prefetchedAspectCount = computed(() =>
+  reviewAspects.value.filter((aspect) => Boolean(aspect.content && aspect.risk)).length,
+);
+
+function cleanDisplayText(value: string | null | undefined): string {
+  const text = String(value || '').trim();
+  if (!text || ['title', 'risk', 'usage guidance'].includes(text.toLowerCase())) {
+    return '';
   }
-  return ['建议结合整体评分、盘面信息和当前目标，再决定是否作为长期主力号码使用。'];
-});
+  return text;
+}
+
+function resolveFallbackStabilityLabel(): string {
+  const score = reviewScore.value;
+  if (score >= 82) {
+    return '适合长期使用';
+  }
+  if (score >= 68) {
+    return '可以继续使用';
+  }
+  return '谨慎长期主用';
+}
 
 function showToast(message: string): void {
   toast.value = message;
   window.setTimeout(() => {
     toast.value = null;
   }, 2200);
+}
+
+function isAspectUnlockPending(aspect: DisplayAspect): boolean {
+  return unlockingAspectKey.value === aspect.aspect_key || unlockWaitingAspectKey.value === aspect.aspect_key;
+}
+
+function resolveScoreBadgeClass(score: number | null | undefined, active: boolean): string {
+  const numericScore = Number(score ?? 0);
+  if (active) {
+    if (numericScore < 60) {
+      return 'bg-white text-red-600 border-white/10';
+    }
+    if (numericScore < 80) {
+      return 'bg-white text-amber-500 border-white/10';
+    }
+    return 'bg-white text-emerald-600 border-white/10';
+  }
+
+  if (numericScore < 60) {
+    return 'text-red-500 bg-red-50 border-red-200/40';
+  }
+  if (numericScore < 80) {
+    return 'text-amber-500 bg-amber-50 border-amber-200/40';
+  }
+  return 'text-emerald-600 bg-emerald-50 border-emerald-200/40';
+}
+
+function isAspectNotReadyError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && error.detail === 'aspect_not_ready';
+}
+
+function isAspectUnlockTimeoutError(error: unknown): boolean {
+  return error instanceof Error && error.message === 'aspect_unlock_timeout';
+}
+
+function isAspectUnlockCancelledError(error: unknown): boolean {
+  return error instanceof Error && error.message === 'aspect_unlock_cancelled';
 }
 
 function resolveHarmToneClass(value: string): string {
@@ -397,14 +520,76 @@ function resetToInput(): void {
   errorDetail.value = '';
   currentProgressStage.value = null;
   currentProgressMessage.value = '';
+  waitingVisualPhase.value = 0;
+  waitingPoemIndex.value = 0;
+  waitingProgressValue.value = 0;
+  pendingCompletedReview.value = null;
+  pendingCompletedReviewShouldToast.value = false;
+  clearWaitingTimers();
+  clearUnlockState();
+}
+
+function clearUnlockState(): void {
+  unlockingAspectKey.value = null;
+  unlockWaitingAspectKey.value = null;
+  unlockWaitingAttempt.value = 0;
 }
 
 function resolveDefaultAspectIndex(aspects: DisplayAspect[]): number {
-  const firstUnlockedIndex = aspects.findIndex((aspect) => aspect.is_unlocked);
-  return firstUnlockedIndex >= 0 ? firstUnlockedIndex : (aspects.length ? 0 : -1);
+  return aspects.length ? 0 : -1;
+}
+
+function isWaitingFinalPhaseReady(): boolean {
+  return waitingVisualPhase.value >= WAITING_FINAL_PHASE_INDEX;
+}
+
+function clearWaitingVisualTimers(): void {
+  waitingVisualTimers.forEach((timer) => window.clearTimeout(timer));
+  waitingVisualTimers = [];
+}
+
+function clearWaitingTimers(): void {
+  clearWaitingVisualTimers();
+  if (waitingPoemTimer) {
+    window.clearInterval(waitingPoemTimer);
+    waitingPoemTimer = null;
+  }
+  if (waitingProgressTimer) {
+    window.clearInterval(waitingProgressTimer);
+    waitingProgressTimer = null;
+  }
+}
+
+function updateWaitingProgress(): void {
+  if (!waitingStartedAt) {
+    waitingProgressValue.value = WAITING_PROGRESS_START_PERCENT;
+    return;
+  }
+
+  const elapsed = Date.now() - waitingStartedAt;
+  const ratio = Math.min(1, Math.max(0, elapsed / WAITING_LINEAR_PROGRESS_MS));
+  const progress =
+    WAITING_PROGRESS_START_PERCENT +
+    (WAITING_PROGRESS_HOLD_PERCENT - WAITING_PROGRESS_START_PERCENT) * ratio;
+  waitingProgressValue.value = Math.min(WAITING_PROGRESS_HOLD_PERCENT, Number(progress.toFixed(1)));
+}
+
+function applyOrDeferCompletedReviewState(review: ReviewRecord, options: { showToastOnComplete?: boolean } = {}): void {
+  if (appState.value === 'waiting' && !isWaitingFinalPhaseReady()) {
+    pendingCompletedReview.value = review;
+    pendingCompletedReviewShouldToast.value = pendingCompletedReviewShouldToast.value || Boolean(options.showToastOnComplete);
+    currentProgressStage.value = review.progress_stage;
+    currentProgressMessage.value = review.progress_message || '';
+    return;
+  }
+
+  pendingCompletedReview.value = null;
+  pendingCompletedReviewShouldToast.value = false;
+  applyCompletedReviewState(review, options);
 }
 
 function applyCompletedReviewState(review: ReviewRecord, options: { showToastOnComplete?: boolean } = {}): void {
+  clearWaitingTimers();
   phoneNumber.value = sanitizePhone(review.phone_number || review.phone || '');
   gender.value = review.gender;
   currentProgressStage.value = review.progress_stage;
@@ -425,8 +610,12 @@ function applyCompletedReviewState(review: ReviewRecord, options: { showToastOnC
   lastCompletedReviewId = review.id;
 
   if (options.showToastOnComplete) {
-    showToast('评测完成，可查看整体结果与重点维度。');
+    showToast('评测完成，可查看整体结果与专项分析。');
   }
+}
+
+function persistCompletedReviewState(review: ReviewRecord): void {
+  applyCompletedReviewState(review);
 }
 
 function applyProcessingReviewState(review: ReviewRecord): void {
@@ -460,6 +649,10 @@ function handleReviewSyncError(error: unknown): void {
   }
 
   const message = humanizeError(error);
+  if (message.includes('评测时间比预期更长')) {
+    setError('review_timeout', message);
+    return;
+  }
   if (message.includes('评测任务生成失败') || message.includes('review')) {
     setError('review_failed', message);
     return;
@@ -489,7 +682,7 @@ function syncViewFromCurrentReview(review: ReviewRecord | null): void {
   }
 
   if (review.status === 'completed') {
-    applyCompletedReviewState(review);
+    applyOrDeferCompletedReviewState(review);
     return;
   }
 
@@ -511,7 +704,7 @@ function syncViewFromCurrentReview(review: ReviewRecord | null): void {
       }
 
       if (completedReview.status === 'completed') {
-        applyCompletedReviewState(completedReview);
+        applyOrDeferCompletedReviewState(completedReview);
         return;
       }
 
@@ -549,18 +742,34 @@ watch(
   { immediate: true },
 );
 
+watch(
+  waitingVisualPhase,
+  () => {
+    if (!isWaitingFinalPhaseReady() || !pendingCompletedReview.value) {
+      return;
+    }
+    const review = pendingCompletedReview.value;
+    const shouldToast = pendingCompletedReviewShouldToast.value;
+    pendingCompletedReview.value = null;
+    pendingCompletedReviewShouldToast.value = false;
+    applyCompletedReviewState(review, { showToastOnComplete: shouldToast });
+  },
+);
+
 onMounted(() => {
   void bootstrapApp();
 });
 
 onUnmounted(() => {
   disposed = true;
+  clearUnlockState();
+  clearWaitingTimers();
 });
 
 async function pollReviewUntilReady(review: ReviewRecord): Promise<ReviewRecord> {
   let latestReview = review;
 
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  for (let attempt = 0; attempt < REVIEW_READY_RETRY_LIMIT; attempt += 1) {
     if (disposed) {
       return latestReview;
     }
@@ -576,11 +785,11 @@ async function pollReviewUntilReady(review: ReviewRecord): Promise<ReviewRecord>
       throw new Error(latestReview.error_message || latestReview.progress_message || '评测任务生成失败');
     }
 
-    await sleep(900);
+    await sleep(REVIEW_READY_RETRY_DELAY_MS);
     latestReview = await refreshCurrentReview(latestReview.id);
   }
 
-  throw new Error('评测时间比预期更长，请稍后在“我的”页面查看结果。');
+  throw new Error(REVIEW_TIMEOUT_MESSAGE);
 }
 
 async function handleReviewSubmitIntent(): Promise<void> {
@@ -634,9 +843,32 @@ async function handleEvaluate(preparedPhone?: string): Promise<void> {
 
   errorType.value = 'none';
   errorDetail.value = '';
+  clearUnlockState();
+  clearWaitingTimers();
   currentProgressStage.value = 'queued';
   currentProgressMessage.value = '评测任务已创建，等待开始';
+  waitingVisualPhase.value = 0;
+  waitingPoemIndex.value = 0;
+  waitingProgressValue.value = WAITING_PROGRESS_START_PERCENT;
+  waitingStartedAt = Date.now();
+  pendingCompletedReview.value = null;
+  pendingCompletedReviewShouldToast.value = false;
   appState.value = 'waiting';
+  waitingVisualTimers = waitingSteps.slice(1).map((_, index) => window.setTimeout(() => {
+    if (!disposed && appState.value === 'waiting') {
+      waitingVisualPhase.value = index + 1;
+    }
+  }, WAITING_PHASE_DURATION_MS * (index + 1)));
+  waitingPoemTimer = window.setInterval(() => {
+    if (!disposed && appState.value === 'waiting') {
+      waitingPoemIndex.value = (waitingPoemIndex.value + 1) % waitingPoemLines.length;
+    }
+  }, WAITING_POEM_INTERVAL_MS);
+  waitingProgressTimer = window.setInterval(() => {
+    if (!disposed && appState.value === 'waiting') {
+      updateWaitingProgress();
+    }
+  }, 100);
 
   try {
     await bootstrapApp();
@@ -651,9 +883,13 @@ async function handleEvaluate(preparedPhone?: string): Promise<void> {
       return;
     }
 
-    applyCompletedReviewState(completedReview, { showToastOnComplete: true });
+    applyOrDeferCompletedReviewState(completedReview, { showToastOnComplete: true });
   } catch (error) {
     handleReviewSyncError(error);
+  } finally {
+    if (!pendingCompletedReview.value || isWaitingFinalPhaseReady()) {
+      clearWaitingTimers();
+    }
   }
 }
 
@@ -672,15 +908,84 @@ async function handleUnlockAspect(index: number): Promise<void> {
   }
 
   try {
-    await unlockAspect(review.id, aspect.aspect_id);
-    showToast(`已解锁「${aspect.title}」详细分析。`);
+    await tryUnlockAspectWithWait(review.id, aspect.aspect_key, aspect.title);
   } catch (error) {
+    if (isAspectUnlockCancelledError(error)) {
+      return;
+    }
+    if (isAspectUnlockTimeoutError(error)) {
+      showToast('专项内容还在生成中，请稍后再试。');
+      return;
+    }
     if (error instanceof ApiError && error.status === 402) {
       setError('unlock_points_insufficient');
       return;
     }
     setError('request_failed', humanizeError(error));
+  } finally {
+    if (unlockingAspectKey.value === aspect.aspect_key) {
+      unlockingAspectKey.value = null;
+    }
   }
+}
+
+async function tryUnlockAspectWithWait(reviewId: string, aspectKey: string, title: string): Promise<void> {
+  unlockingAspectKey.value = aspectKey;
+  unlockWaitingAspectKey.value = null;
+  unlockWaitingAttempt.value = 0;
+
+  try {
+    const refreshedReview = await unlockAspect(reviewId, aspectKey);
+    persistCompletedReviewState(refreshedReview);
+    clearUnlockState();
+    showToast(`已解锁「${title}」详细分析。`);
+    return;
+  } catch (error) {
+    if (!isAspectNotReadyError(error)) {
+      throw error;
+    }
+  }
+
+  unlockWaitingAspectKey.value = aspectKey;
+  unlockingAspectKey.value = null;
+  currentProgressStage.value = 'rendering';
+  currentProgressMessage.value = `「${title}」正在后台生成中，马上就好。`;
+
+  for (let attempt = 1; attempt <= ASPECT_UNLOCK_RETRY_LIMIT; attempt += 1) {
+    if (disposed || currentReview.value?.id !== reviewId) {
+      throw new Error('aspect_unlock_cancelled');
+    }
+
+    unlockWaitingAttempt.value = attempt;
+    const latestReview = await refreshCurrentReview(reviewId);
+    persistCompletedReviewState(latestReview);
+    const latestAspect = latestReview.aspects.find((item) => item.aspect_key === aspectKey);
+    if (latestAspect?.is_unlocked && latestAspect.content && latestAspect.risk) {
+      clearUnlockState();
+      showToast(`已解锁「${title}」详细分析。`);
+      return;
+    }
+
+    try {
+      const refreshedReview = await unlockAspect(reviewId, aspectKey);
+      persistCompletedReviewState(refreshedReview);
+      const unlockedAspect = refreshedReview.aspects.find((item) => item.aspect_key === aspectKey);
+      if (unlockedAspect?.is_unlocked) {
+        clearUnlockState();
+        showToast(`已解锁「${title}」详细分析。`);
+        return;
+      }
+    } catch (error) {
+      if (!isAspectNotReadyError(error)) {
+        throw error;
+      }
+    }
+
+    await sleep(ASPECT_UNLOCK_RETRY_DELAY_MS);
+  }
+
+  clearUnlockState();
+  throw new Error('aspect_unlock_timeout');
 }
 
 async function handleCopyServiceContact(): Promise<void> {
@@ -699,7 +1004,7 @@ async function handleCopyServiceContact(): Promise<void> {
 function handleSelectNextLockedAspect(): void {
   const nextLockedIndex = reviewAspects.value.findIndex((aspect) => !aspect.is_unlocked);
   if (nextLockedIndex === -1) {
-    showToast('当前九个重点维度均已解锁。');
+    showToast('当前十二个专项均已预生成。');
     void scrollToAspectSection();
     return;
   }
@@ -757,6 +1062,9 @@ function resolveErrorTitle(): string {
   if (errorType.value === 'unlock_points_insufficient') {
     return '解锁积分不足';
   }
+  if (errorType.value === 'review_timeout') {
+    return '评测仍在生成中';
+  }
   if (errorType.value === 'review_failed') {
     return '评测生成失败';
   }
@@ -771,7 +1079,10 @@ function resolveErrorBody(): string {
     return `当前手机号评测需要消耗 ${effectiveBaseReviewPoints.value} 积分。您当前可用积分为 ${userPoints.value} 分。`;
   }
   if (errorType.value === 'unlock_points_insufficient') {
-    return `解锁单个重点维度需要消耗 ${effectiveAspectUnlockPoints.value} 积分。您当前可用积分为 ${userPoints.value} 分。`;
+    return `解锁单个专项需要消耗 ${effectiveAspectUnlockPoints.value} 积分。您当前可用积分为 ${userPoints.value} 分。`;
+  }
+  if (errorType.value === 'review_timeout') {
+    return '评测还在后台生成中，没有真的失败。请先到“我的”页面查看进度，稍后再刷新结果。';
   }
   return errorDetail.value || '请检查本地后端服务是否已启动，然后重新尝试。';
 }
@@ -842,7 +1153,7 @@ async function handleExportImage(): Promise<void> {
       ctx.fillStyle = '#4B5563';
       ctx.font = '16px sans-serif';
       ctx.fillText(`性别属性：${reviewGenderDisplay.value}`, 90, 370);
-      ctx.fillText(truncateText(summaryTitle.value, 26), 90, 400);
+      ctx.fillText(truncateText(phoneSummaryTitle.value, 26), 90, 400);
 
       ctx.fillStyle = '#DC2626';
       ctx.beginPath();
@@ -1045,12 +1356,49 @@ async function handleExportImage(): Promise<void> {
       ctx.fillStyle = '#111827';
       ctx.font = 'bold 22px serif';
       ctx.textAlign = 'left';
-      ctx.fillText('【核心使用建议】', 60, 965);
+      ctx.fillText('【奇门盘面解析】', 60, 945);
 
-      ctx.fillStyle = '#4B5563';
-      ctx.font = '14px sans-serif';
-      ctx.fillText(truncateText(stabilityValue.value, 34), 60, 995);
-      ctx.fillText(truncateText(longTermAdvice.value[0] || '', 34), 60, 1020);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.strokeStyle = '#E5E7EB';
+      roundRect(ctx, 60, 970, 630, 190, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#4F46E5';
+      ctx.beginPath();
+      ctx.arc(86, 997, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#111827';
+      ctx.font = 'bold 15px serif';
+      drawWrappedText(ctx, phoneSummaryTitle.value, 98, 1003, 570, 20, 2);
+
+      ctx.fillStyle = '#DC2626';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText('风险提醒', 82, 1060);
+      ctx.fillStyle = '#7F1D1D';
+      ctx.font = '13px sans-serif';
+      drawWrappedText(ctx, phoneSummaryRisk.value, 82, 1082, 586, 18, 2);
+
+      ctx.fillStyle = '#111827';
+      ctx.font = '13px sans-serif';
+      drawWrappedText(ctx, phoneSummaryUsageGuidance.value, 82, 1134, 586, 18, 2);
+
+      ctx.fillStyle = '#111827';
+      ctx.font = 'bold 22px serif';
+      ctx.fillText('【长期使用建议】', 60, 1205);
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.strokeStyle = '#E5E7EB';
+      roundRect(ctx, 60, 1230, 630, 58, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#4F46E5';
+      ctx.font = 'bold 15px serif';
+      ctx.fillText(truncateText(stabilityLabel.value, 24), 82, 1254);
+      ctx.fillStyle = '#111827';
+      ctx.font = '13px sans-serif';
+      drawWrappedText(ctx, stabilityValue.value, 82, 1275, 586, 18, 1);
 
       ctx.fillStyle = '#B45309';
       ctx.font = 'bold 13px sans-serif';
@@ -1095,6 +1443,40 @@ function roundRect(
 
 function truncateText(text: string, maxLength: number): string {
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+function drawWrappedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+  maxLines: number,
+): void {
+  const chars = text.split('');
+  const lines: string[] = [];
+  let currentLine = '';
+
+  chars.forEach((char) => {
+    const nextLine = currentLine + char;
+    if (ctx.measureText(nextLine).width > maxWidth && currentLine) {
+      lines.push(currentLine);
+      currentLine = char;
+      return;
+    }
+    currentLine = nextLine;
+  });
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  lines.slice(0, maxLines).forEach((line, index) => {
+    const shouldEllipsize = index === maxLines - 1 && lines.length > maxLines;
+    const displayLine = shouldEllipsize ? `${line.slice(0, Math.max(1, line.length - 1))}…` : line;
+    ctx.fillText(displayLine, x, y + index * lineHeight);
+  });
 }
 
 function sleep(ms: number): Promise<void> {
@@ -1206,49 +1588,123 @@ function sleep(ms: number): Promise<void> {
       <div
         v-else-if="appState === 'waiting'"
         key="waiting-box"
-        class="pt-24 pb-32 max-w-sm mx-auto px-margin-mobile flex flex-col items-center justify-center min-h-[60vh] text-center space-y-6"
+        class="py-10 max-w-md mx-auto px-margin-mobile flex flex-col justify-center min-h-[65vh]"
       >
-        <div class="relative flex items-center justify-center">
-          <div class="w-16 h-16 rounded-full border-4 border-brand-primary/10 border-t-brand-primary animate-spin"></div>
-          <div class="absolute text-brand-primary">
-            <Sparkles :size="24" class="animate-pulse" />
-          </div>
-        </div>
+        <div class="bg-white rounded-2xl p-6 border border-gray-150/75 shadow-sm space-y-6 text-center">
+          <div class="relative w-28 h-28 mx-auto flex items-center justify-center select-none">
+            <div class="absolute inset-0 bg-brand-primary/5 rounded-full blur-md animate-pulse"></div>
 
-        <div class="space-y-2">
-          <p class="font-ui text-caption font-bold text-brand-primary">
-            阶段 {{ Math.min(waitingPhase + 1, waitingSteps.length) }}/{{ waitingSteps.length }}
-          </p>
-          <h4 class="font-brand text-heading-2 font-bold text-brand-ink-strong leading-tight">正在生成评测结果...</h4>
-          <p class="font-ui text-body text-brand-secondary leading-relaxed max-w-[85%] mx-auto">
-            {{ waitingMessage }}
-          </p>
-        </div>
+            <svg class="absolute w-28 h-28 text-brand-primary/25 animate-[spin_40s_linear_infinite]" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-dasharray="1 3" stroke-width="1.5" />
+              <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" stroke-dasharray="8 4" stroke-width="1.2" />
+            </svg>
 
-        <div class="w-full max-w-[92%] space-y-2.5 text-left">
-          <div class="h-2 rounded-full bg-brand-paper overflow-hidden">
-            <div
-              class="h-full bg-brand-primary rounded-full transition-all duration-500"
-              :style="{ width: `${((waitingPhase + 1) / waitingSteps.length) * 100}%` }"
-            ></div>
-          </div>
+            <svg class="absolute w-24 h-24 text-brand-accent/40 animate-[spin_24s_linear_infinite_reverse]" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-dasharray="12 6" stroke-width="1.5" stroke-linecap="round" />
+              <path d="M 50,4 M 50,96 M 4,50 M 96,50 M 17,17 M 83,83 M 17,83 M 83,17" stroke="currentColor" stroke-width="0.8" stroke-dasharray="2 4" />
+            </svg>
 
-          <div
-            v-for="(step, index) in waitingSteps"
-            :key="step.title"
-            class="flex items-start gap-3 rounded-xl border p-3 transition-all"
-            :class="index === waitingPhase ? 'bg-white border-brand-primary/20 shadow-sm' : index < waitingPhase ? 'bg-brand-primary/5 border-brand-primary/10' : 'bg-white/70 border-gray-100'"
-          >
-            <div
-              class="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full font-ui text-micro font-bold shrink-0"
-              :class="index < waitingPhase ? 'bg-brand-primary text-white' : index === waitingPhase ? 'bg-brand-primary/10 text-brand-primary' : 'bg-gray-100 text-brand-secondary'"
-            >
-              <CheckCircle2 v-if="index < waitingPhase" :size="12" />
-              <span v-else>{{ index + 1 }}</span>
+            <svg class="absolute w-18 h-18 text-brand-primary/60 animate-[spin_12s_linear_infinite]" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-dasharray="4 2" stroke-width="1" />
+            </svg>
+
+            <div class="absolute w-11 h-11 bg-white rounded-full border border-brand-primary/20 shadow-md flex items-center justify-center animate-[spin_8s_ease-in-out_infinite]">
+              <svg class="w-6.5 h-6.5 text-brand-primary" viewBox="0 0 100 100" fill="currentColor">
+                <path d="M50,0 A50,50 0 0,0 50,100 A25,25 0 0,0 50,50 A25,25 0 0,1 50,0 Z" />
+                <circle cx="50" cy="25" r="7.5" fill="white" />
+                <path d="M50,100 A50,50 0 0,0 50,0 A25,25 0 0,1 50,50 A25,25 0 0,0 50,100 Z" fill="none" stroke="currentColor" stroke-width="1" />
+                <circle cx="50" cy="75" r="7.5" fill="currentColor" />
+              </svg>
             </div>
-            <div class="space-y-1">
-              <p class="font-ui text-body font-bold text-brand-ink-strong">{{ step.title }}</p>
-              <p class="font-ui text-caption text-brand-secondary leading-relaxed">{{ index === waitingPhase ? waitingMessage : step.desc }}</p>
+          </div>
+
+          <div class="space-y-1 py-1">
+            <h4 class="font-brand text-heading-2 font-black text-brand-ink-strong tracking-wide">奇门格局智能推演中</h4>
+            <transition name="poem-fade" mode="out-in">
+              <p
+                :key="waitingPoemLine"
+                class="font-brand text-title font-bold text-brand-secondary/85 leading-relaxed tracking-wide"
+              >
+                {{ waitingPoemLine }}
+              </p>
+            </transition>
+          </div>
+
+          <div class="text-center space-y-1.5 select-none font-ui px-1">
+            <div class="flex items-center justify-between text-caption font-bold text-brand-secondary">
+              <span class="flex items-center gap-1">
+                <Sparkles :size="11.5" class="text-brand-primary animate-pulse" fill="currentColor" />
+                <span>智能体正在构建和解析格局</span>
+              </span>
+              <span class="text-brand-primary-strong text-title font-black font-ui tracking-tight">{{ waitingProgressPercentText }}%</span>
+            </div>
+            <div class="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden border border-gray-50 relative">
+              <div
+                class="h-full bg-brand-primary transition-all duration-500 ease-out rounded-full"
+                :style="{ width: `${waitingProgressPercent}%` }"
+              ></div>
+            </div>
+          </div>
+
+          <div class="h-px bg-gray-100"></div>
+
+          <div class="space-y-4 px-1">
+            <div
+              v-for="(step, index) in waitingSteps"
+              :key="step.title"
+              class="flex items-start gap-3.5 text-left transition-all duration-300"
+              :class="index === waitingPhase ? 'opacity-100 scale-[1.01]' : index < waitingPhase ? 'opacity-85' : 'opacity-35'"
+            >
+              <div class="relative flex items-center justify-center mt-1 shrink-0 select-none">
+                <div
+                  v-if="index < waitingSteps.length - 1"
+                  class="absolute top-5 left-2.5 w-0.5 h-[32px] -ml-[1px]"
+                  :class="index < waitingPhase ? 'bg-emerald-500/75' : 'bg-gray-100'"
+                ></div>
+
+                <div
+                  v-if="index < waitingPhase"
+                  class="w-5 h-5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center shadow-xs"
+                >
+                  <Check :size="11" stroke-width="3" />
+                </div>
+                <div
+                  v-else-if="index === waitingPhase"
+                  class="w-5 h-5 rounded-full bg-brand-primary/10 border border-brand-primary flex items-center justify-center shadow-xs text-brand-primary relative"
+                >
+                  <div class="absolute inset-0 rounded-full border border-brand-primary border-t-transparent animate-spin"></div>
+                  <div class="w-1.5 h-1.5 rounded-full bg-brand-primary animate-pulse"></div>
+                </div>
+                <div
+                  v-else
+                  class="w-5 h-5 rounded-full bg-gray-50 border border-gray-150 text-micro text-gray-400 font-extrabold flex items-center justify-center"
+                >
+                  <span>{{ index + 1 }}</span>
+                </div>
+              </div>
+
+              <div class="space-y-0.5 min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <h5
+                    class="text-title font-black font-brand leading-none transition-colors"
+                    :class="index === waitingPhase ? 'text-brand-ink-strong' : index < waitingPhase ? 'text-emerald-700 font-extrabold' : 'text-brand-secondary/60'"
+                  >
+                    {{ step.title }}
+                  </h5>
+                  <span
+                    v-if="index === waitingPhase"
+                    class="px-1.5 py-0.5 bg-brand-primary/10 text-brand-primary rounded text-micro font-extrabold leading-none animate-pulse shrink-0 font-ui"
+                  >
+                    正在计算
+                  </span>
+                </div>
+                <p
+                  class="text-caption leading-relaxed transition-colors tracking-tight font-ui"
+                  :class="index === waitingPhase ? 'text-brand-secondary font-medium' : index < waitingPhase ? 'text-gray-500' : 'text-gray-400'"
+                >
+                  {{ index === waitingPhase ? waitingMessage : step.desc }}
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -1357,13 +1813,13 @@ function sleep(ms: number): Promise<void> {
                 <div
                   v-for="item in boardRelationCards"
                   :key="item.label"
-                  class="bg-brand-paper hover:bg-gray-50/70 px-3 py-2.5 border border-gray-100/55 rounded-xl transition-all grid grid-cols-[42px_minmax(0,1fr)] items-center gap-2 text-left"
+                  class="board-relation-card bg-brand-paper hover:bg-gray-50/70 px-3 py-2.5 border border-gray-100/55 rounded-xl transition-all grid grid-cols-[42px_minmax(0,1fr)] items-center gap-2 text-left"
                 >
-                  <div class="font-brand text-body text-brand-secondary font-black leading-none flex flex-col gap-1.5 pl-1">
+                  <div class="board-relation-label font-brand text-body text-brand-secondary font-black leading-none flex flex-col gap-1.5 pl-1">
                     <span>{{ item.labelTop }}</span>
                     <span>{{ item.labelBottom }}</span>
                   </div>
-                  <p class="font-brand font-black text-heading-1 leading-none text-right min-w-0" :class="item.valueClass">
+                  <p class="board-relation-value font-brand font-black text-heading-1 leading-none text-right min-w-0" :class="item.valueClass">
                     {{ item.value }}
                   </p>
                 </div>
@@ -1419,63 +1875,74 @@ function sleep(ms: number): Promise<void> {
 
         <section class="space-y-2 text-left">
           <h4 class="font-brand text-body font-bold text-brand-secondary tracking-wide flex items-center gap-1.5">
-            <Sparkles :size="13" class="text-brand-primary shrink-0" />
-            <span>{{ boardAnalysisTitle }}</span>
+            <Compass :size="13" class="text-brand-primary shrink-0" />
+            <span>奇门盘面解析</span>
           </h4>
 
-          <div class="bg-white rounded-2xl p-4.5 border border-gray-100 shadow-sm space-y-3 font-ui">
-            <div class="bg-brand-primary/5 rounded-xl border border-brand-primary/10 p-3">
-              <p class="font-brand text-body font-bold text-brand-primary-strong">{{ summaryTitle }}</p>
-              <p class="mt-1 text-body text-brand-ink leading-relaxed">
-                {{ summaryContent }}
+          <div class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-4 font-ui">
+            <div class="flex items-start gap-1.5">
+              <span class="w-1.5 h-1.5 bg-brand-primary rounded-full shrink-0 mt-[0.6em]"></span>
+              <p class="font-brand text-title font-black text-brand-primary-strong leading-relaxed">
+                {{ phoneSummaryTitle }}
               </p>
             </div>
-            <div class="bg-brand-paper/70 rounded-xl border border-gray-100 p-3">
-              <p class="font-brand text-caption font-bold text-brand-secondary tracking-wide">盘面主轴</p>
-              <p class="mt-1 text-body font-bold text-brand-ink leading-relaxed">{{ boardMainAxis }}</p>
-              <p class="mt-2 text-body text-brand-secondary leading-relaxed">
-                核心矛盾：{{ boardMainContradiction }}
+
+            <div class="bg-red-500/[0.03] rounded-xl border border-red-100/80 p-3.5 space-y-2">
+              <div class="flex items-center gap-1.5">
+                <AlertCircle :size="15" class="text-red-500 shrink-0" />
+                <p class="font-brand text-caption font-bold text-red-600 tracking-wide">风险提醒</p>
+              </div>
+              <p class="text-body text-red-700/90 font-medium leading-relaxed">
+                {{ phoneSummaryRisk }}
               </p>
             </div>
-            <p class="text-body text-brand-secondary leading-relaxed">
-              {{ boardAnalysisContent }}
-            </p>
+
+            <div class="pt-1.5 border-t border-gray-100">
+              <p class="text-body text-brand-ink leading-relaxed">
+                {{ phoneSummaryUsageGuidance }}
+              </p>
+            </div>
           </div>
         </section>
 
-        <section class="bg-brand-primary p-5.5 rounded-2xl text-white shadow-sm space-y-4 text-left">
-          <h4 class="font-ui text-title font-bold flex items-center gap-2">
-            <Lightbulb :size="18" class="text-brand-accent shrink-0 animate-pulse" />
-            <span>长期使用建议 / 稳定性判断</span>
+        <section class="space-y-2 text-left">
+          <h4 class="font-brand text-body font-bold text-brand-secondary tracking-wide flex items-center gap-1.5">
+            <Lightbulb :size="13" class="text-brand-primary shrink-0" />
+            <span>长期使用建议</span>
           </h4>
-          <div class="inline-flex items-center rounded-full bg-white/12 px-3 py-1 font-ui text-caption font-bold text-brand-accent">
-            {{ stabilityLabel }}：{{ stabilityValue }}
+
+          <div class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm font-ui space-y-3">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-brand-primary/10 flex items-center justify-center shrink-0">
+                <Sparkles :size="15" class="text-brand-primary" fill="currentColor" />
+              </div>
+              <p class="text-title font-brand font-black text-brand-primary leading-tight flex-1 min-w-0">
+                {{ stabilityLabel }}
+              </p>
+            </div>
+            <p class="text-body text-brand-ink leading-relaxed font-medium">
+              {{ stabilityValue }}
+            </p>
           </div>
-          <ul class="space-y-3 font-ui text-body opacity-90 leading-relaxed">
-            <li v-for="advice in longTermAdvice" :key="advice" class="flex gap-2">
-              <CheckCircle2 :size="16" class="text-brand-accent shrink-0" fill="currentColor" stroke="#4F46E5" />
-              <span>{{ advice }}</span>
-            </li>
-          </ul>
         </section>
 
         <section ref="aspectSectionRef" class="space-y-2">
           <div class="flex justify-between items-baseline text-left">
             <h4 class="font-brand text-body font-bold text-brand-secondary tracking-wide flex items-center gap-1.5">
               <Clock :size="13" class="text-brand-primary shrink-0" />
-              <span>九个重点维度</span>
+              <span>十二个专项</span>
             </h4>
             <span class="font-ui text-micro text-brand-secondary">
               余积分: <span class="text-brand-primary-strong font-ui font-black">{{ userPoints }}</span>
             </span>
           </div>
 
-          <div class="grid grid-cols-3 gap-1.5">
+          <div class="aspect-grid grid gap-1">
             <button
               v-for="(aspect, idx) in reviewAspects"
-              :key="aspect.aspect_id"
+              :key="aspect.aspect_key"
               @click="handleAspectClick(idx)"
-              class="relative h-[34px] px-2 rounded-xl font-ui text-micro font-extrabold flex items-center justify-between gap-1 transition-all outline-none cursor-pointer border"
+              class="aspect-tab relative h-[36px] px-2 rounded-lg font-ui text-micro font-extrabold flex items-center justify-between gap-1 transition-all outline-none cursor-pointer border select-none"
               :class="[
                 activeAspect === idx
                   ? 'bg-brand-primary text-white border-transparent shadow-sm'
@@ -1484,40 +1951,36 @@ function sleep(ms: number): Promise<void> {
                   : 'bg-white text-brand-secondary border-gray-150 hover:bg-gray-50'
               ]"
             >
-              <div class="flex items-center gap-1 min-w-0">
+              <div class="aspect-tab-main flex items-center gap-1 min-w-0">
                 <component
                   :is="aspect.icon"
                   :size="11.5"
                   :class="[
                     activeAspect === idx ? 'text-white' : aspect.is_unlocked ? 'text-brand-primary' : 'text-brand-secondary/40'
                   ]"
-                  class="shrink-0"
+                  class="aspect-tab-icon shrink-0"
                 />
-                <span class="truncate tracking-tight">{{ (aspect.short_title || aspect.title).slice(0, 2) }}</span>
+                <span class="aspect-tab-title truncate tracking-tight">{{ (aspect.short_title || aspect.title).slice(0, 2) }}</span>
               </div>
 
               <div class="shrink-0 flex items-center">
+                <div
+                  v-if="isAspectUnlockPending(aspect)"
+                  class="w-2.5 h-2.5 border-2 rounded-full animate-spin shrink-0"
+                  :class="activeAspect === idx ? 'border-white/40 border-t-white' : 'border-brand-primary/25 border-t-brand-primary'"
+                ></div>
                 <span
-                  v-if="aspect.is_unlocked"
-                  class="text-tiny font-black px-1 py-0.5 rounded-sm leading-none shrink-0 select-none"
-                  :class="[
-                    activeAspect === idx
-                      ? 'bg-white/20 text-white'
-                      : aspect.level === '上吉' || aspect.level === '中吉'
-                      ? 'bg-green-500/10 text-green-600'
-                      : aspect.level === '落陷'
-                      ? 'bg-red-500/10 text-red-600'
-                      : 'bg-amber-500/10 text-amber-600'
-                  ]"
+                  v-else-if="aspect.is_unlocked"
+                  class="aspect-score-badge text-[8px] font-black px-1 py-0.5 rounded leading-none shrink-0 select-none border"
+                  :class="resolveScoreBadgeClass(aspect.score, activeAspect === idx)"
                 >
-                  {{ aspect.level || '已开' }}
+                  <span class="aspect-score-full">{{ aspect.score != null ? `${aspect.score}分` : '已开' }}</span>
+                  <span class="aspect-score-short">{{ aspect.score != null ? aspect.score : '开' }}</span>
                 </span>
                 <span
                   v-else
-                  class="text-tiny font-bold px-1 py-0.5 rounded-sm leading-none shrink-0 select-none"
-                  :class="[
-                    activeAspect === idx ? 'bg-white/20 text-white' : 'text-brand-gold-fixed bg-amber-50 border border-amber-200/50'
-                  ]"
+                  class="text-[8px] font-bold px-1 py-0.5 rounded-sm leading-none shrink-0 select-none border"
+                  :class="activeAspect === idx ? 'bg-white/20 text-white border-white/20' : 'text-brand-gold-fixed bg-amber-50 border-amber-200/50'"
                 >
                   锁
                 </span>
@@ -1530,47 +1993,61 @@ function sleep(ms: number): Promise<void> {
           <transition name="fade" mode="out-in">
             <div
               v-if="selectedAspect"
-              :key="selectedAspect.aspect_id"
+              :key="selectedAspect.aspect_key"
               class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-4 text-left"
             >
-              <div v-if="selectedAspect.is_unlocked" class="space-y-4">
+              <div v-if="selectedAspectUnlockPending" class="py-12 flex flex-col items-center justify-center space-y-4 text-center">
+                <div class="relative w-14 h-14 flex items-center justify-center">
+                  <div class="absolute inset-0 border-4 border-brand-primary/10 rounded-full animate-pulse"></div>
+                  <div class="absolute inset-0 border-4 border-brand-primary border-t-transparent rounded-full animate-spin"></div>
+                  <Sparkles :size="18" class="text-brand-primary animate-pulse shrink-0" fill="currentColor" />
+                </div>
+                <div class="space-y-1.5 max-w-[86%] mx-auto">
+                  <h5 class="font-brand text-title font-black text-brand-ink-strong leading-tight">
+                    {{ unlockProcessingHeading }}
+                  </h5>
+                  <p class="font-ui text-caption text-brand-secondary leading-relaxed">
+                    {{ unlockWaitingMessage }}
+                  </p>
+                </div>
+              </div>
+
+              <div v-else-if="selectedAspect.is_unlocked" class="space-y-4">
                 <div class="flex justify-between items-center pb-3 border-b border-gray-50">
                   <div class="flex items-center gap-2">
                     <component :is="selectedAspect.icon" :size="16" class="text-brand-primary shrink-0" />
                     <span class="font-brand text-title font-extrabold text-brand-ink-strong leading-tight">
-                      {{ selectedAspect.title }} · 详细结果
+                      {{ selectedAspect.short_title || selectedAspect.title }} · 详细结果
                     </span>
                   </div>
-                  <span class="px-2.5 py-1 rounded-full font-ui text-caption font-bold" :class="selectedAspect.tint">
-                    综合考量：{{ selectedAspect.level || '已解锁' }}
+                  <span
+                    class="px-2.5 py-1 rounded-full font-ui text-caption font-bold border"
+                    :class="resolveScoreBadgeClass(selectedAspect.score, false)"
+                  >
+                    专项评分：{{ selectedAspect.score != null ? `${selectedAspect.score}分` : '已解锁' }}
                   </span>
                 </div>
 
                 <div class="space-y-3 font-ui text-body text-brand-secondary">
                   <div class="bg-brand-primary/5 p-3 rounded-xl border border-brand-primary/10">
-                    <p class="font-brand font-bold text-brand-primary-strong text-body">核心判断</p>
-                    <p class="text-brand-ink mt-1 font-medium">{{ selectedAspect.core_judge }}</p>
-                  </div>
-
-                  <div>
-                    <p class="font-brand font-bold text-brand-ink-strong text-body mb-1">详细说明</p>
-                    <p class="leading-relaxed whitespace-pre-line text-brand-secondary font-normal">
-                      {{ selectedAspect.explain }}
-                    </p>
-                  </div>
-
-                  <div v-if="selectedAspect.signal" class="pt-2 border-t border-gray-50 flex items-baseline gap-2 text-body">
-                    <span class="font-brand font-bold text-brand-gold-fixed text-body shrink-0">提示信号：</span>
-                    <span class="text-brand-ink leading-relaxed font-semibold">{{ selectedAspect.signal }}</span>
-                  </div>
-
-                  <div v-if="selectedAspect.suggestion" class="bg-amber-500/5 p-3 rounded-xl border border-amber-500/10 font-ui text-body text-amber-800 leading-relaxed flex items-start gap-1.5">
-                    <Lightbulb :size="14" class="text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <span class="font-bold text-amber-700">使用建议: </span>
-                      <span>{{ selectedAspect.suggestion }}</span>
+                    <div class="flex items-center gap-1.5">
+                      <Sparkles :size="14" class="text-brand-primary shrink-0" fill="currentColor" />
+                      <p class="font-brand font-bold text-brand-primary-strong text-body">一句话评价</p>
                     </div>
+                    <p class="text-brand-ink mt-1 font-medium">{{ selectedAspect.title }}</p>
                   </div>
+
+                  <div v-if="selectedAspect.risk" class="bg-red-500/[0.03] p-3 rounded-xl border border-red-100/80 font-ui text-body text-red-700 leading-relaxed space-y-1.5">
+                    <div class="flex items-center gap-1.5">
+                      <AlertCircle :size="14" class="text-red-500 shrink-0" />
+                      <p class="font-bold text-red-600">风险提示</p>
+                    </div>
+                    <p>{{ selectedAspect.risk }}</p>
+                  </div>
+
+                  <p class="leading-relaxed whitespace-pre-line text-brand-secondary font-normal">
+                    {{ selectedAspect.content }}
+                  </p>
                 </div>
               </div>
 
@@ -1588,10 +2065,21 @@ function sleep(ms: number): Promise<void> {
                 </div>
                 <button
                   @click="handleUnlockAspect(activeAspect)"
-                  class="px-6 py-2.5 bg-brand-primary text-white rounded-full font-ui text-body font-bold shadow-sm hover:bg-brand-primary-strong outline-none cursor-pointer flex items-center gap-1.5 mx-auto"
+                  class="px-6 py-2.5 bg-brand-primary text-white rounded-full font-ui text-body font-bold shadow-sm hover:bg-brand-primary-strong outline-none cursor-pointer flex items-center gap-1.5 mx-auto disabled:opacity-75 disabled:cursor-wait"
+                  :disabled="selectedAspectUnlockPending"
                 >
-                  <Lock :size="12" fill="currentColor" />
-                  <span>消耗 <span class="font-ui">{{ selectedAspect.unlock_points || effectiveAspectUnlockPoints }}</span> 积分立即解锁</span>
+                  <span
+                    v-if="selectedAspectUnlockPending"
+                    class="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin"
+                  ></span>
+                  <Lock v-else :size="12" fill="currentColor" />
+                  <span>
+                    <span v-if="selectedAspectWaitingForGeneration">正在生成专项内容</span>
+                    <span v-else-if="selectedAspectUnlockPending">正在读取专项内容</span>
+                    <span v-else>
+                      消耗 <span class="font-ui">{{ selectedAspect.unlock_points || effectiveAspectUnlockPoints }}</span> 积分立即解锁
+                    </span>
+                  </span>
                 </button>
               </div>
             </div>
@@ -1601,7 +2089,7 @@ function sleep(ms: number): Promise<void> {
               class="p-4 bg-white rounded-2xl border border-gray-100 text-center font-ui text-body text-brand-secondary/80 flex items-center justify-center gap-1.5 shadow-sm"
             >
               <Sparkles :size="13" class="text-brand-primary" fill="currentColor" />
-              <span>点击上方卡片，可查看或解锁对应维度的详细分析与使用建议。</span>
+              <span>点击上方卡片，可查看或解锁对应专项的详细分析与风险提示。</span>
             </div>
           </transition>
         </section>
@@ -1780,5 +2268,97 @@ function sleep(ms: number): Promise<void> {
 }
 .fade-enter-from, .fade-leave-to {
   opacity: 0;
+}
+
+.poem-fade-enter-active,
+.poem-fade-leave-active {
+  transition: opacity 0.45s ease, transform 0.45s ease, filter 0.45s ease;
+}
+
+.poem-fade-enter-from {
+  opacity: 0;
+  filter: blur(4px);
+  transform: translateY(6px);
+}
+
+.poem-fade-leave-to {
+  opacity: 0;
+  filter: blur(3px);
+  transform: translateY(-5px);
+}
+
+.board-relation-value {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+.aspect-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.aspect-tab-main {
+  flex: 1 1 auto;
+}
+
+.aspect-tab-title {
+  min-width: 0;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+.aspect-score-short {
+  display: none;
+}
+
+@media (max-width: 390px) {
+  .board-relation-card {
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 0.375rem;
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
+
+  .board-relation-label {
+    padding-left: 0;
+    font-size: 0.75rem;
+  }
+
+  .board-relation-value {
+    font-size: 1.125rem;
+    letter-spacing: 0;
+  }
+
+  .aspect-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 340px) {
+  .aspect-tab {
+    padding-left: 0.375rem;
+    padding-right: 0.375rem;
+  }
+
+  .aspect-tab-icon {
+    display: none;
+  }
+
+  .aspect-score-badge {
+    padding-left: 0.1875rem;
+    padding-right: 0.1875rem;
+  }
+
+  .aspect-score-full {
+    display: none;
+  }
+
+  .aspect-score-short {
+    display: inline;
+  }
 }
 </style>

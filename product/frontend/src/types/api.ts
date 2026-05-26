@@ -2,14 +2,17 @@ export type Gender = 'male' | 'female';
 export type ReviewStatus = 'processing' | 'completed' | 'failed';
 export type ReviewProgressStage = 'queued' | 'scoring' | 'rendering' | 'finalizing' | 'completed' | 'failed';
 
-export interface ReviewTextBlock {
+export interface ReviewPhoneSummary {
   title: string;
-  content: string;
+  risk: string;
+  usage_guidance: string;
+  elements_check: Record<string, string>;
 }
 
-export interface ReviewLabelValue {
-  label: string;
-  value: string;
+export interface ReviewStabilityDetail {
+  verdict: string;
+  content: string;
+  elements_check: Record<string, string>;
 }
 
 export interface ReviewBoardCenterBasis {
@@ -54,33 +57,24 @@ export interface ReviewBoardRisks {
   structural_cap_reasons: string[];
 }
 
-export interface ReviewBoardSummary {
-  main_axis: string | null;
-  main_contradiction: string | null;
-}
-
 export interface ReviewBoard {
   center_basis: ReviewBoardCenterBasis;
   active_basis: ReviewBoardActiveBasis | null;
   grid_cells: ReviewBoardGridCell[];
   relations: ReviewBoardRelations | null;
   risks: ReviewBoardRisks | null;
-  summary: ReviewBoardSummary | null;
 }
 
 export interface ReviewAspect {
-  aspect_id: string;
+  aspect_key: string;
   title: string;
   short_title: string | null;
   score: number | null;
-  level: string | null;
-  level_text: string | null;
   is_unlocked: boolean;
   unlock_points: number;
-  core_judge: string | null;
-  explain: string | null;
-  signal: string | null;
-  suggestion: string | null;
+  content: string | null;
+  risk: string | null;
+  elements_check: Record<string, string>;
 }
 
 export interface ReviewRecord {
@@ -94,11 +88,9 @@ export interface ReviewRecord {
   progress_stage: ReviewProgressStage | null;
   progress_message: string | null;
   score: number | null;
-  summary: ReviewTextBlock | null;
+  phone_summary?: ReviewPhoneSummary | null;
   board: ReviewBoard | null;
-  board_analysis: ReviewTextBlock | null;
-  stability_judgement: ReviewLabelValue | null;
-  long_term_advice: string[];
+  stability_detail?: ReviewStabilityDetail | null;
   aspects: ReviewAspect[];
   aspect_unlock_points: number | null;
   free_aspect_keys: string[];
