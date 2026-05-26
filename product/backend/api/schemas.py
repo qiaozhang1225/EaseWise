@@ -19,14 +19,17 @@ class ReviewCreateRequest(BaseModel):
     include_markdown: bool = True
 
 
-class ReviewTextBlockResponse(BaseModel):
-    title: str
-    content: str
+class ReviewPhoneSummaryResponse(BaseModel):
+    title: str = ""
+    risk: str = ""
+    usage_guidance: str = ""
+    elements_check: dict[str, str] = Field(default_factory=dict)
 
 
-class ReviewLabelValueResponse(BaseModel):
-    label: str
-    value: str
+class ReviewStabilityDetailResponse(BaseModel):
+    verdict: str = ""
+    content: str = ""
+    elements_check: dict[str, str] = Field(default_factory=dict)
 
 
 class ReviewBoardCenterBasisResponse(BaseModel):
@@ -71,33 +74,24 @@ class ReviewBoardRisksResponse(BaseModel):
     structural_cap_reasons: list[str] = Field(default_factory=list)
 
 
-class ReviewBoardSummaryResponse(BaseModel):
-    main_axis: str | None = None
-    main_contradiction: str | None = None
-
-
 class ReviewBoardResponse(BaseModel):
     center_basis: ReviewBoardCenterBasisResponse
     active_basis: ReviewBoardActiveBasisResponse | None = None
     grid_cells: list[ReviewBoardGridCellResponse] = Field(default_factory=list)
     relations: ReviewBoardRelationsResponse | None = None
     risks: ReviewBoardRisksResponse | None = None
-    summary: ReviewBoardSummaryResponse | None = None
 
 
 class ReviewAspectResponse(BaseModel):
-    aspect_id: str
+    aspect_key: str
     title: str
     short_title: str | None = None
     score: int | None = None
-    level: str | None = None
-    level_text: str | None = None
     is_unlocked: bool = False
     unlock_points: int = 0
-    core_judge: str | None = None
-    explain: str | None = None
-    signal: str | None = None
-    suggestion: str | None = None
+    content: str | None = None
+    risk: str | None = None
+    elements_check: dict[str, str] = Field(default_factory=dict)
 
 
 class ReviewRecordResponse(BaseModel):
@@ -111,17 +105,13 @@ class ReviewRecordResponse(BaseModel):
     progress_stage: ReviewProgressStage | None = None
     progress_message: str | None = None
     score: int | None = None
-    summary: ReviewTextBlockResponse | None = None
+    phone_summary: ReviewPhoneSummaryResponse | None = None
     board: ReviewBoardResponse | None = None
-    board_analysis: ReviewTextBlockResponse | None = None
-    stability_judgement: ReviewLabelValueResponse | None = None
-    long_term_advice: list[str] = Field(default_factory=list)
+    stability_detail: ReviewStabilityDetailResponse | None = None
     aspects: list[ReviewAspectResponse] = Field(default_factory=list)
     aspect_unlock_points: int | None = None
     free_aspect_keys: list[str] = Field(default_factory=list)
     unlock_enforcement_enabled: bool | None = None
-    score_result: dict[str, Any] | None = None
-    score_template: dict[str, Any] | None = None
     score_markdown: str | None = None
     error_message: str | None = None
     created_at: str

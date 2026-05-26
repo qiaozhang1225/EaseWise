@@ -334,6 +334,64 @@ def update_review_progress(*, review_id: str, progress_stage: str, progress_mess
         )
 
 
+def update_review_generation_payload(
+    *,
+    review_id: str,
+    score_result: dict[str, Any],
+    score_template: dict[str, Any],
+    score_markdown: str | None,
+    progress_stage: str,
+    progress_message: str | None,
+    updated_at: str,
+) -> None:
+    with open_connection() as connection:
+        connection.execute(
+            """
+            UPDATE reviews
+            SET progress_stage = ?, progress_message = ?, score_result_json = ?, score_template_json = ?, score_markdown = ?, error_message = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                progress_stage,
+                progress_message,
+                json.dumps(score_result, ensure_ascii=False),
+                json.dumps(score_template, ensure_ascii=False),
+                score_markdown,
+                updated_at,
+                review_id,
+            ),
+        )
+
+
+def complete_review_with_message(
+    *,
+    review_id: str,
+    score_result: dict[str, Any],
+    score_template: dict[str, Any],
+    score_markdown: str | None,
+    progress_message: str,
+    updated_at: str,
+) -> None:
+    with open_connection() as connection:
+        connection.execute(
+            """
+            UPDATE reviews
+            SET status = ?, progress_stage = ?, progress_message = ?, score_result_json = ?, score_template_json = ?, score_markdown = ?, error_message = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                "completed",
+                "completed",
+                progress_message,
+                json.dumps(score_result, ensure_ascii=False),
+                json.dumps(score_template, ensure_ascii=False),
+                score_markdown,
+                updated_at,
+                review_id,
+            ),
+        )
+
+
 
 def complete_review(*, review_id: str, status: str, score_result: dict[str, Any], score_template: dict[str, Any], score_markdown: str | None, updated_at: str) -> None:
     with open_connection() as connection:
@@ -344,6 +402,14 @@ def complete_review(*, review_id: str, status: str, score_result: dict[str, Any]
             WHERE id = ?
             """,
             (status, "completed", "评测结果已生成", json.dumps(score_result, ensure_ascii=False), json.dumps(score_template, ensure_ascii=False), score_markdown, updated_at, review_id),
+        )
+
+
+def update_review_score_template(*, review_id: str, score_template: dict[str, Any], updated_at: str) -> None:
+    with open_connection() as connection:
+        connection.execute(
+            "UPDATE reviews SET score_template_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(score_template, ensure_ascii=False), updated_at, review_id),
         )
 
 

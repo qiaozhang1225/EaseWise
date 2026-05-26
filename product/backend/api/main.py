@@ -2,6 +2,8 @@
 
 import html
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -12,17 +14,19 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from product.backend.almanac import build_almanac_for_date, build_today_almanac
 from product.backend.llm import load_env_file
+from scoring.dimension_score_v2 import score_phone_dimensions_v2
+from scoring.dimension_score_v3 import score_phone_dimensions_v3
 from scoring.engine import load_rules, score_phone
 from scoring.services.bundle_service import build_scoring_bundle
 
 from .agent import build_agent_reply
 from .auth import build_session_expiry, exchange_wechat_code, hash_access_token, issue_access_token, require_authenticated_user, require_internal_admin_access, require_registered_user, resolve_authenticated_user
 from .config import APP_TITLE, APP_VERSION, allow_mock_wechat_login, get_cors_origins, get_database_path, get_public_base_url, get_wechat_oa_app_id
-from .database import InsufficientPointsError, adjust_points, complete_review, complete_usage_record, create_recharge_order, create_review_aspect_unlock, create_review_with_charge, create_session, ensure_schema, fail_review, fail_usage_record, get_internal_user, get_points_account, get_recharge_order, get_review, get_session_user_by_token_hash, get_user, list_points_ledger, list_recharge_orders, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, merge_guest_user_into_user, refund_points, review_recharge_order, update_review_progress, update_user_profile, upsert_guest_user, upsert_runtime_config_entry, upsert_wechat_user
-from .phone_review_view import build_phone_review_product_view
-from .product_review import build_product_review_render
-from .runtime_config import get_runtime_available_recharge_packages, get_runtime_guest_initial_points, get_runtime_initial_points, get_runtime_phone_review_aspect_order, get_runtime_phone_review_aspect_unlock_points_cost, get_runtime_phone_review_base_points_cost, get_runtime_phone_review_free_aspect_keys, get_runtime_phone_review_unlock_enforcement_enabled, is_module_enabled, normalize_channel_key, normalize_config_key, normalize_scope_key, normalize_scope_type, resolve_public_runtime_config
-from .schemas import AgentReplyRequest, AgentReplyResponse, AlmanacResponse, AuthLoginResponse, ComplianceConfigResponse, CurrentUserResponse, CustomerServiceConfigResponse, GuestSessionRequest, GuestSessionResponse, InternalUserListResponse, InternalUserResponse, ManualPointsAdjustRequest, ManualPointsAdjustResponse, ModuleRuntimeConfigResponse, PointsAccountResponse, PointsLedgerEntryResponse, PointsLedgerListResponse, PublicRuntimeConfigResponse, RechargeOrderCreateRequest, RechargeOrderListResponse, RechargeOrderResponse, RechargeOrderReviewRequest, RechargeOrderReviewResponse, RechargePackageListResponse, RechargePackageResponse, ReviewAspectResponse, ReviewAspectUnlockListResponse, ReviewAspectUnlockRequest, ReviewAspectUnlockResponse, ReviewBoardResponse, ReviewCreateRequest, ReviewLabelValueResponse, ReviewListResponse, ReviewRecordResponse, ReviewSummaryResponse, ReviewTextBlockResponse, RuntimeConfigEntryResponse, RuntimeConfigListResponse, RuntimeConfigUpsertRequest, RuntimeModulesConfigResponse, RuntimePointsConfigResponse, RuntimeRechargeConfigResponse, UsageRecordListResponse, UsageRecordResponse, UserProfileUpdateRequest, UserResponse, WeChatLoginRequest
+from .database import InsufficientPointsError, adjust_points, complete_review, complete_review_with_message, complete_usage_record, create_recharge_order, create_review_aspect_unlock, create_review_with_charge, create_session, ensure_schema, fail_review, fail_usage_record, get_internal_user, get_points_account, get_recharge_order, get_review, get_session_user_by_token_hash, get_user, list_points_ledger, list_recharge_orders, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, merge_guest_user_into_user, refund_points, review_recharge_order, update_review_generation_payload, update_review_progress, update_review_score_template, update_user_profile, upsert_guest_user, upsert_runtime_config_entry, upsert_wechat_user
+from .phone_review_view import PUBLIC_ASPECT_ORDER, build_phone_review_product_view
+from .product_review import build_product_review_aspects_render, build_product_review_core_render
+from .runtime_config import get_runtime_available_recharge_packages, get_runtime_guest_initial_points, get_runtime_initial_points, get_runtime_phone_review_aspect_order, get_runtime_phone_review_aspect_unlock_points_cost, get_runtime_phone_review_base_points_cost, get_runtime_phone_review_unlock_enforcement_enabled, is_module_enabled, normalize_channel_key, normalize_config_key, normalize_scope_key, normalize_scope_type, resolve_public_runtime_config
+from .schemas import AgentReplyRequest, AgentReplyResponse, AlmanacResponse, AuthLoginResponse, ComplianceConfigResponse, CurrentUserResponse, CustomerServiceConfigResponse, GuestSessionRequest, GuestSessionResponse, InternalUserListResponse, InternalUserResponse, ManualPointsAdjustRequest, ManualPointsAdjustResponse, ModuleRuntimeConfigResponse, PointsAccountResponse, PointsLedgerEntryResponse, PointsLedgerListResponse, PublicRuntimeConfigResponse, RechargeOrderCreateRequest, RechargeOrderListResponse, RechargeOrderResponse, RechargeOrderReviewRequest, RechargeOrderReviewResponse, RechargePackageListResponse, RechargePackageResponse, ReviewAspectResponse, ReviewAspectUnlockListResponse, ReviewAspectUnlockRequest, ReviewAspectUnlockResponse, ReviewBoardResponse, ReviewCreateRequest, ReviewListResponse, ReviewPhoneSummaryResponse, ReviewRecordResponse, ReviewStabilityDetailResponse, ReviewSummaryResponse, RuntimeConfigEntryResponse, RuntimeConfigListResponse, RuntimeConfigUpsertRequest, RuntimeModulesConfigResponse, RuntimePointsConfigResponse, RuntimeRechargeConfigResponse, UsageRecordListResponse, UsageRecordResponse, UserProfileUpdateRequest, UserResponse, WeChatLoginRequest
 from .wechat_h5 import STATE_COOKIE_NAME, build_oauth_state, build_wechat_oauth_authorize_url, exchange_h5_oauth_code, h5_oauth_is_configured, is_wechat_browser
 
 PHONE_PATTERN = re.compile(r"^\d{11}$")
@@ -32,6 +36,7 @@ RULES = load_rules()
 PHONE_REVIEW_BASE_SCENE = "phone_review_base"
 PHONE_REVIEW_BASE_REFUND_BIZ_TYPE = "phone_review_base_refund"
 PHONE_REVIEW_ASPECT_UNLOCK_SCENE = "phone_review_aspect_unlock"
+REVIEW_PREVIEW_ASPECT_THRESHOLD = 4
 
 app = FastAPI(title=APP_TITLE, version=APP_VERSION)
 app.add_middleware(CORSMiddleware, allow_origins=get_cors_origins(), allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -566,8 +571,9 @@ def create_review_aspect_unlock_record(
     normalized_aspect_key = payload.aspect_key.strip().lower()
     if normalized_aspect_key not in available_aspect_keys:
         raise HTTPException(status_code=422, detail="invalid_aspect_key")
-    free_aspect_keys = _resolve_review_free_aspect_keys(available_aspect_keys, channel_key=channel_key)
-    points_cost = 0 if normalized_aspect_key in free_aspect_keys else get_runtime_phone_review_aspect_unlock_points_cost(channel_key)
+    if not _review_aspect_detail_ready(review, normalized_aspect_key):
+        raise HTTPException(status_code=409, detail="aspect_not_ready")
+    points_cost = get_runtime_phone_review_aspect_unlock_points_cost(channel_key)
     try:
         unlock = create_review_aspect_unlock(
             review_id=review_id,
@@ -581,7 +587,7 @@ def create_review_aspect_unlock_record(
     except InsufficientPointsError as exc:
         raise HTTPException(status_code=402, detail="insufficient_points") from exc
     public_view = _resolve_review_public_view(review, current_user_id=current_user_id, channel_key=channel_key)
-    aspect_map = {item.aspect_id: item for item in _build_review_aspect_models(public_view)}
+    aspect_map = {item.aspect_key: item for item in _build_review_aspect_models(public_view)}
     points_account = get_points_account(current_user_id)
     return _build_review_aspect_unlock_response(
         unlock,
@@ -617,17 +623,13 @@ def _build_review_record_response(
         progress_stage=review.get("progress_stage"),
         progress_message=review.get("progress_message"),
         score=_coerce_review_score(review, public_view),
-        summary=_build_review_text_block(public_view.get("summary") if public_view else None),
+        phone_summary=_build_review_phone_summary(public_view.get("phone_summary") if public_view else None),
         board=_build_review_board_response(public_view.get("board") if public_view else None),
-        board_analysis=_build_review_text_block(public_view.get("board_analysis") if public_view else None),
-        stability_judgement=_build_review_label_value(public_view.get("stability_judgement") if public_view else None),
-        long_term_advice=list(public_view.get("long_term_advice") or []) if public_view else [],
+        stability_detail=_build_review_stability_detail(public_view.get("stability_detail") if public_view else None),
         aspects=_build_review_aspect_models(public_view),
         aspect_unlock_points=int(public_view.get("aspect_unlock_points")) if public_view and public_view.get("aspect_unlock_points") is not None else None,
         free_aspect_keys=list(public_view.get("free_aspect_keys") or []) if public_view else [],
         unlock_enforcement_enabled=bool(public_view.get("unlock_enforcement_enabled")) if public_view and public_view.get("unlock_enforcement_enabled") is not None else None,
-        score_result=review.get("score_result"),
-        score_template=review.get("score_template"),
         score_markdown=review.get("score_markdown"),
         error_message=review.get("error_message"),
         created_at=str(review["created_at"]),
@@ -800,23 +802,68 @@ def _resolve_review_public_view(
         return None
 
     base_view = score_template.get("product_view")
-    if not isinstance(base_view, dict) or _review_product_view_needs_refresh(base_view):
+    if (
+        not isinstance(base_view, dict)
+        or _review_product_view_needs_refresh(base_view)
+        or _review_product_view_missing_cached_aspects(base_view, score_template)
+    ):
         score_result = review.get("score_result")
         if not isinstance(score_result, dict):
             return None
+        product_render = score_template.get("product_render") if isinstance(score_template.get("product_render"), dict) else {}
+        rendered_sections = product_render.get("sections") if isinstance(product_render.get("sections"), dict) else {}
+        stability_section = rendered_sections.get("stability") if isinstance(rendered_sections.get("stability"), dict) else {}
+        phone_summary = product_render.get("phone_summary") if isinstance(product_render.get("phone_summary"), dict) else {}
+        needs_render_refresh = not (
+            str(phone_summary.get("title") or "").strip()
+            and str(phone_summary.get("risk") or "").strip()
+            and str(phone_summary.get("usage_guidance") or "").strip()
+            and str(stability_section.get("verdict") or "").strip()
+            and str(stability_section.get("content") or "").strip()
+        )
+        if needs_render_refresh:
+            refreshed_package = {
+                "score_result": score_result,
+                "score_template": dict(score_template),
+            }
+            refreshed_package["score_template"]["dimension_score_v2"] = score_phone_dimensions_v2(
+                str(review["phone"]),
+                str(review["gender"]),
+                RULES,
+            )
+            refreshed_package["score_template"]["dimension_score_v3"] = score_phone_dimensions_v3(
+                str(review["phone"]),
+                str(review["gender"]),
+                RULES,
+            )
+            refreshed_package["score_template"]["product_render"] = build_product_review_core_render(refreshed_package)
+            score_template = refreshed_package["score_template"]
         base_view = build_phone_review_product_view(score_result, score_template)
         base_view["rules_version"] = RULES.get("version")
+        score_template["product_view"] = base_view
+        complete_review(
+            review_id=str(review["id"]),
+            status=str(review.get("status") or "completed"),
+            score_result=score_result,
+            score_template=score_template,
+            score_markdown=review.get("score_markdown") if isinstance(review.get("score_markdown"), str) else None,
+            updated_at=_utc_now(),
+        )
 
     public_view = dict(base_view)
     aspects = [dict(item) for item in public_view.get("aspects", []) if isinstance(item, dict)]
     configured_order = get_runtime_phone_review_aspect_order(channel_key)
-    available_aspect_keys = [str(item.get("aspect_id") or "").strip() for item in aspects if str(item.get("aspect_id") or "").strip()]
+    available_aspect_keys = [
+        str(item.get("aspect_key") or item.get("aspect_id") or "").strip()
+        for item in aspects
+        if str(item.get("aspect_key") or item.get("aspect_id") or "").strip()
+    ]
     ordered_aspect_keys = [item for item in configured_order if item in available_aspect_keys]
     for item in available_aspect_keys:
         if item not in ordered_aspect_keys:
             ordered_aspect_keys.append(item)
 
-    aspect_map = {str(item.get("aspect_id")): item for item in aspects}
+    aspect_map = {str(item.get("aspect_key") or item.get("aspect_id")): item for item in aspects}
     free_aspect_keys = _resolve_review_free_aspect_keys(ordered_aspect_keys, channel_key=channel_key)
     unlock_enforcement_enabled = get_runtime_phone_review_unlock_enforcement_enabled(channel_key)
     unlocked_key_set = set(ordered_aspect_keys if not unlock_enforcement_enabled else free_aspect_keys)
@@ -834,13 +881,9 @@ def _resolve_review_public_view(
         aspect["is_unlocked"] = is_unlocked
         aspect["unlock_points"] = 0 if aspect_key in free_aspect_keys else unlock_points_cost
         if unlock_enforcement_enabled and not is_unlocked:
-            aspect["score"] = None
-            aspect["level"] = None
-            aspect["level_text"] = None
-            aspect["core_judge"] = None
-            aspect["explain"] = None
-            aspect["signal"] = None
-            aspect["suggestion"] = None
+            aspect["content"] = None
+            aspect["risk"] = None
+            aspect["elements_check"] = {}
         ordered_aspects.append(aspect)
 
     public_view["aspects"] = ordered_aspects
@@ -851,24 +894,46 @@ def _resolve_review_public_view(
     return public_view
 
 
-def _build_review_text_block(payload: Any) -> ReviewTextBlockResponse | None:
+def _build_review_phone_summary(payload: Any) -> ReviewPhoneSummaryResponse | None:
     if not isinstance(payload, dict):
         return None
     title = str(payload.get("title") or "").strip()
-    content = str(payload.get("content") or "").strip()
-    if not title and not content:
+    risk = str(payload.get("risk") or "").strip()
+    usage_guidance = str(payload.get("usage_guidance") or "").strip()
+    elements_check = _string_dict(payload.get("elements_check"))
+    if not title and not risk and not usage_guidance and not elements_check:
         return None
-    return ReviewTextBlockResponse(title=title, content=content)
+    return ReviewPhoneSummaryResponse(
+        title=title,
+        risk=risk,
+        usage_guidance=usage_guidance,
+        elements_check=elements_check,
+    )
 
 
-def _build_review_label_value(payload: Any) -> ReviewLabelValueResponse | None:
+def _build_review_stability_detail(payload: Any) -> ReviewStabilityDetailResponse | None:
     if not isinstance(payload, dict):
         return None
-    label = str(payload.get("label") or "").strip()
-    value = str(payload.get("value") or "").strip()
-    if not label and not value:
+    verdict = str(payload.get("verdict") or "").strip()
+    content = str(payload.get("content") or "").strip()
+    elements_check = _string_dict(payload.get("elements_check"))
+    if not verdict and not content and not elements_check:
         return None
-    return ReviewLabelValueResponse(label=label, value=value)
+    return ReviewStabilityDetailResponse(
+        verdict=verdict,
+        content=content,
+        elements_check=elements_check,
+    )
+
+
+def _string_dict(payload: Any) -> dict[str, str]:
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        str(key): str(value).strip()
+        for key, value in payload.items()
+        if str(key).strip() and str(value).strip()
+    }
 
 
 def _build_review_board_response(payload: Any) -> ReviewBoardResponse | None:
@@ -885,6 +950,18 @@ def _build_review_board_response(payload: Any) -> ReviewBoardResponse | None:
 def _review_product_view_needs_refresh(payload: dict[str, Any]) -> bool:
     if payload.get("rules_version") != RULES.get("version"):
         return True
+    if any(
+        field in payload
+        for field in ("summary", "board_analysis", "overall_detail", "stability_judgement", "elements_check", "long_term_advice")
+    ):
+        return True
+    if not isinstance(payload.get("phone_summary"), dict):
+        return True
+    phone_summary = payload.get("phone_summary")
+    if not isinstance(phone_summary.get("elements_check"), dict):
+        return True
+    if not isinstance(payload.get("stability_detail"), dict):
+        return True
     board = payload.get("board")
     if not isinstance(board, dict):
         return True
@@ -894,15 +971,69 @@ def _review_product_view_needs_refresh(payload: dict[str, Any]) -> bool:
         return True
     aspects = payload.get("aspects")
     if isinstance(aspects, list):
+        seen_keys: set[str] = set()
         for item in aspects:
             if not isinstance(item, dict):
-                continue
+                return True
+            aspect_key = str(item.get("aspect_key") or item.get("aspect_id") or "").strip()
+            if not aspect_key:
+                return True
+            seen_keys.add(aspect_key)
             if item.get("score") is None:
                 return True
+            if not isinstance(item.get("elements_check"), dict):
+                return True
+            if any(field in item for field in ("level", "level_text", "core_judge", "explain", "signal", "suggestion")):
+                return True
+        if not set(PUBLIC_ASPECT_ORDER).issubset(seen_keys):
+            return True
         return False
     if isinstance(board.get("cells"), list):
         return True
     return True
+
+
+def _review_product_view_missing_cached_aspects(payload: dict[str, Any], score_template: dict[str, Any]) -> bool:
+    product_aspects_render = score_template.get("product_aspects_render")
+    if not isinstance(product_aspects_render, dict) or not product_aspects_render:
+        return False
+
+    public_aspects = payload.get("aspects")
+    if not isinstance(public_aspects, list):
+        return True
+    public_aspect_map = {
+        str(item.get("aspect_key") or item.get("aspect_id") or "").strip(): item
+        for item in public_aspects
+        if isinstance(item, dict)
+    }
+
+    for aspect_key in PUBLIC_ASPECT_ORDER:
+        cached_aspect = product_aspects_render.get(aspect_key)
+        if not isinstance(cached_aspect, dict):
+            continue
+        public_aspect = public_aspect_map.get(aspect_key)
+        if not isinstance(public_aspect, dict):
+            return True
+        if _rendered_aspect_field_changed(cached_aspect, public_aspect, "title"):
+            return True
+        if _rendered_aspect_field_changed(cached_aspect, public_aspect, "content"):
+            return True
+        if _rendered_aspect_field_changed(cached_aspect, public_aspect, "risk"):
+            return True
+        cached_elements = cached_aspect.get("elements_check")
+        if isinstance(cached_elements, dict) and cached_elements and public_aspect.get("elements_check") != cached_elements:
+            return True
+        if cached_aspect.get("score") is not None and public_aspect.get("score") != cached_aspect.get("score"):
+            return True
+
+    return False
+
+
+def _rendered_aspect_field_changed(rendered: dict[str, Any], public: dict[str, Any], field: str) -> bool:
+    rendered_value = str(rendered.get(field) or "").strip()
+    if not rendered_value:
+        return False
+    return str(public.get(field) or "").strip() != rendered_value
 
 
 def _build_review_aspect_models(public_view: dict[str, Any] | None) -> list[ReviewAspectResponse]:
@@ -962,59 +1093,80 @@ def _require_owned_review(review_id: str, *, current_user_id: str) -> dict[str, 
 
 
 def _resolve_review_aspect_keys(review: dict[str, object], *, channel_key: str | None) -> list[str]:
-    configured_order = get_runtime_phone_review_aspect_order(channel_key)
-    outline_keys: list[str] = []
-    score_template = review.get("score_template")
-    product_view = score_template.get("product_view") if isinstance(score_template, dict) else None
-    if isinstance(product_view, dict) and isinstance(product_view.get("aspects"), list):
-        for item in product_view["aspects"]:
-            if not isinstance(item, dict):
-                continue
-            normalized_key = str(item.get("aspect_id") or "").strip().lower()
-            if normalized_key and normalized_key not in outline_keys:
-                outline_keys.append(normalized_key)
-    review_outline = score_template.get("review_outline") if isinstance(score_template, dict) else None
-    if isinstance(review_outline, list):
-        for item in review_outline:
-            if not isinstance(item, dict):
-                continue
-            normalized_key = str(item.get("key") or "").strip().lower()
-            if normalized_key and normalized_key not in outline_keys:
-                outline_keys.append(normalized_key)
-    if not outline_keys:
-        return configured_order
-    ordered_keys = [item for item in configured_order if item in outline_keys]
-    for item in outline_keys:
-        if item not in ordered_keys:
-            ordered_keys.append(item)
-    return ordered_keys
+    return get_runtime_phone_review_aspect_order(channel_key)
 
 
 
 def _resolve_review_free_aspect_keys(available_aspect_keys: list[str], *, channel_key: str | None) -> list[str]:
-    available_key_set = set(available_aspect_keys)
-    return [item for item in get_runtime_phone_review_free_aspect_keys(channel_key) if item in available_key_set]
+    return []
+
+
+def _review_aspect_detail_ready(review: dict[str, object], aspect_key: str) -> bool:
+    score_template = review.get("score_template")
+    if not isinstance(score_template, dict):
+        return False
+    product_aspects_render = score_template.get("product_aspects_render")
+    if isinstance(product_aspects_render, dict):
+        aspect = product_aspects_render.get(aspect_key)
+        if isinstance(aspect, dict) and str(aspect.get("content") or "").strip() and str(aspect.get("risk") or "").strip():
+            return True
+
+    product_view = score_template.get("product_view")
+    aspects = product_view.get("aspects") if isinstance(product_view, dict) else None
+    if isinstance(aspects, list):
+        for item in aspects:
+            if not isinstance(item, dict):
+                continue
+            item_key = str(item.get("aspect_key") or item.get("aspect_id") or "").strip()
+            if item_key == aspect_key and str(item.get("content") or "").strip() and str(item.get("risk") or "").strip():
+                return True
+    return False
 
 
 
 def _run_review_generation(*, review_id: str, phone: str, gender: str, include_markdown: bool, user_id: str | None = None, points_cost: int = 0) -> None:
+    aspect_prefetch_started = False
     try:
         update_review_progress(review_id=review_id, progress_stage="scoring", progress_message="正在计算基础盘面", updated_at=_utc_now())
         result = score_phone(phone, gender, RULES)
 
-        update_review_progress(review_id=review_id, progress_stage="rendering", progress_message="正在生成产品解读", updated_at=_utc_now())
         bundle = build_scoring_bundle(result, include_markdown=include_markdown)
-        bundle["score_template"]["product_render"] = build_product_review_render(bundle)
+        bundle["score_template"]["dimension_score_v2"] = score_phone_dimensions_v2(phone, gender, RULES)
+        bundle["score_template"]["dimension_score_v3"] = score_phone_dimensions_v3(phone, gender, RULES)
         bundle["score_template"]["product_view"] = build_phone_review_product_view(bundle["score_result"], bundle["score_template"])
         bundle["score_template"]["product_view"]["rules_version"] = RULES.get("version")
-
-        update_review_progress(review_id=review_id, progress_stage="finalizing", progress_message="正在整理最终结果", updated_at=_utc_now())
-        complete_review(
+        update_review_generation_payload(
             review_id=review_id,
-            status="completed",
             score_result=bundle["score_result"],
             score_template=bundle["score_template"],
             score_markdown=bundle.get("score_markdown"),
+            progress_stage="scoring",
+            progress_message="基础盘面已完成，智能体正在同步生成总评和专项内容",
+            updated_at=_utc_now(),
+        )
+        _start_review_aspect_prefetch(review_id=review_id)
+        aspect_prefetch_started = True
+
+        update_review_progress(review_id=review_id, progress_stage="scoring", progress_message="基础评分已完成，正在生成总评", updated_at=_utc_now())
+        bundle["score_template"]["product_render"] = build_product_review_core_render(bundle)
+        if isinstance(bundle["score_template"]["product_render"].get("phone_summary"), dict):
+            bundle["score_template"]["phone_summary"] = bundle["score_template"]["product_render"]["phone_summary"]
+        current_review = get_review(review_id)
+        if current_review is not None and isinstance(current_review.get("score_template"), dict):
+            current_template = current_review["score_template"]
+            current_aspects = current_template.get("product_aspects_render") if isinstance(current_template.get("product_aspects_render"), dict) else {}
+            if current_aspects:
+                bundle["score_template"]["product_aspects_render"] = dict(current_aspects)
+        bundle["score_template"]["product_view"] = build_phone_review_product_view(bundle["score_result"], bundle["score_template"])
+        bundle["score_template"]["product_view"]["rules_version"] = RULES.get("version")
+
+        update_review_generation_payload(
+            review_id=review_id,
+            score_result=bundle["score_result"],
+            score_template=bundle["score_template"],
+            score_markdown=bundle.get("score_markdown"),
+            progress_stage="rendering",
+            progress_message="总评和长期使用建议已完成，专项内容正在预热",
             updated_at=_utc_now(),
         )
     except Exception as exc:
@@ -1034,6 +1186,86 @@ def _run_review_generation(*, review_id: str, phone: str, gender: str, include_m
 
     if user_id and points_cost > 0:
         complete_usage_record(usage_record_id=review_id, result_summary={"status": "completed"}, updated_at=_utc_now())
+
+    if not aspect_prefetch_started:
+        _start_review_aspect_prefetch(review_id=review_id)
+
+
+def _start_review_aspect_prefetch(*, review_id: str) -> None:
+    thread = threading.Thread(target=_run_review_aspect_prefetch, kwargs={"review_id": review_id}, daemon=True)
+    thread.start()
+
+
+def _run_review_aspect_prefetch(*, review_id: str) -> None:
+    review = get_review(review_id)
+    if review is None or not isinstance(review.get("score_result"), dict) or not isinstance(review.get("score_template"), dict):
+        return
+    try:
+        score_template = dict(review["score_template"])
+        if not isinstance(score_template.get("product_aspects_render"), dict):
+            score_template["product_aspects_render"] = {}
+        update_review_score_template(review_id=review_id, score_template=score_template, updated_at=_utc_now())
+
+        progressed_count = 0
+        preview_completed = False
+
+        def persist_aspect(aspect_key: str, rendered_aspect: dict[str, Any]) -> None:
+            nonlocal progressed_count, preview_completed
+            current_review = get_review(review_id)
+            if current_review is None or not isinstance(current_review.get("score_template"), dict):
+                return
+            current_template = dict(current_review["score_template"])
+            current_render = current_template.get("product_aspects_render") if isinstance(current_template.get("product_aspects_render"), dict) else {}
+            next_render = dict(current_render)
+            next_render[aspect_key] = rendered_aspect
+            current_template["product_aspects_render"] = next_render
+            current_template["product_view"] = build_phone_review_product_view(review["score_result"], current_template)
+            current_template["product_view"]["rules_version"] = RULES.get("version")
+            update_review_score_template(review_id=review_id, score_template=current_template, updated_at=_utc_now())
+            progressed_count = len(next_render)
+
+            if progressed_count >= REVIEW_PREVIEW_ASPECT_THRESHOLD and not preview_completed:
+                complete_review_with_message(
+                    review_id=review_id,
+                    score_result=review["score_result"],
+                    score_template=current_template,
+                    score_markdown=review.get("score_markdown") if isinstance(review.get("score_markdown"), str) else None,
+                    progress_message=f"前 {REVIEW_PREVIEW_ASPECT_THRESHOLD} 个专项已完成，剩余专项继续后台生成",
+                    updated_at=_utc_now(),
+                )
+                preview_completed = True
+
+        rendered_aspects = build_product_review_aspects_render(
+            {
+                "score_result": review["score_result"],
+                "score_template": score_template,
+            },
+            on_result=persist_aspect,
+        )
+        score_template["product_aspects_render"] = rendered_aspects
+        score_template["product_view"] = build_phone_review_product_view(review["score_result"], score_template)
+        score_template["product_view"]["rules_version"] = RULES.get("version")
+        if preview_completed or len(rendered_aspects) >= REVIEW_PREVIEW_ASPECT_THRESHOLD:
+            complete_review_with_message(
+                review_id=review_id,
+                score_result=review["score_result"],
+                score_template=score_template,
+                score_markdown=review.get("score_markdown") if isinstance(review.get("score_markdown"), str) else None,
+                progress_message="12 个专项已全部生成",
+                updated_at=_utc_now(),
+            )
+        else:
+            update_review_generation_payload(
+                review_id=review_id,
+                score_result=review["score_result"],
+                score_template=score_template,
+                score_markdown=review.get("score_markdown") if isinstance(review.get("score_markdown"), str) else None,
+                progress_stage="finalizing",
+                progress_message=f"专项内容已生成 {len(rendered_aspects)}/12，稍后可继续刷新查看",
+                updated_at=_utc_now(),
+            )
+    except Exception:
+        return
 
 
 

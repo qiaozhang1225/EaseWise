@@ -16,7 +16,7 @@ from .config import (
     get_recharge_packages,
 )
 from .database import list_runtime_config_entries
-from .phone_review_view import DEFAULT_FREE_ASPECT_KEYS, PUBLIC_ASPECT_ORDER
+from .phone_review_view import PUBLIC_ASPECT_ORDER
 
 GLOBAL_SCOPE_TYPE = "global"
 CHANNEL_SCOPE_TYPE = "channel"
@@ -28,10 +28,13 @@ DEFAULT_PHONE_REVIEW_ASPECT_ORDER = [
     "love",
     "health",
     "acad",
-    "social",
+    "fortune",
+    "investment",
     "travel",
-    "law",
-    "risk",
+    "social",
+    "family",
+    "personality",
+    "fengshui",
 ]
 
 CONFIG_KEY_POINTS_INITIAL_GRANT = "points.initial_grant"
@@ -136,10 +139,8 @@ def get_runtime_phone_review_aspect_order(channel_key: str | None = None) -> lis
 
 
 def get_runtime_phone_review_free_aspect_keys(channel_key: str | None = None) -> list[str]:
-    config_bundle = resolve_runtime_config_bundle(channel_key)
-    configured_free_keys = _coerce_string_list(config_bundle.get(CONFIG_KEY_PHONE_REVIEW_FREE_ASPECT_KEYS), fallback=DEFAULT_FREE_ASPECT_KEYS)
-    valid_keys = set(get_runtime_phone_review_aspect_order(channel_key))
-    return [item for item in configured_free_keys if item in valid_keys]
+    _ = channel_key
+    return []
 
 
 def get_runtime_phone_review_unlock_enforcement_enabled(channel_key: str | None = None) -> bool:
