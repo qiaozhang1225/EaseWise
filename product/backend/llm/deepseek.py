@@ -9,7 +9,7 @@ from urllib import error, request
 
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 BETA_BASE_URL = "https://api.deepseek.com/beta"
-DEFAULT_MODEL = "deepseek-v4-flash"
+DEFAULT_MODEL = "deepseek-v4-pro"
 
 Message = dict[str, Any]
 ToolHandler = Callable[[dict[str, Any]], Any]
