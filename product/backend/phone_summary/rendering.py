@@ -13,8 +13,8 @@ from knowledge import (
     load_shared_foundation,
 )
 from product.backend.llm import DeepSeekAPIError, DeepSeekClient
-from scoring.engine import load_rules, score_phone
-from scoring.services.bundle_service import build_scoring_bundle
+from scoring.total_score.engine import load_rules, score_phone
+from scoring.total_score.bundle import build_scoring_bundle
 
 TonePack = Literal["customer", "professional"]
 DEEPSEEK_PHONE_SUMMARY_ERROR = "DeepSeek 调用出现问题，手机号总评未生成。"
@@ -148,7 +148,10 @@ def render_phone_summary_from_package(
     thinking_enabled: bool = False,
     max_tokens: int = 1800,
 ) -> PhoneSummaryRenderResult:
-    payload = package["score_template"]["board_description_payload"]
+    score_template = package["score_template"]
+    payload = score_template.get("phone_summary_facts") if isinstance(score_template.get("phone_summary_facts"), dict) else {}
+    if not payload:
+        raise DeepSeekAPIError(DEEPSEEK_PHONE_SUMMARY_ERROR)
     system_prompt, user_prompt, json_example = build_phone_summary_prompts(payload, tone_pack=tone_pack)
 
     model_name = model
@@ -211,9 +214,6 @@ def _locked_fields(payload: dict[str, Any]) -> dict[str, Any]:
     score_facts = payload["score_facts"]
     return {
         "score_band": payload["score_band"],
-        "main_axis": payload["main_axis"],
-        "main_contradiction": payload["main_contradiction"],
-        "practical_manifestation": payload["practical_manifestation"],
         "score_facts": score_facts,
         "board_basis": payload["board_basis"],
         "core_relations": payload["core_relations"],
@@ -226,7 +226,6 @@ def _evidence_fields(payload: dict[str, Any]) -> dict[str, Any]:
         "score_facts": payload["score_facts"],
         "core_relations": payload["core_relations"],
         "technical_focus": payload["technical_focus"],
-        "practical_manifestation": payload["practical_manifestation"],
     }
 
 
@@ -234,18 +233,6 @@ def _direct_checks(payload: dict[str, Any]) -> list[dict[str, Any]]:
     score_facts = payload["score_facts"]
     core = payload["core_relations"]
     checks: list[dict[str, Any]] = [
-        {
-            "name": "主轴",
-            "fact": payload["main_axis"],
-            "meaning": "先定这张盘最终往哪边偏。",
-            "weight": "high",
-        },
-        {
-            "name": "主矛盾",
-            "fact": payload["main_contradiction"],
-            "meaning": "这是一句最该保留到最终结论里的现实矛盾。",
-            "weight": "high",
-        },
         {
             "name": "综合分",
             "fact": str(score_facts["final_score"]),
@@ -281,12 +268,6 @@ def _direct_checks(payload: dict[str, Any]) -> list[dict[str, Any]]:
             "fact": "、".join([str(item) for item in core["structural_cap_reasons"]]) or "无",
             "meaning": "封顶原因限制上限，决定亮点能不能完整落地。",
             "weight": "high",
-        },
-        {
-            "name": "现实落点",
-            "fact": payload["practical_manifestation"],
-            "meaning": "这是最终写给用户看的现实翻译方向。",
-            "weight": "medium",
         },
     ]
 

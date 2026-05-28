@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from scoring.engine import (
+from scoring.total_score.engine import (
     build_board,
     detect_edge_flags,
     detect_harms,
@@ -12,7 +12,7 @@ from scoring.engine import (
     pair_relation,
 )
 
-DIMENSION_SCORE_V2_VERSION = "0.2.0"
+DIMENSION_STABILITY_SCORE_VERSION = "0.2.0"
 
 DIMENSION_ORDER = [
     "career",
@@ -548,7 +548,7 @@ def _topic_bonus(result: dict[str, Any], topic_key: str, current_score: int) -> 
     return bonus
 
 
-def score_phone_dimensions_v2(
+def score_phone_stability_dimensions(
     phone: str,
     gender: str,
     rules: dict[str, Any] | None = None,
@@ -557,7 +557,7 @@ def score_phone_dimensions_v2(
     board = build_board(phone, gender, rules)
     result = {
         "rules_version": rules["version"],
-        "algorithm_version": DIMENSION_SCORE_V2_VERSION,
+        "algorithm_version": DIMENSION_STABILITY_SCORE_VERSION,
         "input": {
             "phone": phone,
             "gender": board.gender,
@@ -604,9 +604,9 @@ def score_phone_dimensions_v2(
     return result
 
 
-def build_dimension_scores_v2(
+def build_stability_dimension_scores(
     phone: str,
     gender: str,
     rules: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return score_phone_dimensions_v2(phone, gender, rules=rules)
+    return score_phone_stability_dimensions(phone, gender, rules=rules)

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from scoring.dimension_score_v2 import score_phone_dimensions_v2
-from scoring.dimension_score_v3 import score_phone_dimensions_v3
+from scoring.dimensions import score_phone_dimensions, score_phone_stability_dimensions
 
 PUBLIC_ASPECT_ORDER = [
     "career",
@@ -127,7 +126,7 @@ def _build_public_aspects(
 def _build_board_view(score_result: dict[str, Any], score_template: dict[str, Any]) -> dict[str, Any]:
     board = score_result["board"]
     symbols = board["symbols"]
-    board_payload = score_template.get("board_description_payload") if isinstance(score_template.get("board_description_payload"), dict) else {}
+    board_payload = score_template.get("phone_summary_facts") if isinstance(score_template.get("phone_summary_facts"), dict) else {}
     basis = board_payload.get("board_basis") if isinstance(board_payload.get("board_basis"), dict) else {}
     structure = score_template.get("structure") if isinstance(score_template.get("structure"), dict) else {}
     harms = score_template.get("four_harms_check") if isinstance(score_template.get("four_harms_check"), dict) else {}
@@ -192,11 +191,7 @@ def _resolve_stability_render(product_render: dict[str, Any]) -> dict[str, Any]:
 
 
 def _resolve_dimension_result(score_result: dict[str, Any], score_template: dict[str, Any]) -> dict[str, Any]:
-    existing = score_template.get("dimension_score_v3") if isinstance(score_template.get("dimension_score_v3"), dict) else {}
-    if isinstance(existing.get("dimensions"), dict):
-        return existing
-
-    existing = score_template.get("dimension_score_v2") if isinstance(score_template.get("dimension_score_v2"), dict) else {}
+    existing = score_template.get("dimension_score") if isinstance(score_template.get("dimension_score"), dict) else {}
     if isinstance(existing.get("dimensions"), dict):
         return existing
     try:
@@ -204,7 +199,7 @@ def _resolve_dimension_result(score_result: dict[str, Any], score_template: dict
         phone = str(input_payload.get("phone") or "").strip()
         gender = str(input_payload.get("gender") or "").strip()
         if phone and gender:
-            return score_phone_dimensions_v3(phone, gender)
+            return score_phone_dimensions(phone, gender)
     except Exception:
         return {"dimensions": {}}
     return {"dimensions": {}}
@@ -212,7 +207,7 @@ def _resolve_dimension_result(score_result: dict[str, Any], score_template: dict
 
 def _build_stability_value(score_result: dict[str, Any], final_score: int) -> str:
     try:
-        dimensions = score_phone_dimensions_v2(score_result["input"]["phone"], score_result["input"]["gender"])
+        dimensions = score_phone_stability_dimensions(score_result["input"]["phone"], score_result["input"]["gender"])
         stability = dimensions["dimensions"]["stability"]
         stability_score = int(stability["score"])
         caps = set(stability["caps"]["applied"])

@@ -16,15 +16,15 @@ from knowledge import (
     load_shared_foundation,
 )
 from product.backend.llm import DeepSeekAPIError, DeepSeekClient
-from scoring.dimension_score_v3 import score_phone_dimensions_v3
-from scoring.engine import load_rules
-from scoring.payloads.shared import CAP_REASON_LABELS, EDGE_FLAG_LABELS, PATTERN_LABELS, RELATION_LABELS
+from scoring.dimensions import score_phone_dimensions
+from scoring.total_score.engine import load_rules
+from scoring.total_score.labels import CAP_REASON_LABELS, EDGE_FLAG_LABELS, PATTERN_LABELS, RELATION_LABELS
 
 TonePack = Literal["customer", "professional"]
 
-DEEPSEEK_ASPECT_V2_ERROR = "DeepSeek 调用出现问题，专项结果未生成。"
+DEEPSEEK_ASPECT_ERROR = "DeepSeek 调用出现问题，专项结果未生成。"
 
-ASPECT_V2_SPECS: list[dict[str, str]] = [
+ASPECT_SPECS: list[dict[str, str]] = [
     {"aspect_key": "career", "title": "事业"},
     {"aspect_key": "wealth", "title": "财富"},
     {"aspect_key": "love", "title": "感情"},
@@ -43,7 +43,7 @@ REQUIRED_ELEMENT_KEYS = ("宫", "门", "神", "星", "天干/地干", "特殊组
 
 
 @dataclass
-class AspectV2RenderResult:
+class AspectRenderResult:
     aspect_key: str
     title: str
     score: int
@@ -64,7 +64,7 @@ class AspectV2RenderResult:
         }
 
 
-def render_aspects_v2_from_phone(
+def render_aspects_from_phone(
     phone: str,
     gender: str,
     *,
@@ -73,13 +73,13 @@ def render_aspects_v2_from_phone(
     model: str = "deepseek-v4-pro",
     thinking_enabled: bool = False,
     max_tokens: int = 1800,
-) -> dict[str, AspectV2RenderResult]:
+) -> dict[str, AspectRenderResult]:
     rules = load_rules()
     package = {
-        "score_result": score_phone_dimensions_v3(phone, gender, rules=rules),
+        "score_result": score_phone_dimensions(phone, gender, rules=rules),
         "score_template": {},
     }
-    return render_aspects_v2_from_package(
+    return render_aspects_from_package(
         package,
         tone_pack=tone_pack,
         client=client,
@@ -89,7 +89,7 @@ def render_aspects_v2_from_phone(
     )
 
 
-def render_aspects_v2_from_package(
+def render_aspects_from_package(
     package: dict[str, Any],
     *,
     tone_pack: TonePack = "customer",
@@ -98,14 +98,14 @@ def render_aspects_v2_from_package(
     thinking_enabled: bool = False,
     max_tokens: int = 1800,
     on_result: Any | None = None,
-) -> dict[str, AspectV2RenderResult]:
+) -> dict[str, AspectRenderResult]:
     client = client or DeepSeekClient.from_env()
-    rendered: dict[str, AspectV2RenderResult] = {}
-    max_workers = min(_get_aspect_worker_count(), len(ASPECT_V2_SPECS))
+    rendered: dict[str, AspectRenderResult] = {}
+    max_workers = min(_get_aspect_worker_count(), len(ASPECT_SPECS))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_map = {
             executor.submit(
-                render_aspect_v2_from_package,
+                render_aspect_from_package,
                 package,
                 aspect_key=spec["aspect_key"],
                 tone_pack=tone_pack,
@@ -114,7 +114,7 @@ def render_aspects_v2_from_package(
                 thinking_enabled=thinking_enabled,
                 max_tokens=max_tokens,
             ): spec["aspect_key"]
-            for spec in ASPECT_V2_SPECS
+            for spec in ASPECT_SPECS
         }
         for future in as_completed(future_map):
             aspect_key = future_map[future]
@@ -124,12 +124,12 @@ def render_aspects_v2_from_package(
                 on_result(aspect_key, result)
     return {
         spec["aspect_key"]: rendered[spec["aspect_key"]]
-        for spec in ASPECT_V2_SPECS
+        for spec in ASPECT_SPECS
         if spec["aspect_key"] in rendered
     }
 
 
-def render_aspect_v2_from_package(
+def render_aspect_from_package(
     package: dict[str, Any],
     *,
     aspect_key: str,
@@ -138,15 +138,15 @@ def render_aspect_v2_from_package(
     model: str = "deepseek-v4-pro",
     thinking_enabled: bool = False,
     max_tokens: int = 1800,
-) -> AspectV2RenderResult:
+) -> AspectRenderResult:
     score_template = package.get("score_template")
     if not isinstance(score_template, dict):
-        raise DeepSeekAPIError(DEEPSEEK_ASPECT_V2_ERROR)
+        raise DeepSeekAPIError(DEEPSEEK_ASPECT_ERROR)
 
     client = client or DeepSeekClient.from_env()
     dimension_result = _resolve_dimension_result(package)
     payload = _build_aspect_payload(dimension_result, score_template, aspect_key)
-    system_prompt, user_prompt, json_example = build_aspect_v2_prompts(aspect_key, payload, tone_pack=tone_pack)
+    system_prompt, user_prompt, json_example = build_aspect_prompts(aspect_key, payload, tone_pack=tone_pack)
 
     try:
         response = client.chat_json(
@@ -161,14 +161,14 @@ def render_aspect_v2_from_package(
         model_output = response.json_object()
         model_name = response.model or model
     except Exception as exc:
-        raise DeepSeekAPIError(DEEPSEEK_ASPECT_V2_ERROR) from exc
+        raise DeepSeekAPIError(DEEPSEEK_ASPECT_ERROR) from exc
 
     valid, reason = validate_model_output(aspect_key, payload, model_output)
     if not valid:
-        raise DeepSeekAPIError(DEEPSEEK_ASPECT_V2_ERROR) from ValueError(f"aspect_v2_invalid_output:{reason}")
+        raise DeepSeekAPIError(DEEPSEEK_ASPECT_ERROR) from ValueError(f"aspect_invalid_output:{reason}")
 
     public_output = _public_output(model_output, aspect_key=aspect_key)
-    return AspectV2RenderResult(
+    return AspectRenderResult(
         aspect_key=str(public_output["aspect_key"]),
         title=str(public_output["title"]).strip(),
         score=int(public_output["score"]),
@@ -180,13 +180,13 @@ def render_aspect_v2_from_package(
     )
 
 
-def build_aspect_v2_prompts(
+def build_aspect_prompts(
     aspect_key: str,
     payload: dict[str, Any],
     *,
     tone_pack: TonePack = "customer",
 ) -> tuple[str, str, dict[str, Any]]:
-    if aspect_key not in {item["aspect_key"] for item in ASPECT_V2_SPECS}:
+    if aspect_key not in {item["aspect_key"] for item in ASPECT_SPECS}:
         raise ValueError("invalid_aspect_key")
 
     shared_foundation = load_shared_foundation()
@@ -289,7 +289,7 @@ def validate_model_output(
 
 def _build_aspect_payload(score_result: dict[str, Any], score_template: dict[str, Any], aspect_key: str) -> dict[str, Any]:
     if aspect_key not in score_result.get("dimensions", {}):
-        raise DeepSeekAPIError(DEEPSEEK_ASPECT_V2_ERROR)
+        raise DeepSeekAPIError(DEEPSEEK_ASPECT_ERROR)
     dimension = score_result["dimensions"][aspect_key]
     board = score_result["board"]
     features = score_result["features"]
@@ -305,31 +305,23 @@ def _build_aspect_payload(score_result: dict[str, Any], score_template: dict[str
 
 
 def _resolve_dimension_result(package: dict[str, Any]) -> dict[str, Any]:
-    score_template = package.get("score_template") if isinstance(package.get("score_template"), dict) else {}
-    existing = score_template.get("dimension_score_v3") if isinstance(score_template, dict) else None
-    if isinstance(existing, dict) and isinstance(existing.get("dimensions"), dict):
-        return existing
-
-    existing = score_template.get("dimension_score_v2") if isinstance(score_template, dict) else None
-    if isinstance(existing, dict) and isinstance(existing.get("dimensions"), dict):
-        return existing
-
     score_result = package.get("score_result")
     if isinstance(score_result, dict) and isinstance(score_result.get("dimensions"), dict):
         return score_result
     if not isinstance(score_result, dict):
-        raise DeepSeekAPIError(DEEPSEEK_ASPECT_V2_ERROR)
+        raise DeepSeekAPIError(DEEPSEEK_ASPECT_ERROR)
 
     input_payload = score_result.get("input") if isinstance(score_result.get("input"), dict) else {}
     phone = str(input_payload.get("phone") or "").strip()
     gender = str(input_payload.get("gender") or "").strip()
     if not phone or not gender:
+        score_template = package.get("score_template") if isinstance(package.get("score_template"), dict) else {}
         meta = score_template.get("meta") if isinstance(score_template.get("meta"), dict) else {}
         phone = str(meta.get("phone") or "").strip()
         gender = str(meta.get("gender") or "").strip()
     if not phone or not gender:
-        raise DeepSeekAPIError(DEEPSEEK_ASPECT_V2_ERROR)
-    return score_phone_dimensions_v3(phone, gender, rules=load_rules())
+        raise DeepSeekAPIError(DEEPSEEK_ASPECT_ERROR)
+    return score_phone_dimensions(phone, gender, rules=load_rules())
 
 
 def _clean_dimension(dimension: dict[str, Any]) -> dict[str, Any]:
@@ -389,7 +381,7 @@ def _label_list(mapping: dict[str, str], values: Any) -> list[str]:
 
 
 def _aspect_title(aspect_key: str) -> str:
-    for item in ASPECT_V2_SPECS:
+    for item in ASPECT_SPECS:
         if item["aspect_key"] == aspect_key:
             return item["title"]
     return aspect_key
@@ -406,7 +398,7 @@ def _public_output(model_output: dict[str, Any], *, aspect_key: str) -> dict[str
     }
 
 
-def render_aspect_v2_from_phone(
+def render_aspect_from_phone(
     phone: str,
     gender: str,
     *,
@@ -416,19 +408,13 @@ def render_aspect_v2_from_phone(
     model: str = "deepseek-v4-pro",
     thinking_enabled: bool = False,
     max_tokens: int = 1800,
-) -> AspectV2RenderResult:
+) -> AspectRenderResult:
     rules = load_rules()
     package = {
-        "score_result": score_phone_dimensions_v3(phone, gender, rules=rules),
+        "score_result": score_phone_dimensions(phone, gender, rules=rules),
         "score_template": {},
     }
-    score_template = {
-        "score_summary": {},
-        "board_description_payload": {},
-        "aspect_scores": {},
-    }
-    package["score_template"] = score_template
-    return render_aspect_v2_from_package(
+    return render_aspect_from_package(
         package,
         aspect_key=aspect_key,
         tone_pack=tone_pack,
@@ -444,7 +430,7 @@ def _dump_json(value: Any) -> str:
 
 
 def _get_aspect_worker_count() -> int:
-    raw_value = os.getenv("EASEWISE_ASPECT_V2_WORKERS", "8").strip()
+    raw_value = os.getenv("EASEWISE_ASPECT_WORKERS", "8").strip()
     try:
         return max(1, min(8, int(raw_value)))
     except ValueError:

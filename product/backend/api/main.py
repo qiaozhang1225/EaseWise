@@ -14,10 +14,8 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from product.backend.almanac import build_almanac_for_date, build_today_almanac
 from product.backend.llm import load_env_file
-from scoring.dimension_score_v2 import score_phone_dimensions_v2
-from scoring.dimension_score_v3 import score_phone_dimensions_v3
-from scoring.engine import load_rules, score_phone
-from scoring.services.bundle_service import build_scoring_bundle
+from scoring.total_score.engine import load_rules, score_phone
+from scoring.total_score.bundle import build_scoring_bundle
 
 from .agent import build_agent_reply
 from .auth import build_session_expiry, exchange_wechat_code, hash_access_token, issue_access_token, require_authenticated_user, require_internal_admin_access, require_registered_user, resolve_authenticated_user
@@ -826,16 +824,6 @@ def _resolve_review_public_view(
                 "score_result": score_result,
                 "score_template": dict(score_template),
             }
-            refreshed_package["score_template"]["dimension_score_v2"] = score_phone_dimensions_v2(
-                str(review["phone"]),
-                str(review["gender"]),
-                RULES,
-            )
-            refreshed_package["score_template"]["dimension_score_v3"] = score_phone_dimensions_v3(
-                str(review["phone"]),
-                str(review["gender"]),
-                RULES,
-            )
             refreshed_package["score_template"]["product_render"] = build_product_review_core_render(refreshed_package)
             score_template = refreshed_package["score_template"]
         base_view = build_phone_review_product_view(score_result, score_template)
@@ -1131,8 +1119,6 @@ def _run_review_generation(*, review_id: str, phone: str, gender: str, include_m
         result = score_phone(phone, gender, RULES)
 
         bundle = build_scoring_bundle(result, include_markdown=include_markdown)
-        bundle["score_template"]["dimension_score_v2"] = score_phone_dimensions_v2(phone, gender, RULES)
-        bundle["score_template"]["dimension_score_v3"] = score_phone_dimensions_v3(phone, gender, RULES)
         bundle["score_template"]["product_view"] = build_phone_review_product_view(bundle["score_result"], bundle["score_template"])
         bundle["score_template"]["product_view"]["rules_version"] = RULES.get("version")
         update_review_generation_payload(

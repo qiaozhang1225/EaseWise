@@ -12,7 +12,7 @@ from scoring.engine import (
     pair_relation,
 )
 
-TOTAL_SCORE_V2_VERSION = "0.1.0"
+TOTAL_SCORE_VERSION = "0.1.0"
 
 ANCHOR_RELATION_SCORES = {
     "palace_generates_door": 88,
@@ -279,7 +279,7 @@ def _build_tags(
     return sorted(set(tags))
 
 
-def score_phone_total_v2(
+def score_phone_total(
     phone: str,
     gender: str,
     rules: dict[str, Any] | None = None,
@@ -305,7 +305,7 @@ def score_phone_total_v2(
 
     return {
         "rules_version": rules["version"],
-        "algorithm_version": TOTAL_SCORE_V2_VERSION,
+        "algorithm_version": TOTAL_SCORE_VERSION,
         "input": {
             "phone": phone,
             "gender": board.gender,
@@ -340,9 +340,9 @@ def score_phone_total_v2(
     }
 
 
-def build_total_score_v2(
+def build_total_score(
     phone: str,
     gender: str,
     rules: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return score_phone_total_v2(phone, gender, rules=rules)
+    return score_phone_total(phone, gender, rules=rules)

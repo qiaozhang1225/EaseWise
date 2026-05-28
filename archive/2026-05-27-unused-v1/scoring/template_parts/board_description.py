@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from scoring.payloads.shared import (
+from scoring.template_parts.shared import (
     BOARD_DESCRIPTION_SECTION_ORDER,
     CAP_REASON_LABELS,
     EDGE_FLAG_LABELS,

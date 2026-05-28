@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any
 
-from product.backend.aspects_v2 import ASPECT_V2_SPECS, render_aspects_v2_from_package
+from product.backend.aspects import ASPECT_SPECS, render_aspects_from_package
 from product.backend.llm import DeepSeekAPIError, DeepSeekClient, load_env_file
 from product.backend.phone_summary import DEEPSEEK_PHONE_SUMMARY_ERROR, render_phone_summary_from_package
 from product.backend.stability import render_stability_from_package
@@ -44,7 +44,7 @@ def build_product_review_core_render(
         "configured_model": configured_model,
         "generated_at": _utc_now(),
         "tone_pack": tone_pack,
-        "llm_sections": ["phone_summary", "stability", *[item["aspect_key"] for item in ASPECT_V2_SPECS]],
+        "llm_sections": ["phone_summary", "stability", *[item["aspect_key"] for item in ASPECT_SPECS]],
         "used_llm": True,
     }
 
@@ -68,7 +68,7 @@ def build_product_review_aspects_render(
             return
         on_result(aspect_key, _strip_internal_render_fields(result.to_dict()))
 
-    rendered_aspects = render_aspects_v2_from_package(
+    rendered_aspects = render_aspects_from_package(
         package,
         tone_pack=tone_pack,
         client=client,
@@ -116,7 +116,7 @@ def _render_core_sections_v2(
         if include_aspects:
             future_map[
                 executor.submit(
-                    render_aspects_v2_from_package,
+                    render_aspects_from_package,
                     package,
                     tone_pack=tone_pack,
                     client=client,
@@ -124,7 +124,7 @@ def _render_core_sections_v2(
                     thinking_enabled=False,
                     max_tokens=_get_aspects_max_tokens(),
                 )
-            ] = "aspects_v2"
+            ] = "aspects"
 
         for future in as_completed(future_map):
             target = future_map[future]
@@ -133,7 +133,7 @@ def _render_core_sections_v2(
                 phone_summary = result.to_dict()
             elif target == "stability":
                 rendered_sections["stability"] = result.to_dict()
-            elif target == "aspects_v2":
+            elif target == "aspects":
                 rendered_sections.update({key: value.to_dict() for key, value in result.items()})
 
     return rendered_sections, phone_summary

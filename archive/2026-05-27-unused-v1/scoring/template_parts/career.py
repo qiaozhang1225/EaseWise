@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from scoring.payloads.shared import (
+from scoring.template_parts.shared import (
     CAP_REASON_LABELS,
     CAREER_LEVELS,
     CAREER_TYPES,

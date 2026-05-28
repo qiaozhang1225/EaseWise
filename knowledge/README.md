@@ -17,4 +17,10 @@
 - `sections/aspects/`：新版 12 个专项分与专项评价知识底座
 - `../archive/2026-05-27-unused-v1/`：旧专项知识和旧盘面说明知识归档
 
+## 当前入口
+
+- 产品后端通过 `knowledge/loader.py` 读取当前知识。
+- 当前允许加载的 section 只有 `phone_summary`、`stability` 和 `sections/aspects/*`。
+- 新功能不要引用 `archive/` 下的知识；如需恢复旧内容，应先迁回 `knowledge/` 并补充加载入口。
+
 后续其他方面也按同样方式继续扩展。

@@ -13,9 +13,9 @@ from knowledge import (
     load_shared_foundation,
 )
 from product.backend.llm import DeepSeekAPIError, DeepSeekClient
-from scoring.dimension_score_v2 import score_phone_dimensions_v2
-from scoring.engine import LAYER_LABELS, load_rules
-from scoring.payloads.shared import (
+from scoring.dimensions import score_phone_stability_dimensions
+from scoring.total_score.engine import LAYER_LABELS, load_rules
+from scoring.total_score.labels import (
     PATTERN_LABELS,
     RELATION_LABELS,
     _humanize_harm,
@@ -63,7 +63,7 @@ def build_stability_prompts(
     rules: dict[str, Any] | None = None,
 ) -> tuple[str, str, dict[str, Any], dict[str, Any]]:
     rules = rules or load_rules()
-    score_result = score_phone_dimensions_v2(phone, gender, rules=rules)
+    score_result = score_phone_stability_dimensions(phone, gender, rules=rules)
     locked = _locked_fields(score_result)
     evidence = _evidence_fields(score_result)
     direct_checks = _direct_checks(score_result)
@@ -332,7 +332,7 @@ def _direct_checks(score_result: dict[str, Any]) -> list[dict[str, Any]]:
         {
             "name": "风险敏感方向",
             "fact": "、".join(sensitive_topics) or "无明显风险敏感方向",
-            "meaning": "这些是由 V2 维度分识别出的弱项方向，不代表用户显式关注。",
+            "meaning": "这些是由稳定性维度分识别出的弱项方向，不代表用户显式关注。",
             "weight": "medium",
         },
         {
