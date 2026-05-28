@@ -11,6 +11,32 @@ AgentMessageRole = Literal['user', 'assistant']
 RuntimeConfigScopeType = Literal['global', 'channel']
 RechargeOrderStatus = Literal['pending', 'approved', 'rejected']
 RechargeOrderReviewAction = Literal['approve', 'reject']
+AdminRechargeOrderStatus = Literal['unpaid', 'paid', 'completed', 'refund_pending', 'refunded', 'closed']
+AdminReviewAction = Literal['approve', 'reject']
+
+
+class DashboardMetricResponse(BaseModel):
+    label: str
+    value: int | float
+    display_value: str
+    unit: str | None = None
+    trend_value: int | float | None = None
+    trend_label: str | None = None
+
+
+class DashboardSectionResponse(BaseModel):
+    title: str
+    summary: str | None = None
+    metrics: list[DashboardMetricResponse] = Field(default_factory=list)
+
+
+class DashboardResponse(BaseModel):
+    generated_at: str
+    revenue: dict[str, Any] = Field(default_factory=dict)
+    users: dict[str, Any] = Field(default_factory=dict)
+    orders: dict[str, Any] = Field(default_factory=dict)
+    promotion: dict[str, Any] = Field(default_factory=dict)
+    sections: list[DashboardSectionResponse] = Field(default_factory=list)
 
 
 class ReviewCreateRequest(BaseModel):
@@ -136,6 +162,9 @@ class ReviewSummaryResponse(BaseModel):
 
 class ReviewListResponse(BaseModel):
     items: list[ReviewSummaryResponse]
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
 
 
 class AlmanacResponse(BaseModel):
@@ -212,11 +241,15 @@ class UserResponse(BaseModel):
 class InternalUserResponse(BaseModel):
     user_id: str
     status: str
+    identity_level: str = 'normal_user'
+    promoter_parent_user_id: str | None = None
     nickname: str | None = None
     avatar_url: str | None = None
     profile_completed: bool
     points_balance: int
     frozen_balance: int
+    rebate_points_balance: int = 0
+    rebate_frozen_balance: int = 0
     created_at: str
     updated_at: str
     last_active_at: str
@@ -231,6 +264,56 @@ class InternalUserResponse(BaseModel):
 
 class InternalUserListResponse(BaseModel):
     items: list[InternalUserResponse]
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+
+
+class RechargeOrderSummaryResponse(BaseModel):
+    order_id: str
+    package_title: str
+    amount_cents: int
+    status: str
+    created_at: str
+    reviewed_at: str | None = None
+    reviewed_by: str | None = None
+    paid_at: str | None = None
+    completed_at: str | None = None
+
+
+class RefundRequestResponse(BaseModel):
+    refund_id: str
+    order_id: str
+    user_id: str
+    status: str
+    reason: str | None = None
+    operator_note: str | None = None
+    reject_reason: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: str | None = None
+    retry_count: int = 0
+    failure_reason: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class PromotionCommissionResponse(BaseModel):
+    commission_id: str
+    promoter_user_id: str
+    promoter_nickname: str | None = None
+    invited_user_id: str | None = None
+    invited_user_nickname: str | None = None
+    order_id: str | None = None
+    order_amount_cents: int
+    commission_rate: float
+    commission_points: int
+    commission_type: str
+    status: str
+    remark: str | None = None
+    created_at: str
+    updated_at: str
+    settled_at: str | None = None
+    revoked_at: str | None = None
 
 
 class PointsAccountResponse(BaseModel):
@@ -287,7 +370,8 @@ class RechargeOrderResponse(BaseModel):
     user_status: str | None = None
     user_nickname: str | None = None
     channel: str | None = None
-    status: RechargeOrderStatus
+    status: AdminRechargeOrderStatus | RechargeOrderStatus
+    raw_status: str | None = None
     package_key: str
     package_title: str
     amount_cents: int
@@ -301,6 +385,11 @@ class RechargeOrderResponse(BaseModel):
     review_note: str | None = None
     reviewed_by: str | None = None
     reviewed_at: str | None = None
+    paid_at: str | None = None
+    completed_at: str | None = None
+    closed_at: str | None = None
+    refund_requests: list[RefundRequestResponse] = Field(default_factory=list)
+    commission_records: list[PromotionCommissionResponse] = Field(default_factory=list)
     granted_ledger_id: str | None = None
     created_at: str
     updated_at: str
@@ -308,6 +397,9 @@ class RechargeOrderResponse(BaseModel):
 
 class RechargeOrderListResponse(BaseModel):
     items: list[RechargeOrderResponse]
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
 
 
 class RechargeOrderReviewRequest(BaseModel):
@@ -327,6 +419,8 @@ class ManualPointsAdjustRequest(BaseModel):
     biz_id: str | None = Field(default=None, max_length=128)
     idempotency_key: str | None = Field(default=None, max_length=128)
     remark: str | None = Field(default=None, max_length=512)
+    reason: str | None = Field(default=None, max_length=512)
+    operator_note: str | None = Field(default=None, max_length=512)
 
 
 class ManualPointsAdjustResponse(BaseModel):
@@ -335,13 +429,59 @@ class ManualPointsAdjustResponse(BaseModel):
     ledger: PointsLedgerEntryResponse
 
 
+class RebatePointsAccountResponse(BaseModel):
+    user_id: str
+    balance: int
+    frozen_balance: int
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class RebatePointsAdjustRequest(BaseModel):
+    delta: int
+    reason: str | None = Field(default=None, max_length=512)
+    operator_note: str | None = Field(default=None, max_length=512)
+
+
+class RebatePointsAdjustResponse(BaseModel):
+    user: InternalUserResponse
+    rebate_points: RebatePointsAccountResponse
+
+
+class UserStatusUpdateRequest(BaseModel):
+    status: str = Field(min_length=1, max_length=64)
+    reason: str | None = Field(default=None, max_length=512)
+    operator_note: str | None = Field(default=None, max_length=512)
+
+
+class UserIdentityUpdateRequest(BaseModel):
+    identity_level: str = Field(min_length=1, max_length=64)
+    reason: str | None = Field(default=None, max_length=512)
+    operator_note: str | None = Field(default=None, max_length=512)
+
+
+class UserPromoterParentUpdateRequest(BaseModel):
+    promoter_parent_user_id: str | None = Field(default=None, max_length=64)
+    reason: str | None = Field(default=None, max_length=512)
+    operator_note: str | None = Field(default=None, max_length=512)
+
+
 class UsageRecordResponse(BaseModel):
     usage_record_id: str
     user_id: str
     scene: str
+    feature_key: str
+    feature_name: str | None = None
+    channel: str | None = None
     target_id: str | None = None
     points_cost: int
+    normal_points_cost: int
+    rebate_points_cost: int
     status: str
+    user_status: str | None = None
+    user_nickname: str | None = None
+    user_phone: str | None = None
+    user_avatar_url: str | None = None
     request_payload_summary: dict[str, Any] | None = None
     result_summary: dict[str, Any] | None = None
     created_at: str
@@ -350,6 +490,166 @@ class UsageRecordResponse(BaseModel):
 
 class UsageRecordListResponse(BaseModel):
     items: list[UsageRecordResponse]
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+
+
+class InternalUserAdminSummaryResponse(BaseModel):
+    user: InternalUserResponse
+    recent_orders: list[RechargeOrderSummaryResponse] = Field(default_factory=list)
+    recent_order_count: int = 0
+    recent_recharge_amount_cents: int = 0
+    latest_order_status: str | None = None
+    total_recharge_amount_cents: int = 0
+    total_withdraw_amount_cents: int = 0
+    promoter_parent_user_id: str | None = None
+    identity_level: str = 'normal_user'
+
+
+class UsageRecordDetailResponse(BaseModel):
+    record: UsageRecordResponse
+    user: InternalUserResponse
+    recent_orders: list[RechargeOrderSummaryResponse] = Field(default_factory=list)
+
+
+class AdminReviewRequest(BaseModel):
+    action: AdminReviewAction
+    reject_reason: str | None = Field(default=None, max_length=512)
+    reason: str | None = Field(default=None, max_length=512)
+    review_note: str | None = Field(default=None, max_length=512)
+    operator_note: str | None = Field(default=None, max_length=512)
+
+
+class RefundCreateRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=512)
+    operator_note: str | None = Field(default=None, max_length=512)
+
+
+class RefundRetryRequest(BaseModel):
+    operator_note: str | None = Field(default=None, max_length=512)
+
+
+class PromotionApplicationResponse(BaseModel):
+    application_id: str
+    user_id: str
+    user_nickname: str | None = None
+    current_identity_level: str | None = None
+    requested_level: str
+    status: str
+    applicant_name: str | None = None
+    applicant_phone: str | None = None
+    reject_reason: str | None = None
+    review_note: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class PromotionApplicationListResponse(BaseModel):
+    items: list[PromotionApplicationResponse]
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+
+
+class PromotionCommissionListResponse(BaseModel):
+    items: list[PromotionCommissionResponse]
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+
+
+class PromotionWithdrawalResponse(BaseModel):
+    withdrawal_id: str
+    user_id: str
+    user_nickname: str | None = None
+    identity_level: str | None = None
+    status: str
+    points_used: int
+    amount_cents: int
+    rebate_points_balance_snapshot: int
+    cash_rate_snapshot: float
+    reject_reason: str | None = None
+    review_note: str | None = None
+    payout_method: str | None = None
+    payout_proof: str | None = None
+    payout_failure_reason: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: str | None = None
+    paid_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class PromotionWithdrawalListResponse(BaseModel):
+    items: list[PromotionWithdrawalResponse]
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+
+
+class PromotionWithdrawalPayoutRequest(BaseModel):
+    payout_method: str | None = Field(default=None, max_length=128)
+    payout_proof: str | None = Field(default=None, max_length=512)
+    operator_note: str | None = Field(default=None, max_length=512)
+
+
+class PromotionRulesResponse(BaseModel):
+    normal_threshold_cents: int
+    senior_threshold_cents: int
+    normal_commission_rate: float
+    senior_commission_rate: float
+    min_withdraw_cents: int
+    order_completion_days: int
+    rebate_to_cash_rate: float
+    rebate_to_points_rate: float
+
+
+class PromotionRulesUpdateRequest(BaseModel):
+    normal_threshold_cents: int | None = None
+    senior_threshold_cents: int | None = None
+    normal_commission_rate: float | None = None
+    senior_commission_rate: float | None = None
+    min_withdraw_cents: int | None = None
+    order_completion_days: int | None = None
+    rebate_to_cash_rate: float | None = None
+    rebate_to_points_rate: float | None = None
+
+
+class LlmApiKeyResponse(BaseModel):
+    key_id: str
+    provider: str
+    model: str
+    display_name: str
+    masked_key: str
+    secret_ref: str
+    enabled: bool
+    priority: int
+    remark: str | None = None
+    last_operator: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class LlmApiKeyListResponse(BaseModel):
+    items: list[LlmApiKeyResponse]
+    total: int = 0
+    limit: int = 100
+    offset: int = 0
+
+
+class LlmApiKeyUpsertRequest(BaseModel):
+    provider: str = Field(min_length=1, max_length=64)
+    model: str = Field(min_length=1, max_length=128)
+    display_name: str = Field(min_length=1, max_length=128)
+    masked_key: str = Field(min_length=1, max_length=256)
+    secret_ref: str = Field(min_length=1, max_length=256)
+    enabled: bool = False
+    priority: int = 100
+    remark: str | None = Field(default=None, max_length=512)
+    last_operator: str | None = Field(default=None, max_length=128)
 
 
 class AuthLoginResponse(BaseModel):
@@ -440,6 +740,22 @@ class RuntimeConfigListResponse(BaseModel):
     items: list[RuntimeConfigEntryResponse]
 
 
+class RuntimeConfigSchemaItemResponse(BaseModel):
+    config_key: str
+    label: str
+    value_type: str
+    default_value: Any = None
+    scope_type: RuntimeConfigScopeType = 'global'
+    scope_key: str = 'default'
+    group: str
+    high_risk: bool = False
+    description: str | None = None
+
+
+class RuntimeConfigSchemaResponse(BaseModel):
+    items: list[RuntimeConfigSchemaItemResponse]
+
+
 class RuntimePointsConfigResponse(BaseModel):
     initial_grant: int
     guest_initial_grant: int
@@ -469,6 +785,7 @@ class ModuleRuntimeConfigResponse(BaseModel):
     free_aspect_keys: list[str] | None = None
     aspect_order: list[str] | None = None
     unlock_enforcement_enabled: bool | None = None
+    metaphysics_skill_enabled: bool | None = None
 
 
 class RuntimeModulesConfigResponse(BaseModel):

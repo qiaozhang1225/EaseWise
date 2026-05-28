@@ -1,8 +1,9 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;600;700&family=Noto+Sans:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "Playfair Display", "SimSun", serif;
+  --font-sans: "Noto Sans", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Noto Serif", "Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", serif;
   --font-mono: "JetBrains Mono", "Sarasa Mono SC", "Fira Code", "Courier New", monospace;
 
   --color-brand-primary: #4F46E5;
@@ -28,83 +29,11 @@
 
   body {
     @apply bg-brand-paper text-brand-ink font-sans antialiased;
+    background-color: #F3F5FB;
     background-image: radial-gradient(#CBD5E1 0.5px, transparent 0.5px);
     background-size: 20px 20px;
     min-height: 100dvh;
   }
-}
-
-@utility font-ui {
-  font-family: var(--font-sans);
-}
-
-@utility font-brand {
-  font-family: var(--font-serif);
-}
-
-@utility font-data {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-@utility text-display-xl {
-  font-size: 32px;
-  line-height: 1;
-}
-
-@utility text-display-lg {
-  font-size: 28px;
-  line-height: 1;
-}
-
-@utility text-heading-1 {
-  font-size: 20px;
-  line-height: 1.15;
-}
-
-@utility text-heading-plus {
-  font-size: 22px;
-  line-height: 1.1;
-}
-
-@utility text-heading-2 {
-  font-size: 17px;
-  line-height: 1.2;
-}
-
-@utility text-title-lg {
-  font-size: 18px;
-  line-height: 1.3;
-}
-
-@utility text-title {
-  font-size: 15px;
-  line-height: 1.35;
-}
-
-@utility text-body {
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-@utility text-caption {
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-@utility text-micro {
-  font-size: 10px;
-  line-height: 1.4;
-}
-
-@utility text-tiny {
-  font-size: 8.5px;
-  line-height: 1.2;
-}
-
-@utility text-watermark {
-  font-size: 60px;
-  line-height: 1;
 }
 
 .oriental-pattern {

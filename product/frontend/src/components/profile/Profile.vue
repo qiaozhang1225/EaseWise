@@ -19,6 +19,7 @@ import type { PointsLedgerEntryResponse, ReviewSummary } from '../../types/api';
 
 const emit = defineEmits<{
   (e: 'navigate-to-tab', tab: string): void;
+  (e: 'open-ambassador-detail'): void;
 }>();
 
 const {
@@ -100,7 +101,7 @@ function handleFeedbackSubmit(): void {
 }
 
 function handlePartnerInfo(): void {
-  window.alert('推广大使的升级条件、返佣比例和权益展示以后端规则配置与正式规则页为准。');
+  emit('open-ambassador-detail');
 }
 
 function formatDateTime(value: string): string {
@@ -245,27 +246,29 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         class="bg-white rounded-2xl p-5 border border-gray-100 flex items-center justify-between shadow-sm"
       >
         <div class="flex items-center gap-3.5">
-          <div class="w-14 h-14 rounded-full overflow-hidden border-2 border-brand-primary/10 bg-brand-primary/5 flex items-center justify-center font-brand font-bold text-brand-primary text-heading-1 shrink-0">
+          <div class="w-14 h-14 rounded-full overflow-hidden border-2 border-brand-primary/10 bg-brand-primary/5 flex items-center justify-center font-serif font-bold text-brand-primary text-[20px] shrink-0">
             {{ displayAvatarText }}
           </div>
           <div class="text-left">
             <div class="flex items-center gap-1.5">
-              <h3 class="font-ui text-heading-2 font-bold text-brand-ink-strong">{{ displayNickname }}</h3>
-              <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-micro font-bold" :class="statusBadgeClass">
+              <h3 class="font-sans text-[17px] font-bold text-brand-ink-strong">{{ displayNickname }}</h3>
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold" :class="statusBadgeClass">
                 {{ statusBadgeText }}
               </span>
             </div>
-            <p class="font-ui text-caption text-brand-secondary mt-1">
+            <p class="font-sans text-[11px] text-brand-secondary mt-1">
               {{ accountLabel }}
             </p>
           </div>
         </div>
-        <span
+        <button
           v-if="ambassadorStatus === 'ambassador'"
-          class="inline-flex self-start mt-1 px-2.5 py-1 font-ui text-micro font-semibold bg-brand-paper rounded text-brand-secondary"
+          type="button"
+          class="inline-flex self-start mt-1 px-2.5 py-1 font-sans text-[10px] font-semibold bg-brand-paper hover:bg-brand-primary/10 rounded text-brand-secondary hover:text-brand-primary transition-colors cursor-pointer outline-none"
+          @click="handlePartnerInfo"
         >
           VIP推广大使
-        </span>
+        </button>
       </div>
 
       <div
@@ -276,14 +279,14 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
           <AlertTriangle :size="20" />
         </div>
         <div class="space-y-1">
-          <p class="font-ui text-body font-bold text-brand-ink-strong">{{ state.booting ? '正在连接本地数据' : '本地体验数据暂不可用' }}</p>
-          <p class="font-ui text-caption text-brand-secondary px-4 leading-relaxed">
+          <p class="font-sans text-[13px] font-bold text-brand-ink-strong">{{ state.booting ? '正在连接本地数据' : '本地体验数据暂不可用' }}</p>
+          <p class="font-sans text-[11px] text-brand-secondary px-4 leading-relaxed">
             {{ connectionHint }}
           </p>
         </div>
         <button
           @click="handleRefreshData"
-          class="px-6 py-2 bg-brand-primary hover:bg-brand-primary-strong text-white rounded-full font-ui text-body font-bold inline-flex items-center gap-1 cursor-pointer outline-none shadow-sm transition-all"
+          class="px-6 py-2 bg-brand-primary hover:bg-brand-primary-strong text-white rounded-full font-sans text-[13px] font-bold inline-flex items-center gap-1 cursor-pointer outline-none shadow-sm transition-all"
         >
           <RefreshCw :size="13" />
           <span>重新连接本地 API</span>
@@ -299,15 +302,15 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
 
         <div class="relative z-10">
           <div>
-            <p class="font-ui text-caption font-bold text-gray-300 tracking-widest mb-1">当前账户剩余积分</p>
+            <p class="font-sans text-[11px] font-bold text-gray-300 tracking-widest mb-1">当前账户剩余积分</p>
             <div class="mt-3 flex items-end justify-between gap-3">
               <div class="flex items-end gap-2">
-                <span class="font-brand text-display-xl leading-none font-bold text-brand-accent">{{ currentPoints }}</span>
-                <span class="pb-1 font-ui text-body font-bold text-brand-accent/90">分</span>
+                <span class="font-serif text-[30px] leading-none font-bold text-brand-accent">{{ currentPoints }}</span>
+                <span class="pb-1 font-sans text-[13px] font-bold text-brand-accent/90">分</span>
               </div>
               <button
                 @click="activeModal = 'recharge'"
-                class="min-w-[104px] px-5 py-2.5 rounded-xl bg-brand-accent text-brand-ink-strong font-ui text-body font-black hover:brightness-105 active:scale-[0.98] transition-all shrink-0 cursor-pointer outline-none shadow-md"
+                class="min-w-[104px] px-5 py-2.5 rounded-xl bg-brand-accent text-brand-ink-strong font-sans text-[13px] font-bold hover:brightness-105 active:scale-[0.98] transition-all shrink-0 cursor-pointer outline-none shadow-md"
               >
                 去充值
               </button>
@@ -318,19 +321,22 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
     </section>
 
     <section class="mb-5">
-      <div class="bg-gradient-to-r from-brand-primary/5 to-purple-500/5 rounded-2xl p-4 border border-brand-primary/10 flex items-center justify-between">
+      <div
+        class="bg-gradient-to-r from-brand-primary/5 to-purple-500/5 rounded-2xl p-4 border border-brand-primary/10 flex items-center justify-between cursor-pointer"
+        @click="handlePartnerInfo"
+      >
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-full bg-brand-primary/10 flex items-center justify-center text-brand-primary shrink-0">
             <Share2 :size="16" />
           </div>
           <div class="text-left">
-            <p class="font-ui text-body font-bold text-brand-ink-strong">推广大使</p>
-            <p class="font-ui text-caption text-brand-secondary mt-0.5">升级条件、返佣比例和权益展示以后端规则配置为准</p>
+            <p class="font-sans text-[13px] font-bold text-brand-ink-strong">推广大使</p>
+            <p class="font-sans text-[11px] text-brand-secondary mt-0.5">升级条件、返佣比例和权益展示以后端规则配置为准</p>
           </div>
         </div>
         <button
-          @click="handlePartnerInfo"
-          class="font-ui text-caption font-bold text-brand-primary bg-white hover:bg-brand-primary/5 px-3 py-1.5 rounded-full border border-brand-primary/20 shrink-0 cursor-pointer transition-all outline-none"
+          @click.stop="handlePartnerInfo"
+          class="font-sans text-[11px] font-bold text-brand-primary bg-white hover:bg-brand-primary/5 px-3 py-1.5 rounded-full border border-brand-primary/20 shrink-0 cursor-pointer transition-all outline-none"
         >
           查看权益
         </button>
@@ -345,10 +351,10 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         >
           <div class="flex items-center gap-3">
             <Receipt :size="18" class="text-brand-secondary" />
-            <span class="font-ui text-body font-bold text-brand-ink-strong">积分记录</span>
+            <span class="font-sans text-[13px] font-bold text-brand-ink-strong">积分记录</span>
           </div>
           <div class="flex items-center gap-1.5">
-            <span v-if="ledgerRecords.length > 0" class="font-ui text-micro text-brand-primary font-bold bg-brand-primary/10 px-1.5 py-0.5 rounded-full">
+            <span v-if="ledgerRecords.length > 0" class="font-sans text-[10px] text-brand-primary font-bold bg-brand-primary/10 px-1.5 py-0.5 rounded-full">
               {{ ledgerRecords.length }}
             </span>
             <ChevronRight :size="16" class="text-gray-300" />
@@ -361,10 +367,10 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         >
           <div class="flex items-center gap-3">
             <History :size="18" class="text-brand-secondary" />
-            <span class="font-ui text-body font-bold text-brand-ink-strong">评测记录</span>
+            <span class="font-sans text-[13px] font-bold text-brand-ink-strong">评测记录</span>
           </div>
           <div class="flex items-center gap-1.5">
-            <span v-if="reportHistory.length > 0" class="font-ui text-micro text-brand-primary font-bold bg-brand-primary/10 px-1.5 py-0.5 rounded-full">
+            <span v-if="reportHistory.length > 0" class="font-sans text-[10px] text-brand-primary font-bold bg-brand-primary/10 px-1.5 py-0.5 rounded-full">
               {{ reportHistory.length }}
             </span>
             <ChevronRight :size="16" class="text-gray-300" />
@@ -377,7 +383,7 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         >
           <div class="flex items-center gap-3">
             <MessageSquare :size="18" class="text-brand-secondary" />
-            <span class="font-ui text-body font-bold text-brand-ink-strong">反馈问题</span>
+            <span class="font-sans text-[13px] font-bold text-brand-ink-strong">反馈问题</span>
           </div>
           <ChevronRight :size="16" class="text-gray-300" />
         </div>
@@ -387,7 +393,7 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
     <div class="text-center px-1">
       <button
         @click="handleRefreshData"
-        class="w-full py-3.5 rounded-xl bg-brand-primary text-white font-ui text-body font-bold hover:bg-brand-primary-strong transition-colors active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer outline-none shadow-md"
+        class="w-full py-3.5 rounded-xl bg-brand-primary text-white font-sans text-[13px] font-bold hover:bg-brand-primary-strong transition-colors active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer outline-none shadow-md"
       >
         <RefreshCw :size="16" />
         <span>{{ state.booting ? '正在刷新本地数据...' : '刷新本地数据' }}</span>
@@ -395,10 +401,10 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
     </div>
 
     <footer class="mt-14 text-center pb-8 shrink-0">
-      <p class="font-ui text-caption font-bold text-brand-secondary/50 tracking-widest">
+      <p class="font-sans text-[11px] font-bold text-brand-secondary/50 tracking-widest">
         易如反掌 · 服务积分与推广规则以后端配置为准
       </p>
-      <p class="font-ui text-micro text-gray-400 mt-2">
+      <p class="font-sans text-[10px] text-gray-400 mt-2">
         易如反掌 / EaseWise
       </p>
     </footer>
@@ -415,25 +421,25 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
           </div>
 
           <div class="space-y-2">
-            <h3 class="font-brand text-heading-2 font-bold text-brand-ink-strong leading-tight">积分充值说明</h3>
-            <p class="font-ui text-body text-brand-secondary leading-relaxed">
+            <h3 class="font-serif text-[17px] font-bold text-brand-ink-strong leading-tight">积分充值说明</h3>
+            <p class="font-sans text-[13px] text-brand-secondary leading-relaxed">
               {{ customerServiceGuidance }}
             </p>
           </div>
 
           <div class="bg-brand-paper p-3 rounded-xl flex items-center justify-between border border-gray-100">
-            <div class="text-left font-data">
-              <p class="text-micro text-brand-secondary">客服联系方式：</p>
-              <p class="text-title font-bold text-brand-ink-strong">{{ customerServiceContact }}</p>
+            <div class="text-left font-mono">
+              <p class="text-[10px] text-brand-secondary">客服联系方式：</p>
+              <p class="text-[15px] font-bold text-brand-ink-strong">{{ customerServiceContact }}</p>
             </div>
-            <button @click="handleCopyContact" class="px-3.5 py-1.5 bg-brand-primary text-white hover:bg-brand-primary-strong font-ui text-caption font-bold rounded-lg cursor-pointer outline-none flex items-center gap-1 shrink-0 transition-all">
+            <button @click="handleCopyContact" class="px-3.5 py-1.5 bg-brand-primary text-white hover:bg-brand-primary-strong font-sans text-[11px] font-bold rounded-lg cursor-pointer outline-none flex items-center gap-1 shrink-0 transition-all">
               <Check v-if="copied" :size="11" />
               <Clipboard v-else :size="11" />
               <span>{{ copied ? '已复制' : '复制' }}</span>
             </button>
           </div>
 
-          <div class="font-ui text-caption text-brand-secondary/80 flex items-center gap-1.5 justify-center bg-green-50 p-2.5 rounded-lg border border-green-100">
+          <div class="font-sans text-[11px] text-brand-secondary/80 flex items-center gap-1.5 justify-center bg-green-50 p-2.5 rounded-lg border border-green-100">
             <ShieldCheck :size="13" class="text-green-600 shrink-0" />
             <span>充值与积分到账说明以后端规则和客服通知为准</span>
           </div>
@@ -446,8 +452,8 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         <div class="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4 hairline-border shadow-2xl relative">
           <div class="flex justify-between items-center pb-2 border-b border-gray-100 text-left w-full">
             <div class="text-left">
-              <h3 class="font-ui text-heading-2 font-bold text-brand-ink-strong">积分记录</h3>
-              <p class="font-ui text-caption text-brand-secondary">当前展示最近的积分获取与扣减记录</p>
+              <h3 class="font-sans text-[17px] font-bold text-brand-ink-strong">积分记录</h3>
+              <p class="font-sans text-[11px] text-brand-secondary">当前展示最近的积分获取与扣减记录</p>
             </div>
             <button @click="activeModal = null" class="p-1 rounded-full text-brand-secondary hover:bg-gray-100 outline-none cursor-pointer shrink-0">
               <X :size="18" />
@@ -458,22 +464,22 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
             <div v-if="ledgerRecords.length > 0" class="space-y-3.5">
               <div v-for="entry in ledgerRecords" :key="entry.ledger_id" class="flex justify-between items-start text-xs border-b border-gray-50 pb-2.5">
                 <div class="text-left">
-                  <p class="font-ui text-body font-bold text-brand-ink">{{ formatLedgerTitle(entry) }}</p>
-                  <p class="font-ui text-micro text-brand-secondary mt-0.5">{{ formatDateTime(entry.created_at) }}</p>
+                  <p class="font-sans text-[13px] font-bold text-brand-ink">{{ formatLedgerTitle(entry) }}</p>
+                  <p class="font-sans text-[10px] text-brand-secondary mt-0.5">{{ formatDateTime(entry.created_at) }}</p>
                 </div>
                 <div class="text-right">
-                  <span class="font-data text-body font-bold" :class="resolveLedgerColor(entry)">{{ formatLedgerDelta(entry) }}</span>
-                  <p class="font-ui text-micro text-brand-secondary mt-0.5">余额 {{ entry.balance_after }} 分</p>
+                  <span class="font-mono text-[13px] font-bold" :class="resolveLedgerColor(entry)">{{ formatLedgerDelta(entry) }}</span>
+                  <p class="font-sans text-[10px] text-brand-secondary mt-0.5">余额 {{ entry.balance_after }} 分</p>
                 </div>
               </div>
             </div>
             <div v-else class="py-8 text-center space-y-2">
-              <p class="font-ui text-body text-brand-secondary">暂无积分变动记录。</p>
-              <p class="font-ui text-micro text-brand-secondary/60">完成手机号评测或后台发放积分后，会在这里显示。</p>
+              <p class="font-sans text-[13px] text-brand-secondary">暂无积分变动记录。</p>
+              <p class="font-sans text-[10px] text-brand-secondary/60">完成手机号评测或后台发放积分后，会在这里显示。</p>
             </div>
           </div>
 
-          <button @click="activeModal = null" class="w-full py-2.5 bg-brand-paper hover:bg-gray-100 text-brand-ink font-ui text-body font-semibold rounded-lg shrink-0 outline-none cursor-pointer">
+          <button @click="activeModal = null" class="w-full py-2.5 bg-brand-paper hover:bg-gray-100 text-brand-ink font-sans text-[13px] font-semibold rounded-lg shrink-0 outline-none cursor-pointer">
             确定返回
           </button>
         </div>
@@ -485,8 +491,8 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         <div class="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4 hairline-border shadow-2xl relative">
           <div class="flex justify-between items-center pb-2 border-b border-gray-100 w-full">
             <div class="text-left">
-              <h3 class="font-ui text-heading-2 font-bold text-brand-ink-strong">评测记录</h3>
-              <p class="font-ui text-caption text-brand-secondary">当前展示本地 API 返回的手机号评测记录</p>
+              <h3 class="font-sans text-[17px] font-bold text-brand-ink-strong">评测记录</h3>
+              <p class="font-sans text-[11px] text-brand-secondary">当前展示本地 API 返回的手机号评测记录</p>
             </div>
             <button @click="activeModal = null" class="p-1 rounded-full text-brand-secondary hover:bg-gray-100 outline-none cursor-pointer">
               <X :size="18" />
@@ -496,7 +502,7 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
           <div class="max-h-[300px] overflow-y-auto no-scrollbar space-y-3 py-1">
             <p
               v-if="historyActionError"
-              class="rounded-xl border border-red-100 bg-red-50 px-3 py-2 font-ui text-caption text-red-600 leading-relaxed"
+              class="rounded-xl border border-red-100 bg-red-50 px-3 py-2 font-sans text-[11px] text-red-600 leading-relaxed"
             >
               {{ historyActionError }}
             </p>
@@ -510,16 +516,16 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
                 @click="handleOpenReview(review)"
               >
                 <div class="min-w-0">
-                  <p class="font-ui text-body font-bold text-brand-ink-strong">评测号码: <span class="font-ui">{{ review.masked_phone }}</span></p>
-                  <p class="font-ui text-micro text-brand-secondary mt-0.5">
+                  <p class="font-sans text-[13px] font-bold text-brand-ink-strong">评测号码: <span class="font-sans">{{ review.masked_phone }}</span></p>
+                  <p class="font-sans text-[10px] text-brand-secondary mt-0.5">
                     性别: {{ review.gender === 'male' ? '男' : '女' }} · {{ formatDateTime(review.created_at) }}
                   </p>
-                  <p class="font-ui text-micro text-brand-secondary/80 mt-1">
+                  <p class="font-sans text-[10px] text-brand-secondary/80 mt-1">
                     {{ resolveReviewActionText(review) }}
                   </p>
                 </div>
                 <div class="shrink-0 flex flex-col items-end gap-1.5">
-                  <span class="font-ui text-body font-bold text-brand-primary bg-brand-primary/10 px-2.5 py-1 rounded-full shrink-0">
+                  <span class="font-sans text-[13px] font-bold text-brand-primary bg-brand-primary/10 px-2.5 py-1 rounded-full shrink-0">
                     {{ formatReviewStatus(review) }}
                   </span>
                   <ChevronRight :size="14" class="text-brand-secondary/60" />
@@ -527,12 +533,12 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
               </button>
             </div>
             <div v-else class="py-8 text-center space-y-2">
-              <p class="font-ui text-body text-brand-secondary">暂无手机号评测记录。</p>
-              <p class="font-ui text-micro text-brand-secondary/60">你可以先完成一次手机号评测，记录会显示在这里。</p>
+              <p class="font-sans text-[13px] text-brand-secondary">暂无手机号评测记录。</p>
+              <p class="font-sans text-[10px] text-brand-secondary/60">你可以先完成一次手机号评测，记录会显示在这里。</p>
             </div>
           </div>
 
-          <button @click="activeModal = null" class="w-full py-2.5 bg-brand-paper hover:bg-gray-100 text-brand-ink font-ui text-body font-semibold rounded-lg outline-none cursor-pointer">
+          <button @click="activeModal = null" class="w-full py-2.5 bg-brand-paper hover:bg-gray-100 text-brand-ink font-sans text-[13px] font-semibold rounded-lg outline-none cursor-pointer">
             确定返回
           </button>
         </div>
@@ -544,8 +550,8 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         <div class="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4 hairline-border shadow-2xl relative">
           <div class="flex justify-between items-center pb-2 border-b border-gray-100 w-full">
             <div class="text-left">
-              <h3 class="font-ui text-heading-2 font-bold text-brand-ink-strong">反馈问题</h3>
-              <p class="font-ui text-caption text-brand-secondary">提交你遇到的问题、建议或合作需求</p>
+              <h3 class="font-sans text-[17px] font-bold text-brand-ink-strong">反馈问题</h3>
+              <p class="font-sans text-[11px] text-brand-secondary">提交你遇到的问题、建议或合作需求</p>
             </div>
             <button @click="activeModal = null" class="p-1 rounded-full text-brand-secondary hover:bg-gray-100 outline-none cursor-pointer">
               <X :size="18" />
@@ -553,21 +559,21 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
           </div>
 
           <div class="space-y-3 text-left">
-            <label class="font-ui text-caption font-bold text-brand-secondary tracking-wide">反馈详情</label>
+            <label class="font-sans text-[11px] font-bold text-brand-secondary tracking-wide">反馈详情</label>
             <textarea
               v-model="feedbackText"
-              class="w-full bg-brand-paper font-ui text-body text-brand-ink-strong p-3.5 h-28 rounded-xl border border-gray-100 focus:border-brand-primary outline-none resize-none transition-all"
+              class="w-full bg-brand-paper font-sans text-[13px] text-brand-ink-strong p-3.5 h-28 rounded-xl border border-gray-100 focus:border-brand-primary outline-none resize-none transition-all"
               placeholder="请输入你遇到的问题、改进建议或合作需求..."
             />
           </div>
 
           <div class="pt-2 flex gap-2">
-            <button @click="activeModal = null" class="flex-1 py-2.5 bg-gray-50 hover:bg-gray-100 text-brand-ink font-ui text-body font-semibold rounded-lg outline-none cursor-pointer">
+            <button @click="activeModal = null" class="flex-1 py-2.5 bg-gray-50 hover:bg-gray-100 text-brand-ink font-sans text-[13px] font-semibold rounded-lg outline-none cursor-pointer">
               取消
             </button>
             <button
               @click="handleFeedbackSubmit"
-              class="flex-1 py-2.5 bg-brand-primary text-white hover:bg-brand-primary-strong font-ui text-body font-bold rounded-lg outline-none cursor-pointer disabled:opacity-55"
+              class="flex-1 py-2.5 bg-brand-primary text-white hover:bg-brand-primary-strong font-sans text-[13px] font-bold rounded-lg outline-none cursor-pointer disabled:opacity-55"
               :disabled="!feedbackText.trim()"
             >
               提交反馈

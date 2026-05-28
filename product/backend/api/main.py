@@ -20,11 +20,11 @@ from scoring.total_score.bundle import build_scoring_bundle
 from .agent import build_agent_reply
 from .auth import build_session_expiry, exchange_wechat_code, hash_access_token, issue_access_token, require_authenticated_user, require_internal_admin_access, require_registered_user, resolve_authenticated_user
 from .config import APP_TITLE, APP_VERSION, allow_mock_wechat_login, get_cors_origins, get_database_path, get_public_base_url, get_wechat_oa_app_id
-from .database import InsufficientPointsError, adjust_points, complete_review, complete_review_with_message, complete_usage_record, create_recharge_order, create_review_aspect_unlock, create_review_with_charge, create_session, ensure_schema, fail_review, fail_usage_record, get_internal_user, get_points_account, get_recharge_order, get_review, get_session_user_by_token_hash, get_user, list_points_ledger, list_recharge_orders, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, merge_guest_user_into_user, refund_points, review_recharge_order, update_review_generation_payload, update_review_progress, update_review_score_template, update_user_profile, upsert_guest_user, upsert_runtime_config_entry, upsert_wechat_user
+from .database import InsufficientPointsError, adjust_points, adjust_rebate_points, complete_review, complete_review_with_message, complete_usage_record, create_recharge_order, create_refund_request, create_review_aspect_unlock, create_review_with_charge, create_session, create_usage_record, delete_llm_api_key, ensure_schema, fail_review, fail_usage_record, get_dashboard_summary, get_internal_user, get_points_account, get_promotion_application, get_promotion_commission, get_promotion_rules, get_promotion_withdrawal, get_recharge_order, get_review, get_session_user_by_token_hash, get_usage_record, get_user, list_llm_api_keys, list_points_ledger, list_promotion_applications, list_promotion_commissions, list_promotion_withdrawals, list_recharge_orders, list_recent_recharge_orders_for_user, list_refund_requests_for_order, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, mark_promotion_withdrawal_paid, merge_guest_user_into_user, refund_points, retry_promotion_withdrawal_payout, retry_refund_request, review_promotion_application, review_promotion_withdrawal, review_recharge_order, review_refund_request, update_review_generation_payload, update_review_progress, update_review_score_template, update_user_identity, update_user_profile, update_user_promoter_parent, update_user_status, upsert_guest_user, upsert_llm_api_key, upsert_runtime_config_entry, upsert_wechat_user
 from .phone_review_view import PUBLIC_ASPECT_ORDER, build_phone_review_product_view
 from .product_review import build_product_review_aspects_render, build_product_review_core_render
-from .runtime_config import get_runtime_available_recharge_packages, get_runtime_guest_initial_points, get_runtime_initial_points, get_runtime_phone_review_aspect_order, get_runtime_phone_review_aspect_unlock_points_cost, get_runtime_phone_review_base_points_cost, get_runtime_phone_review_unlock_enforcement_enabled, is_module_enabled, normalize_channel_key, normalize_config_key, normalize_scope_key, normalize_scope_type, resolve_public_runtime_config
-from .schemas import AgentReplyRequest, AgentReplyResponse, AlmanacResponse, AuthLoginResponse, ComplianceConfigResponse, CurrentUserResponse, CustomerServiceConfigResponse, GuestSessionRequest, GuestSessionResponse, InternalUserListResponse, InternalUserResponse, ManualPointsAdjustRequest, ManualPointsAdjustResponse, ModuleRuntimeConfigResponse, PointsAccountResponse, PointsLedgerEntryResponse, PointsLedgerListResponse, PublicRuntimeConfigResponse, RechargeOrderCreateRequest, RechargeOrderListResponse, RechargeOrderResponse, RechargeOrderReviewRequest, RechargeOrderReviewResponse, RechargePackageListResponse, RechargePackageResponse, ReviewAspectResponse, ReviewAspectUnlockListResponse, ReviewAspectUnlockRequest, ReviewAspectUnlockResponse, ReviewBoardResponse, ReviewCreateRequest, ReviewListResponse, ReviewPhoneSummaryResponse, ReviewRecordResponse, ReviewStabilityDetailResponse, ReviewSummaryResponse, RuntimeConfigEntryResponse, RuntimeConfigListResponse, RuntimeConfigUpsertRequest, RuntimeModulesConfigResponse, RuntimePointsConfigResponse, RuntimeRechargeConfigResponse, UsageRecordListResponse, UsageRecordResponse, UserProfileUpdateRequest, UserResponse, WeChatLoginRequest
+from .runtime_config import get_runtime_agent_metaphysics_skill_enabled, get_runtime_available_recharge_packages, get_runtime_guest_initial_points, get_runtime_initial_points, get_runtime_phone_review_aspect_order, get_runtime_phone_review_aspect_unlock_points_cost, get_runtime_phone_review_base_points_cost, get_runtime_phone_review_free_aspect_keys, get_runtime_phone_review_unlock_enforcement_enabled, is_module_enabled, normalize_channel_key, normalize_config_key, normalize_scope_key, normalize_scope_type, resolve_public_runtime_config
+from .schemas import AdminReviewRequest, AgentReplyRequest, AgentReplyResponse, AlmanacResponse, AuthLoginResponse, ComplianceConfigResponse, CurrentUserResponse, CustomerServiceConfigResponse, DashboardResponse, DashboardMetricResponse, DashboardSectionResponse, GuestSessionRequest, GuestSessionResponse, InternalUserAdminSummaryResponse, InternalUserListResponse, InternalUserResponse, LlmApiKeyListResponse, LlmApiKeyResponse, LlmApiKeyUpsertRequest, ManualPointsAdjustRequest, ManualPointsAdjustResponse, ModuleRuntimeConfigResponse, PointsAccountResponse, PointsLedgerEntryResponse, PointsLedgerListResponse, PublicRuntimeConfigResponse, PromotionApplicationListResponse, PromotionApplicationResponse, PromotionCommissionListResponse, PromotionCommissionResponse, PromotionRulesResponse, PromotionRulesUpdateRequest, PromotionWithdrawalListResponse, PromotionWithdrawalPayoutRequest, PromotionWithdrawalResponse, RebatePointsAdjustRequest, RebatePointsAdjustResponse, RebatePointsAccountResponse, RefundCreateRequest, RefundRequestResponse, RefundRetryRequest, RechargeOrderCreateRequest, RechargeOrderListResponse, RechargeOrderResponse, RechargeOrderReviewRequest, RechargeOrderReviewResponse, RechargeOrderSummaryResponse, RechargePackageListResponse, RechargePackageResponse, ReviewAspectResponse, ReviewAspectUnlockListResponse, ReviewAspectUnlockRequest, ReviewAspectUnlockResponse, ReviewBoardResponse, ReviewCreateRequest, ReviewListResponse, ReviewPhoneSummaryResponse, ReviewRecordResponse, ReviewStabilityDetailResponse, ReviewSummaryResponse, RuntimeConfigEntryResponse, RuntimeConfigListResponse, RuntimeConfigSchemaItemResponse, RuntimeConfigSchemaResponse, RuntimeConfigUpsertRequest, RuntimeModulesConfigResponse, RuntimePointsConfigResponse, RuntimeRechargeConfigResponse, UsageRecordDetailResponse, UsageRecordListResponse, UsageRecordResponse, UserIdentityUpdateRequest, UserPromoterParentUpdateRequest, UserProfileUpdateRequest, UserResponse, UserStatusUpdateRequest, WeChatLoginRequest
 from .wechat_h5 import STATE_COOKIE_NAME, build_oauth_state, build_wechat_oauth_authorize_url, exchange_h5_oauth_code, h5_oauth_is_configured, is_wechat_browser
 
 PHONE_PATTERN = re.compile(r"^\d{11}$")
@@ -35,6 +35,33 @@ PHONE_REVIEW_BASE_SCENE = "phone_review_base"
 PHONE_REVIEW_BASE_REFUND_BIZ_TYPE = "phone_review_base_refund"
 PHONE_REVIEW_ASPECT_UNLOCK_SCENE = "phone_review_aspect_unlock"
 REVIEW_PREVIEW_ASPECT_THRESHOLD = 4
+_RUNTIME_CONFIG_SCHEMA_ITEMS: list[dict[str, object]] = [
+    {"config_key": "recharge.packages", "label": "充值套餐", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": True, "description": "充值金额与积分套餐列表"},
+    {"config_key": "points.initial_grant", "label": "注册初始积分", "value_type": "int", "default_value": 100, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "注册用户默认发放积分"},
+    {"config_key": "points.guest_initial_grant", "label": "游客初始积分", "value_type": "int", "default_value": 100, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "游客会话初始积分"},
+    {"config_key": "customer_service.contact_url", "label": "客服联系方式", "value_type": "string", "default_value": None, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "客服跳转链接"},
+    {"config_key": "customer_service.qr_code_url", "label": "客服二维码", "value_type": "string", "default_value": None, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "客服二维码图片地址"},
+    {"config_key": "customer_service.guidance_text", "label": "客服说明文案", "value_type": "string", "default_value": "联系客服获取充值与服务支持", "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "前台客服说明"},
+    {"config_key": "platform.recharge_enabled", "label": "充值总开关", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": True, "description": "控制前台是否开放充值入口"},
+    {"config_key": "compliance.safe_mode_enabled", "label": "渠道总开关", "value_type": "bool", "default_value": False, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "控制玄学功能是否整体可用"},
+    {"config_key": "compliance.safe_modules", "label": "合规白名单模块", "value_type": "json", "default_value": ["almanac", "five_elements"], "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "总开关开启时允许的模块"},
+    {"config_key": "compliance.hidden_modules", "label": "隐藏模块列表", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "被隐藏的功能模块"},
+    {"config_key": "compliance.hidden_pages", "label": "隐藏页面列表", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "被隐藏的页面"},
+    {"config_key": "phone_review.base_points_cost", "label": "手机号评测基础消耗", "value_type": "int", "default_value": 100, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "手机号评测基础积分消耗"},
+    {"config_key": "phone_review.aspect_unlock_points_cost", "label": "维度解锁消耗", "value_type": "int", "default_value": 50, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "单个维度解锁积分"},
+    {"config_key": "phone_review.free_aspect_keys", "label": "免费维度列表", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "不消耗积分的维度"},
+    {"config_key": "phone_review.aspect_order", "label": "维度顺序", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "手机号评测维度展示顺序"},
+    {"config_key": "phone_review.unlock_enforcement_enabled", "label": "维度解锁限制", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "是否强制未解锁维度隐藏内容"},
+    {"config_key": "agent.metaphysics_skill_enabled", "label": "智能体玄学技能开关", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "仅控制智能体的玄学技能"},
+    {"config_key": "promotion.normal_threshold_cents", "label": "普通大使门槛", "value_type": "int", "default_value": 39800, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "普通推广大使申请门槛"},
+    {"config_key": "promotion.senior_threshold_cents", "label": "高级大使门槛", "value_type": "int", "default_value": 398000, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "高级推广大使申请门槛"},
+    {"config_key": "promotion.normal_commission_rate", "label": "普通返佣比例", "value_type": "float", "default_value": 0.1, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "普通推广大使返佣比例"},
+    {"config_key": "promotion.senior_commission_rate", "label": "高级返佣比例", "value_type": "float", "default_value": 0.2, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "高级推广大使返佣比例"},
+    {"config_key": "promotion.min_withdraw_cents", "label": "最低提现门槛", "value_type": "int", "default_value": 3000, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "最低提现金额"},
+    {"config_key": "promotion.order_completion_days", "label": "订单完成判定天数", "value_type": "int", "default_value": 7, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": True, "description": "充值订单完成判定天数"},
+    {"config_key": "promotion.rebate_to_cash_rate", "label": "返佣提现比例", "value_type": "float", "default_value": 1.0, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "返佣积分兑换现金比例"},
+    {"config_key": "promotion.rebate_to_points_rate", "label": "返佣转积分比例", "value_type": "float", "default_value": 1.0, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "返佣积分转普通积分比例"},
+]
 
 app = FastAPI(title=APP_TITLE, version=APP_VERSION)
 app.add_middleware(CORSMiddleware, allow_origins=get_cors_origins(), allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -94,6 +121,41 @@ def h5_wechat_openid_test(
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "database": str(get_database_path())}
+
+
+@app.get("/api/v1/internal/dashboard", response_model=DashboardResponse)
+def get_internal_dashboard(
+    date_from: str | None = Query(default=None, max_length=64),
+    date_to: str | None = Query(default=None, max_length=64),
+    channel: str | None = Query(default=None, max_length=64),
+    _: None = Depends(require_internal_admin_access),
+) -> DashboardResponse:
+    dashboard = get_dashboard_summary(date_from=date_from, date_to=date_to, channel=channel)
+    return DashboardResponse(
+        generated_at=str(dashboard["generated_at"]),
+        revenue=dict(dashboard.get("revenue", {})),
+        users=dict(dashboard.get("users", {})),
+        orders=dict(dashboard.get("orders", {})),
+        promotion=dict(dashboard.get("promotion", {})),
+        sections=[
+            DashboardSectionResponse(
+                title=str(section["title"]),
+                summary=section.get("summary"),
+                metrics=[
+                    DashboardMetricResponse(
+                        label=str(metric["label"]),
+                        value=metric["value"],
+                        display_value=str(metric["display_value"]),
+                        unit=metric.get("unit"),
+                        trend_value=metric.get("trend_value"),
+                        trend_label=metric.get("trend_label"),
+                    )
+                    for metric in section.get("metrics", [])
+                ],
+            )
+            for section in dashboard.get("sections", [])
+        ],
+    )
 
 
 @app.post("/api/v1/guest/session", response_model=GuestSessionResponse)
@@ -254,17 +316,37 @@ def get_my_recharge_order_detail(order_id: str, current_user: dict[str, object] 
 
 
 @app.get("/api/v1/almanac/today", response_model=AlmanacResponse)
-def get_today_almanac() -> AlmanacResponse:
-    return AlmanacResponse(**build_today_almanac().to_dict())
+def get_today_almanac(request: Request, current_user: dict[str, object] | None = Depends(resolve_authenticated_user)) -> AlmanacResponse:
+    payload = build_today_almanac().to_dict()
+    if current_user is not None:
+        _record_zero_cost_usage(
+            user_id=str(current_user["user_id"]),
+            scene="almanac_query",
+            channel=_resolve_request_channel(request),
+            target_id=str(payload.get("solar_date") or "today"),
+            request_payload_summary={"date": payload.get("solar_date"), "source": "today"},
+            result_summary={"status": "completed", "display_date": payload.get("display_date")},
+        )
+    return AlmanacResponse(**payload)
 
 
 @app.get("/api/v1/almanac", response_model=AlmanacResponse)
-def get_almanac_by_date(date_text: str = Query(alias="date", description="YYYY-MM-DD")) -> AlmanacResponse:
+def get_almanac_by_date(request: Request, date_text: str = Query(alias="date", description="YYYY-MM-DD"), current_user: dict[str, object] | None = Depends(resolve_authenticated_user)) -> AlmanacResponse:
     try:
         target_date = date.fromisoformat(date_text)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="date_must_be_yyyy_mm_dd") from exc
-    return AlmanacResponse(**build_almanac_for_date(target_date).to_dict())
+    payload = build_almanac_for_date(target_date).to_dict()
+    if current_user is not None:
+        _record_zero_cost_usage(
+            user_id=str(current_user["user_id"]),
+            scene="almanac_query",
+            channel=_resolve_request_channel(request),
+            target_id=str(payload.get("solar_date") or date_text),
+            request_payload_summary={"date": date_text, "source": "query"},
+            result_summary={"status": "completed", "display_date": payload.get("display_date")},
+        )
+    return AlmanacResponse(**payload)
 
 
 @app.get("/api/v1/runtime-config/public", response_model=PublicRuntimeConfigResponse)
@@ -318,14 +400,38 @@ def put_internal_runtime_config(payload: RuntimeConfigUpsertRequest, _: None = D
     return RuntimeConfigListResponse(items=items)
 
 
+@app.get("/api/v1/internal/runtime-config/schema", response_model=RuntimeConfigSchemaResponse)
+def get_internal_runtime_config_schema(_: None = Depends(require_internal_admin_access)) -> RuntimeConfigSchemaResponse:
+    return RuntimeConfigSchemaResponse(items=[RuntimeConfigSchemaItemResponse(**item) for item in _RUNTIME_CONFIG_SCHEMA_ITEMS])
+
+
 @app.get("/api/v1/internal/users", response_model=InternalUserListResponse)
 def get_internal_users(
     limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    keyword: str | None = Query(default=None, max_length=128),
     query: str | None = Query(default=None, max_length=128),
+    status: str | None = Query(default=None, max_length=64),
+    identity_level: str | None = Query(default=None, max_length=64),
+    channel: str | None = Query(default=None, max_length=64),
+    date_from: str | None = Query(default=None, max_length=64),
+    date_to: str | None = Query(default=None, max_length=64),
     _: None = Depends(require_internal_admin_access),
 ) -> InternalUserListResponse:
-    items = [_build_internal_user_response(item) for item in list_users(limit=limit, query=query)]
-    return InternalUserListResponse(items=items)
+    items = [
+        _build_internal_user_response(item)
+        for item in list_users(
+            limit=limit,
+            offset=offset,
+            keyword=keyword or query,
+            status=status,
+            identity_level=identity_level,
+            channel=channel,
+            date_from=date_from,
+            date_to=date_to,
+        )
+    ]
+    return InternalUserListResponse(items=items, total=len(items), limit=limit, offset=offset)
 
 
 @app.get("/api/v1/internal/users/{user_id}", response_model=InternalUserResponse)
@@ -334,6 +440,26 @@ def get_internal_user_detail(user_id: str, _: None = Depends(require_internal_ad
     if user is None:
         raise HTTPException(status_code=404, detail="user_not_found")
     return _build_internal_user_response(user)
+
+
+@app.get("/api/v1/internal/users/{user_id}/admin-summary", response_model=InternalUserAdminSummaryResponse)
+def get_internal_user_admin_summary(user_id: str, _: None = Depends(require_internal_admin_access)) -> InternalUserAdminSummaryResponse:
+    user = get_internal_user(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    recent_orders = list_recent_recharge_orders_for_user(user_id=user_id, limit=5)
+    recent_amount = sum(int(item.get("amount_cents", 0) or 0) for item in recent_orders)
+    return InternalUserAdminSummaryResponse(
+        user=_build_internal_user_response(user),
+        recent_orders=[_build_recharge_order_summary_response(item) for item in recent_orders],
+        recent_order_count=len(recent_orders),
+        recent_recharge_amount_cents=recent_amount,
+        latest_order_status=str(recent_orders[0]["status"]) if recent_orders else None,
+        total_recharge_amount_cents=recent_amount,
+        total_withdraw_amount_cents=0,
+        promoter_parent_user_id=str(user.get("promoter_parent_user_id")) if user.get("promoter_parent_user_id") else None,
+        identity_level=str(user.get("identity_level") or "normal_user"),
+    )
 
 
 @app.get("/api/v1/internal/users/{user_id}/points/ledger", response_model=PointsLedgerListResponse)
@@ -385,35 +511,163 @@ def post_internal_user_points_adjust(
     )
 
 
+@app.post("/api/v1/internal/users/{user_id}/rebate-points/adjust", response_model=RebatePointsAdjustResponse)
+def post_internal_user_rebate_points_adjust(
+    user_id: str,
+    payload: RebatePointsAdjustRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> RebatePointsAdjustResponse:
+    user = get_internal_user(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    try:
+        rebate_points = adjust_rebate_points(
+            user_id=user_id,
+            delta=payload.delta,
+            reason=payload.reason,
+            operator_note=payload.operator_note,
+            operator="internal_admin",
+            now_text=_utc_now(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    refreshed_user = get_internal_user(user_id) or user
+    return RebatePointsAdjustResponse(
+        user=_build_internal_user_response(refreshed_user),
+        rebate_points=RebatePointsAccountResponse(
+            user_id=str(rebate_points["user_id"]),
+            balance=int(rebate_points["balance"]),
+            frozen_balance=int(rebate_points["frozen_balance"]),
+            created_at=str(rebate_points["created_at"]) if rebate_points.get("created_at") else None,
+            updated_at=str(rebate_points["updated_at"]) if rebate_points.get("updated_at") else None,
+        ),
+    )
+
+
+@app.patch("/api/v1/internal/users/{user_id}/status", response_model=InternalUserResponse)
+def patch_internal_user_status(
+    user_id: str,
+    payload: UserStatusUpdateRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> InternalUserResponse:
+    try:
+        updated = update_user_status(
+            user_id=user_id,
+            status=payload.status,
+            reason=payload.reason,
+            operator_note=payload.operator_note,
+            operator="internal_admin",
+            now_text=_utc_now(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    return _build_internal_user_response(updated)
+
+
+@app.patch("/api/v1/internal/users/{user_id}/identity", response_model=InternalUserResponse)
+def patch_internal_user_identity(
+    user_id: str,
+    payload: UserIdentityUpdateRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> InternalUserResponse:
+    try:
+        updated = update_user_identity(
+            user_id=user_id,
+            identity_level=payload.identity_level,
+            reason=payload.reason,
+            operator_note=payload.operator_note,
+            operator="internal_admin",
+            now_text=_utc_now(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    return _build_internal_user_response(updated)
+
+
+@app.patch("/api/v1/internal/users/{user_id}/promoter-parent", response_model=InternalUserResponse)
+def patch_internal_user_promoter_parent(
+    user_id: str,
+    payload: UserPromoterParentUpdateRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> InternalUserResponse:
+    try:
+        updated = update_user_promoter_parent(
+            user_id=user_id,
+            promoter_parent_user_id=payload.promoter_parent_user_id,
+            reason=payload.reason,
+            operator_note=payload.operator_note,
+            operator="internal_admin",
+            now_text=_utc_now(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    return _build_internal_user_response(updated)
+
+
 @app.get("/api/v1/internal/usage-records", response_model=UsageRecordListResponse)
 def get_internal_usage_records(
     limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     user_id: str | None = Query(default=None, max_length=64),
+    feature_key: str | None = Query(default=None, max_length=128),
     scene: str | None = Query(default=None, max_length=128),
     status: str | None = Query(default=None, max_length=32),
+    keyword: str | None = Query(default=None, max_length=128),
+    channel: str | None = Query(default=None, max_length=64),
+    target_id: str | None = Query(default=None, max_length=64),
+    date_from: str | None = Query(default=None, max_length=64),
+    date_to: str | None = Query(default=None, max_length=64),
+    include_hidden: bool = Query(default=False),
     _: None = Depends(require_internal_admin_access),
 ) -> UsageRecordListResponse:
     items = [
         _build_usage_record_response(item)
-        for item in list_usage_records(limit=limit, user_id=user_id, scene=scene, status=status)
+        for item in list_usage_records(limit=limit, offset=offset, user_id=user_id, feature_key=feature_key, scene=scene, status=status, keyword=keyword, channel=channel, target_id=target_id, date_from=date_from, date_to=date_to)
     ]
-    return UsageRecordListResponse(items=items)
+    return UsageRecordListResponse(items=items, total=len(items), limit=limit, offset=offset)
+
+
+@app.get("/api/v1/internal/usage-records/{usage_record_id}", response_model=UsageRecordDetailResponse)
+def get_internal_usage_record_detail(usage_record_id: str, _: None = Depends(require_internal_admin_access)) -> UsageRecordDetailResponse:
+    record = get_usage_record(usage_record_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="usage_record_not_found")
+    user = get_internal_user(str(record["user_id"]))
+    if user is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    return UsageRecordDetailResponse(
+        record=_build_usage_record_response(record),
+        user=_build_internal_user_response(user),
+        recent_orders=[_build_recharge_order_summary_response(item) for item in list_recent_recharge_orders_for_user(user_id=str(record["user_id"]), limit=5)],
+    )
 
 
 @app.get("/api/v1/internal/recharge-orders", response_model=RechargeOrderListResponse)
 def get_internal_recharge_orders(
     limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     user_id: str | None = Query(default=None, max_length=64),
     status: str | None = Query(default=None, max_length=32),
     source: str | None = Query(default=None, max_length=64),
     channel: str | None = Query(default=None, max_length=64),
+    keyword: str | None = Query(default=None, max_length=128),
+    amount_min: int | None = Query(default=None, ge=0),
+    amount_max: int | None = Query(default=None, ge=0),
+    date_from: str | None = Query(default=None, max_length=64),
+    date_to: str | None = Query(default=None, max_length=64),
     _: None = Depends(require_internal_admin_access),
 ) -> RechargeOrderListResponse:
     items = [
         _build_recharge_order_response(item)
-        for item in list_recharge_orders(limit=limit, user_id=user_id, status=status, source=source, channel=channel)
+        for item in list_recharge_orders(limit=limit, offset=offset, user_id=user_id, status=status, source=source, channel=channel, keyword=keyword, amount_min=amount_min, amount_max=amount_max, date_from=date_from, date_to=date_to)
     ]
-    return RechargeOrderListResponse(items=items)
+    return RechargeOrderListResponse(items=items, total=len(items), limit=limit, offset=offset)
 
 
 @app.get("/api/v1/internal/recharge-orders/{order_id}", response_model=RechargeOrderResponse)
@@ -421,7 +675,10 @@ def get_internal_recharge_order_detail(order_id: str, _: None = Depends(require_
     order = get_recharge_order(order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="recharge_order_not_found")
-    return _build_recharge_order_response(order)
+    order_response = _build_recharge_order_response(order)
+    order_response.refund_requests = [RefundRequestResponse(**item) for item in list_refund_requests_for_order(order_id)]
+    order_response.commission_records = [PromotionCommissionResponse(**item) for item in list_promotion_commissions(limit=20, order_id=order_id)]
+    return order_response
 
 
 @app.post("/api/v1/internal/recharge-orders/{order_id}/review", response_model=RechargeOrderReviewResponse)
@@ -458,10 +715,319 @@ def post_internal_recharge_order_review(
     )
 
 
+@app.post("/api/v1/internal/recharge-orders/{order_id}/refunds", response_model=RefundRequestResponse)
+def post_internal_recharge_order_refund(
+    order_id: str,
+    payload: RefundCreateRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> RefundRequestResponse:
+    try:
+        refund = create_refund_request(order_id=order_id, reason=payload.reason, operator_note=payload.operator_note, operator="internal_admin", now_text=_utc_now())
+    except RuntimeError as exc:
+        if str(exc) == "recharge_order_not_found":
+            raise HTTPException(status_code=404, detail="recharge_order_not_found") from exc
+        raise HTTPException(status_code=500, detail="refund_request_create_failed") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return RefundRequestResponse(**refund)
+
+
+@app.post("/api/v1/internal/refunds/{refund_id}/review", response_model=RefundRequestResponse)
+def post_internal_refund_review(
+    refund_id: str,
+    payload: AdminReviewRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> RefundRequestResponse:
+    try:
+        refund = review_refund_request(
+            refund_id=refund_id,
+            action=payload.action,
+            reject_reason=payload.reject_reason or payload.reason,
+            operator_note=payload.operator_note or payload.review_note,
+            operator="internal_admin",
+            now_text=_utc_now(),
+        )
+    except RuntimeError as exc:
+        if str(exc) == "refund_request_not_found":
+            raise HTTPException(status_code=404, detail="refund_request_not_found") from exc
+        raise HTTPException(status_code=500, detail="refund_request_review_failed") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return RefundRequestResponse(**refund)
+
+
+@app.post("/api/v1/internal/refunds/{refund_id}/retry", response_model=RefundRequestResponse)
+def post_internal_refund_retry(
+    refund_id: str,
+    payload: RefundRetryRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> RefundRequestResponse:
+    try:
+        refund = retry_refund_request(refund_id=refund_id, operator_note=payload.operator_note, operator="internal_admin", now_text=_utc_now())
+    except RuntimeError as exc:
+        if str(exc) == "refund_request_not_found":
+            raise HTTPException(status_code=404, detail="refund_request_not_found") from exc
+        raise HTTPException(status_code=500, detail="refund_request_retry_failed") from exc
+    return RefundRequestResponse(**refund)
+
+
+@app.get("/api/v1/internal/reviews", response_model=ReviewListResponse)
+def get_internal_reviews(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    keyword: str | None = Query(default=None, max_length=128),
+    status: str | None = Query(default=None, max_length=32),
+    channel: str | None = Query(default=None, max_length=64),
+    date_from: str | None = Query(default=None, max_length=64),
+    date_to: str | None = Query(default=None, max_length=64),
+    _: None = Depends(require_internal_admin_access),
+) -> ReviewListResponse:
+    items = [_build_review_summary_response(item) for item in list_reviews(limit=limit, offset=offset, status=status, keyword=keyword, channel=channel, date_from=date_from, date_to=date_to)]
+    return ReviewListResponse(items=items, total=len(items), limit=limit, offset=offset)
+
+
+@app.get("/api/v1/internal/reviews/{review_id}", response_model=ReviewRecordResponse)
+def get_internal_review_detail(review_id: str, _: None = Depends(require_internal_admin_access)) -> ReviewRecordResponse:
+    review = get_review(review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="review_not_found")
+    return _build_review_record_response(review)
+
+
+@app.get("/api/v1/internal/llm-api-keys", response_model=LlmApiKeyListResponse)
+def get_internal_llm_api_keys(_: None = Depends(require_internal_admin_access)) -> LlmApiKeyListResponse:
+    return LlmApiKeyListResponse(items=[LlmApiKeyResponse(**item) for item in list_llm_api_keys()])
+
+
+@app.post("/api/v1/internal/llm-api-keys", response_model=LlmApiKeyResponse)
+def post_internal_llm_api_key(payload: LlmApiKeyUpsertRequest, _: None = Depends(require_internal_admin_access)) -> LlmApiKeyResponse:
+    saved = upsert_llm_api_key(
+        key_id=None,
+        provider=payload.provider,
+        model=payload.model,
+        display_name=payload.display_name,
+        masked_key=payload.masked_key,
+        secret_ref=payload.secret_ref,
+        enabled=payload.enabled,
+        priority=payload.priority,
+        remark=payload.remark,
+        last_operator=payload.last_operator,
+        now_text=_utc_now(),
+    )
+    return LlmApiKeyResponse(**saved)
+
+
+@app.patch("/api/v1/internal/llm-api-keys/{key_id}", response_model=LlmApiKeyResponse)
+def patch_internal_llm_api_key(key_id: str, payload: LlmApiKeyUpsertRequest, _: None = Depends(require_internal_admin_access)) -> LlmApiKeyResponse:
+    saved = upsert_llm_api_key(
+        key_id=key_id,
+        provider=payload.provider,
+        model=payload.model,
+        display_name=payload.display_name,
+        masked_key=payload.masked_key,
+        secret_ref=payload.secret_ref,
+        enabled=payload.enabled,
+        priority=payload.priority,
+        remark=payload.remark,
+        last_operator=payload.last_operator,
+        now_text=_utc_now(),
+    )
+    return LlmApiKeyResponse(**saved)
+
+
+@app.delete("/api/v1/internal/llm-api-keys/{key_id}", include_in_schema=False)
+def delete_internal_llm_api_key(key_id: str, _: None = Depends(require_internal_admin_access)) -> dict[str, str]:
+    delete_llm_api_key(key_id)
+    return {"status": "ok"}
+
+
+@app.get("/api/v1/internal/promotion/applications", response_model=PromotionApplicationListResponse)
+def get_internal_promotion_applications(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    status: str | None = Query(default=None, max_length=32),
+    user_id: str | None = Query(default=None, max_length=64),
+    keyword: str | None = Query(default=None, max_length=128),
+    _: None = Depends(require_internal_admin_access),
+) -> PromotionApplicationListResponse:
+    items = [PromotionApplicationResponse(**item) for item in list_promotion_applications(limit=limit, status=status, user_id=user_id, keyword=keyword)]
+    return PromotionApplicationListResponse(items=items, total=len(items), limit=limit, offset=offset)
+
+
+@app.get("/api/v1/internal/promotion/applications/{application_id}", response_model=PromotionApplicationResponse)
+def get_internal_promotion_application_detail(application_id: str, _: None = Depends(require_internal_admin_access)) -> PromotionApplicationResponse:
+    application = get_promotion_application(application_id)
+    if application is None:
+        raise HTTPException(status_code=404, detail="promotion_application_not_found")
+    return PromotionApplicationResponse(**application)
+
+
+@app.post("/api/v1/internal/promotion/applications/{application_id}/review", response_model=PromotionApplicationResponse)
+def post_internal_promotion_application_review(
+    application_id: str,
+    payload: AdminReviewRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> PromotionApplicationResponse:
+    try:
+        application = review_promotion_application(
+            application_id=application_id,
+            action=payload.action,
+            reject_reason=payload.reject_reason or payload.reason,
+            review_note=payload.review_note or payload.operator_note,
+            operator="internal_admin",
+            now_text=_utc_now(),
+        )
+    except RuntimeError as exc:
+        if str(exc) == "promotion_application_not_found":
+            raise HTTPException(status_code=404, detail="promotion_application_not_found") from exc
+        raise HTTPException(status_code=500, detail="promotion_application_review_failed") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return PromotionApplicationResponse(**application)
+
+
+@app.get("/api/v1/internal/promotion/commissions", response_model=PromotionCommissionListResponse)
+def get_internal_promotion_commissions(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user_id: str | None = Query(default=None, max_length=64),
+    promoter_user_id: str | None = Query(default=None, max_length=64),
+    order_id: str | None = Query(default=None, max_length=64),
+    status: str | None = Query(default=None, max_length=32),
+    date_from: str | None = Query(default=None, max_length=64),
+    date_to: str | None = Query(default=None, max_length=64),
+    _: None = Depends(require_internal_admin_access),
+) -> PromotionCommissionListResponse:
+    items = [PromotionCommissionResponse(**item) for item in list_promotion_commissions(limit=limit, user_id=user_id, promoter_user_id=promoter_user_id, order_id=order_id, status=status, date_from=date_from, date_to=date_to)]
+    return PromotionCommissionListResponse(items=items, total=len(items), limit=limit, offset=offset)
+
+
+@app.get("/api/v1/internal/promotion/commissions/{commission_id}", response_model=PromotionCommissionResponse)
+def get_internal_promotion_commission_detail(commission_id: str, _: None = Depends(require_internal_admin_access)) -> PromotionCommissionResponse:
+    commission = get_promotion_commission(commission_id)
+    if commission is None:
+        raise HTTPException(status_code=404, detail="promotion_commission_not_found")
+    return PromotionCommissionResponse(**commission)
+
+
+@app.get("/api/v1/internal/promotion/withdrawals", response_model=PromotionWithdrawalListResponse)
+def get_internal_promotion_withdrawals(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user_id: str | None = Query(default=None, max_length=64),
+    status: str | None = Query(default=None, max_length=32),
+    keyword: str | None = Query(default=None, max_length=128),
+    _: None = Depends(require_internal_admin_access),
+) -> PromotionWithdrawalListResponse:
+    items = [PromotionWithdrawalResponse(**item) for item in list_promotion_withdrawals(limit=limit, user_id=user_id, status=status, keyword=keyword)]
+    return PromotionWithdrawalListResponse(items=items, total=len(items), limit=limit, offset=offset)
+
+
+@app.get("/api/v1/internal/promotion/withdrawals/{withdrawal_id}", response_model=PromotionWithdrawalResponse)
+def get_internal_promotion_withdrawal_detail(withdrawal_id: str, _: None = Depends(require_internal_admin_access)) -> PromotionWithdrawalResponse:
+    withdrawal = get_promotion_withdrawal(withdrawal_id)
+    if withdrawal is None:
+        raise HTTPException(status_code=404, detail="promotion_withdrawal_not_found")
+    return PromotionWithdrawalResponse(**withdrawal)
+
+
+@app.post("/api/v1/internal/promotion/withdrawals/{withdrawal_id}/review", response_model=PromotionWithdrawalResponse)
+def post_internal_promotion_withdrawal_review(
+    withdrawal_id: str,
+    payload: AdminReviewRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> PromotionWithdrawalResponse:
+    try:
+        withdrawal = review_promotion_withdrawal(
+            withdrawal_id=withdrawal_id,
+            action=payload.action,
+            reject_reason=payload.reject_reason or payload.reason,
+            review_note=payload.review_note or payload.operator_note,
+            operator="internal_admin",
+            now_text=_utc_now(),
+        )
+    except RuntimeError as exc:
+        if str(exc) == "promotion_withdrawal_not_found":
+            raise HTTPException(status_code=404, detail="promotion_withdrawal_not_found") from exc
+        raise HTTPException(status_code=500, detail="promotion_withdrawal_review_failed") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return PromotionWithdrawalResponse(**withdrawal)
+
+
+@app.post("/api/v1/internal/promotion/withdrawals/{withdrawal_id}/retry-payout", response_model=PromotionWithdrawalResponse)
+def post_internal_promotion_withdrawal_retry_payout(
+    withdrawal_id: str,
+    payload: PromotionWithdrawalPayoutRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> PromotionWithdrawalResponse:
+    try:
+        withdrawal = retry_promotion_withdrawal_payout(withdrawal_id=withdrawal_id, operator_note=payload.operator_note, operator="internal_admin", now_text=_utc_now())
+    except RuntimeError as exc:
+        if str(exc) == "promotion_withdrawal_not_found":
+            raise HTTPException(status_code=404, detail="promotion_withdrawal_not_found") from exc
+        raise HTTPException(status_code=500, detail="promotion_withdrawal_retry_failed") from exc
+    return PromotionWithdrawalResponse(**withdrawal)
+
+
+@app.post("/api/v1/internal/promotion/withdrawals/{withdrawal_id}/mark-paid", response_model=PromotionWithdrawalResponse)
+def post_internal_promotion_withdrawal_mark_paid(
+    withdrawal_id: str,
+    payload: PromotionWithdrawalPayoutRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> PromotionWithdrawalResponse:
+    try:
+        withdrawal = mark_promotion_withdrawal_paid(
+            withdrawal_id=withdrawal_id,
+            payout_method=payload.payout_method,
+            payout_proof=payload.payout_proof,
+            operator_note=payload.operator_note,
+            operator="internal_admin",
+            now_text=_utc_now(),
+        )
+    except RuntimeError as exc:
+        if str(exc) == "promotion_withdrawal_not_found":
+            raise HTTPException(status_code=404, detail="promotion_withdrawal_not_found") from exc
+        raise HTTPException(status_code=500, detail="promotion_withdrawal_mark_paid_failed") from exc
+    return PromotionWithdrawalResponse(**withdrawal)
+
+
+@app.get("/api/v1/internal/promotion/rules", response_model=PromotionRulesResponse)
+def get_internal_promotion_rules(_: None = Depends(require_internal_admin_access)) -> PromotionRulesResponse:
+    return PromotionRulesResponse(**get_promotion_rules())
+
+
+@app.put("/api/v1/internal/promotion/rules", response_model=PromotionRulesResponse)
+def put_internal_promotion_rules(payload: PromotionRulesUpdateRequest, _: None = Depends(require_internal_admin_access)) -> PromotionRulesResponse:
+    updated_at = _utc_now()
+    updates = {
+        "promotion.normal_threshold_cents": payload.normal_threshold_cents,
+        "promotion.senior_threshold_cents": payload.senior_threshold_cents,
+        "promotion.normal_commission_rate": payload.normal_commission_rate,
+        "promotion.senior_commission_rate": payload.senior_commission_rate,
+        "promotion.min_withdraw_cents": payload.min_withdraw_cents,
+        "promotion.order_completion_days": payload.order_completion_days,
+        "promotion.rebate_to_cash_rate": payload.rebate_to_cash_rate,
+        "promotion.rebate_to_points_rate": payload.rebate_to_points_rate,
+    }
+    for config_key, value in updates.items():
+        if value is not None:
+            upsert_runtime_config_entry(scope_type="global", scope_key="default", config_key=config_key, value=value, updated_at=updated_at)
+    return PromotionRulesResponse(**get_promotion_rules())
+
+
 @app.post("/api/v1/agent/reply", response_model=AgentReplyResponse)
 def create_agent_reply(request: Request, payload: AgentReplyRequest, current_user: dict[str, object] = Depends(require_registered_user)) -> AgentReplyResponse:
     _ensure_module_available(module_key="agent", request=request)
     reply_payload = build_agent_reply(message=payload.message, history=[item.model_dump() for item in payload.history], user_id=str(current_user["user_id"]))
+    _record_zero_cost_usage(
+        user_id=str(current_user["user_id"]),
+        scene="agent_reply",
+        channel=_resolve_request_channel(request),
+        target_id=None,
+        request_payload_summary={"message": payload.message[:120], "history_count": len(payload.history), "scene": payload.scene},
+        result_summary={"status": "completed", "reply_mode": reply_payload.get("meta", {}).get("reply_mode"), "model_name": reply_payload.get("meta", {}).get("model_name")},
+    )
     return AgentReplyResponse(**reply_payload)
 
 
@@ -487,6 +1053,7 @@ def create_review_record(request: Request, background_tasks: BackgroundTasks, pa
             points_cost=points_cost,
             usage_scene=PHONE_REVIEW_BASE_SCENE,
             request_payload_summary={"phone": normalized_phone, "gender": payload.gender, "include_markdown": payload.include_markdown} if user_id and points_cost > 0 else None,
+            channel=channel_key,
         )
     except InsufficientPointsError as exc:
         raise HTTPException(status_code=402, detail="insufficient_points") from exc
@@ -581,6 +1148,7 @@ def create_review_aspect_unlock_record(
             usage_scene=PHONE_REVIEW_ASPECT_UNLOCK_SCENE,
             request_payload_summary={"aspect_key": normalized_aspect_key, "phone": review["phone"]},
             now_text=_utc_now(),
+            channel=channel_key,
         )
     except InsufficientPointsError as exc:
         raise HTTPException(status_code=402, detail="insufficient_points") from exc
@@ -663,11 +1231,15 @@ def _build_internal_user_response(user: dict[str, object]) -> InternalUserRespon
     return InternalUserResponse(
         user_id=str(user["user_id"]),
         status=str(user["status"]),
+        identity_level=str(user.get("identity_level") or "normal_user"),
+        promoter_parent_user_id=str(user["promoter_parent_user_id"]) if user.get("promoter_parent_user_id") else None,
         nickname=user.get("nickname"),
         avatar_url=user.get("avatar_url"),
         profile_completed=bool(user["profile_completed"]),
         points_balance=int(user.get("points_balance", 0) or 0),
         frozen_balance=int(user.get("frozen_balance", 0) or 0),
+        rebate_points_balance=int(user.get("rebate_points_balance", 0) or 0),
+        rebate_frozen_balance=int(user.get("rebate_frozen_balance", 0) or 0),
         created_at=str(user["created_at"]),
         updated_at=str(user["updated_at"]),
         last_active_at=str(user["last_active_at"]),
@@ -678,6 +1250,20 @@ def _build_internal_user_response(user: dict[str, object]) -> InternalUserRespon
         guest_appid=user.get("guest_appid"),
         guest_openid=user.get("guest_openid"),
         guest_unionid=user.get("guest_unionid"),
+    )
+
+
+def _build_recharge_order_summary_response(item: dict[str, object]) -> RechargeOrderSummaryResponse:
+    return RechargeOrderSummaryResponse(
+        order_id=str(item["order_id"]),
+        package_title=str(item["package_title"]),
+        amount_cents=int(item["amount_cents"]),
+        status=str(item["status"]),
+        created_at=str(item["created_at"]),
+        reviewed_at=str(item["reviewed_at"]) if item.get("reviewed_at") else None,
+        reviewed_by=str(item["reviewed_by"]) if item.get("reviewed_by") else None,
+        paid_at=str(item["paid_at"]) if item.get("paid_at") else None,
+        completed_at=str(item["completed_at"]) if item.get("completed_at") else None,
     )
 
 
@@ -734,6 +1320,7 @@ def _build_recharge_order_response(item: dict[str, object]) -> RechargeOrderResp
         user_nickname=item.get("user_nickname"),
         channel=str(item["channel"]) if item.get("channel") else None,
         status=str(item["status"]),
+        raw_status=str(item["raw_status"]) if item.get("raw_status") else None,
         package_key=str(item["package_key"]),
         package_title=str(item["package_title"]),
         amount_cents=int(item["amount_cents"]),
@@ -747,6 +1334,9 @@ def _build_recharge_order_response(item: dict[str, object]) -> RechargeOrderResp
         review_note=item.get("review_note"),
         reviewed_by=str(item["reviewed_by"]) if item.get("reviewed_by") else None,
         reviewed_at=str(item["reviewed_at"]) if item.get("reviewed_at") else None,
+        paid_at=str(item["paid_at"]) if item.get("paid_at") else None,
+        completed_at=str(item["completed_at"]) if item.get("completed_at") else None,
+        closed_at=str(item["closed_at"]) if item.get("closed_at") else None,
         granted_ledger_id=str(item["granted_ledger_id"]) if item.get("granted_ledger_id") else None,
         created_at=str(item["created_at"]),
         updated_at=str(item["updated_at"]),
@@ -759,14 +1349,38 @@ def _build_usage_record_response(item: dict[str, object]) -> UsageRecordResponse
         usage_record_id=str(item["usage_record_id"]),
         user_id=str(item["user_id"]),
         scene=str(item["scene"]),
+        feature_key=str(item["feature_key"]),
+        feature_name=item.get("feature_name"),
+        channel=str(item["channel"]) if item.get("channel") else None,
         target_id=str(item["target_id"]) if item.get("target_id") else None,
         points_cost=int(item["points_cost"]),
+        normal_points_cost=int(item.get("normal_points_cost", item["points_cost"]) or 0),
+        rebate_points_cost=int(item.get("rebate_points_cost", 0) or 0),
         status=str(item["status"]),
+        user_status=str(item["user_status"]) if item.get("user_status") else None,
+        user_nickname=item.get("user_nickname"),
+        user_phone=_extract_user_phone_from_usage_record(item),
+        user_avatar_url=item.get("user_avatar_url"),
         request_payload_summary=item.get("request_payload_summary"),
         result_summary=item.get("result_summary"),
         created_at=str(item["created_at"]),
         updated_at=str(item["updated_at"]),
     )
+
+
+def _extract_user_phone_from_usage_record(item: dict[str, object]) -> str | None:
+    for summary_key in ("request_payload_summary", "result_summary"):
+        summary = item.get(summary_key)
+        if not isinstance(summary, dict):
+            continue
+        for phone_key in ("phone", "phone_number", "mobile", "mobile_phone"):
+            raw_value = summary.get(phone_key)
+            if raw_value is None:
+                continue
+            normalized = "".join(character for character in str(raw_value) if character.isdigit())
+            if len(normalized) >= 7:
+                return _mask_phone(normalized)
+    return None
 
 
 
@@ -1086,7 +1700,8 @@ def _resolve_review_aspect_keys(review: dict[str, object], *, channel_key: str |
 
 
 def _resolve_review_free_aspect_keys(available_aspect_keys: list[str], *, channel_key: str | None) -> list[str]:
-    return []
+    configured_keys = set(get_runtime_phone_review_free_aspect_keys(channel_key))
+    return [item for item in available_aspect_keys if item in configured_keys]
 
 
 def _review_aspect_detail_ready(review: dict[str, object], aspect_key: str) -> bool:
@@ -1282,6 +1897,28 @@ def _ensure_module_available(*, module_key: str, request: Request) -> None:
     if is_module_enabled(module_key, channel_key=_resolve_request_channel(request)):
         return
     raise HTTPException(status_code=403, detail="module_disabled")
+
+
+def _record_zero_cost_usage(*, user_id: str, scene: str, channel: str | None, target_id: str | None, request_payload_summary: dict[str, object] | None, result_summary: dict[str, object] | None) -> None:
+    usage_record_id = uuid4().hex
+    try:
+        existing = get_usage_record(usage_record_id)
+        if existing is not None:
+            return
+        create_usage_record(
+            usage_record_id=usage_record_id,
+            user_id=user_id,
+            scene=scene,
+            channel=channel,
+            target_id=target_id,
+            points_cost=0,
+            status="completed",
+            request_payload_summary=request_payload_summary,
+            result_summary=result_summary,
+            created_at=_utc_now(),
+        )
+    except Exception:
+        return
 
 
 def _utc_now() -> str:

@@ -52,6 +52,16 @@ CONFIG_KEY_COMPLIANCE_SAFE_MODE_ENABLED = "compliance.safe_mode_enabled"
 CONFIG_KEY_COMPLIANCE_SAFE_MODULES = "compliance.safe_modules"
 CONFIG_KEY_COMPLIANCE_HIDDEN_MODULES = "compliance.hidden_modules"
 CONFIG_KEY_COMPLIANCE_HIDDEN_PAGES = "compliance.hidden_pages"
+CONFIG_KEY_PLATFORM_RECHARGE_ENABLED = "platform.recharge_enabled"
+CONFIG_KEY_AGENT_METAPHYSICS_SKILL_ENABLED = "agent.metaphysics_skill_enabled"
+CONFIG_KEY_PROMOTION_NORMAL_THRESHOLD_CENTS = "promotion.normal_threshold_cents"
+CONFIG_KEY_PROMOTION_SENIOR_THRESHOLD_CENTS = "promotion.senior_threshold_cents"
+CONFIG_KEY_PROMOTION_NORMAL_COMMISSION_RATE = "promotion.normal_commission_rate"
+CONFIG_KEY_PROMOTION_SENIOR_COMMISSION_RATE = "promotion.senior_commission_rate"
+CONFIG_KEY_PROMOTION_MIN_WITHDRAW_CENTS = "promotion.min_withdraw_cents"
+CONFIG_KEY_PROMOTION_ORDER_COMPLETION_DAYS = "promotion.order_completion_days"
+CONFIG_KEY_PROMOTION_REBATE_TO_CASH_RATE = "promotion.rebate_to_cash_rate"
+CONFIG_KEY_PROMOTION_REBATE_TO_POINTS_RATE = "promotion.rebate_to_points_rate"
 
 
 def normalize_scope_type(scope_type: str) -> str:
@@ -114,6 +124,9 @@ def get_runtime_recharge_packages(channel_key: str | None = None) -> list[dict[s
 
 
 def get_runtime_available_recharge_packages(channel_key: str | None = None) -> list[dict[str, Any]]:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    if not _coerce_bool(config_bundle.get(CONFIG_KEY_PLATFORM_RECHARGE_ENABLED), fallback=True):
+        return []
     return [item for item in get_runtime_recharge_packages(channel_key) if item.get("enabled", True)]
 
 
@@ -139,8 +152,15 @@ def get_runtime_phone_review_aspect_order(channel_key: str | None = None) -> lis
 
 
 def get_runtime_phone_review_free_aspect_keys(channel_key: str | None = None) -> list[str]:
-    _ = channel_key
-    return []
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    configured_keys = _coerce_string_list(config_bundle.get(CONFIG_KEY_PHONE_REVIEW_FREE_ASPECT_KEYS), fallback=[])
+    valid_keys = set(PUBLIC_ASPECT_ORDER)
+    return [item for item in configured_keys if item in valid_keys]
+
+
+def get_runtime_agent_metaphysics_skill_enabled(channel_key: str | None = None) -> bool:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    return _coerce_bool(config_bundle.get(CONFIG_KEY_AGENT_METAPHYSICS_SKILL_ENABLED), fallback=True)
 
 
 def get_runtime_phone_review_unlock_enforcement_enabled(channel_key: str | None = None) -> bool:
@@ -208,6 +228,7 @@ def resolve_public_runtime_config(channel_key: str | None = None) -> dict[str, A
             "agent": {
                 "enabled": is_module_enabled("agent", channel_key=normalized_channel_key),
                 "base_points_cost": None,
+                "metaphysics_skill_enabled": get_runtime_agent_metaphysics_skill_enabled(normalized_channel_key),
             },
             "almanac": {
                 "enabled": is_module_enabled("almanac", channel_key=normalized_channel_key),

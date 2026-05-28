@@ -119,6 +119,9 @@ export interface ReviewSummary {
 
 export interface ReviewListResponse {
   items: ReviewSummary[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface AlmanacResponse {
@@ -149,6 +152,30 @@ export interface AlmanacResponse {
   tian_shen_luck: string;
   ji_shen: string[];
   xiong_sha: string[];
+}
+
+export interface DashboardMetric {
+  label: string;
+  value: number;
+  display_value: string;
+  unit: string | null;
+  trend_value: number | null;
+  trend_label: string | null;
+}
+
+export interface DashboardSection {
+  title: string;
+  summary: string | null;
+  metrics: DashboardMetric[];
+}
+
+export interface DashboardResponse {
+  generated_at: string;
+  revenue: Record<string, unknown>;
+  users: Record<string, unknown>;
+  orders: Record<string, unknown>;
+  promotion: Record<string, unknown>;
+  sections: DashboardSection[];
 }
 
 export interface UserResponse {
@@ -204,6 +231,7 @@ export interface ModuleRuntimeConfigResponse {
   free_aspect_keys?: string[] | null;
   aspect_order?: string[] | null;
   unlock_enforcement_enabled?: boolean | null;
+  metaphysics_skill_enabled?: boolean | null;
 }
 
 export interface PublicRuntimeConfigResponse {
@@ -253,4 +281,321 @@ export interface ReviewAspectUnlockResponse {
   unlocked_at: string;
   points: PointsAccountResponse | null;
   aspect: ReviewAspect | null;
+}
+
+export interface InternalUserResponse {
+  user_id: string;
+  status: string;
+  identity_level: string;
+  promoter_parent_user_id: string | null;
+  nickname: string | null;
+  avatar_url: string | null;
+  profile_completed: boolean;
+  points_balance: number;
+  frozen_balance: number;
+  rebate_points_balance: number;
+  rebate_frozen_balance: number;
+  created_at: string;
+  updated_at: string;
+  last_active_at: string;
+  openid: string | null;
+  unionid: string | null;
+  guest_channel: string | null;
+  guest_key: string | null;
+  guest_appid: string | null;
+  guest_openid: string | null;
+  guest_unionid: string | null;
+}
+
+export interface InternalUserListResponse {
+  items: InternalUserResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface RefundRequestResponse {
+  refund_id: string;
+  order_id: string;
+  user_id: string;
+  status: string;
+  reason: string | null;
+  operator_note: string | null;
+  reject_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  retry_count: number;
+  failure_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PromotionCommissionResponse {
+  commission_id: string;
+  promoter_user_id: string;
+  promoter_nickname: string | null;
+  invited_user_id: string | null;
+  invited_user_nickname: string | null;
+  order_id: string | null;
+  order_amount_cents: number;
+  commission_rate: number;
+  commission_points: number;
+  commission_type: string;
+  status: string;
+  remark: string | null;
+  created_at: string;
+  updated_at: string;
+  settled_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface RechargeOrderResponse {
+  order_id: string;
+  user_id: string;
+  user_status: string | null;
+  user_nickname: string | null;
+  channel: string | null;
+  status: string;
+  raw_status: string | null;
+  package_key: string;
+  package_title: string;
+  amount_cents: number;
+  points_amount: number;
+  bonus_points: number;
+  total_points: number;
+  source: string;
+  external_order_id: string | null;
+  proof_url: string | null;
+  remark: string | null;
+  review_note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  paid_at: string | null;
+  completed_at: string | null;
+  closed_at: string | null;
+  refund_requests: RefundRequestResponse[];
+  commission_records: PromotionCommissionResponse[];
+  granted_ledger_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RechargeOrderListResponse {
+  items: RechargeOrderResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface RechargeOrderReviewResponse {
+  order: RechargeOrderResponse;
+  points: PointsAccountResponse;
+  ledger: PointsLedgerEntryResponse | null;
+}
+
+export interface RechargeOrderSummaryResponse {
+  order_id: string;
+  package_title: string;
+  amount_cents: number;
+  status: string;
+  created_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  paid_at: string | null;
+  completed_at: string | null;
+}
+
+export interface UsageRecordResponse {
+  usage_record_id: string;
+  user_id: string;
+  scene: string;
+  feature_key: string;
+  feature_name: string | null;
+  channel: string | null;
+  target_id: string | null;
+  points_cost: number;
+  normal_points_cost: number;
+  rebate_points_cost: number;
+  status: string;
+  user_status: string | null;
+  user_nickname: string | null;
+  user_phone: string | null;
+  user_avatar_url: string | null;
+  request_payload_summary: Record<string, unknown> | null;
+  result_summary: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UsageRecordListResponse {
+  items: UsageRecordResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface InternalUserAdminSummaryResponse {
+  user: InternalUserResponse;
+  recent_orders: RechargeOrderSummaryResponse[];
+  recent_order_count: number;
+  recent_recharge_amount_cents: number;
+  latest_order_status: string | null;
+  total_recharge_amount_cents: number;
+  total_withdraw_amount_cents: number;
+  promoter_parent_user_id: string | null;
+  identity_level: string;
+}
+
+export interface UsageRecordDetailResponse {
+  record: UsageRecordResponse;
+  user: InternalUserResponse;
+  recent_orders: RechargeOrderSummaryResponse[];
+}
+
+export interface LlmApiKeyResponse {
+  key_id: string;
+  provider: string;
+  model: string;
+  display_name: string;
+  masked_key: string;
+  secret_ref: string;
+  enabled: boolean;
+  priority: number;
+  remark: string | null;
+  last_operator: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LlmApiKeyListResponse {
+  items: LlmApiKeyResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface RuntimeConfigEntryResponse {
+  entry_id: string;
+  scope_type: 'global' | 'channel';
+  scope_key: string;
+  config_key: string;
+  value: unknown;
+  updated_at: string;
+}
+
+export interface RuntimeConfigListResponse {
+  items: RuntimeConfigEntryResponse[];
+}
+
+export interface RuntimeConfigEntryUpsertRequest {
+  scope_type: 'global' | 'channel';
+  scope_key: string;
+  config_key: string;
+  value: unknown;
+}
+
+export interface RuntimeConfigSchemaItemResponse {
+  config_key: string;
+  label: string;
+  value_type: string;
+  default_value: unknown;
+  scope_type: 'global' | 'channel';
+  scope_key: string;
+  group: string;
+  high_risk: boolean;
+  description: string | null;
+}
+
+export interface RuntimeConfigSchemaResponse {
+  items: RuntimeConfigSchemaItemResponse[];
+}
+
+export interface RebatePointsAccountResponse {
+  user_id: string;
+  balance: number;
+  frozen_balance: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ManualPointsAdjustResponse {
+  user: InternalUserResponse;
+  points: PointsAccountResponse;
+  ledger: PointsLedgerEntryResponse;
+}
+
+export interface RebatePointsAdjustResponse {
+  user: InternalUserResponse;
+  rebate_points: RebatePointsAccountResponse;
+}
+
+export interface PromotionApplicationResponse {
+  application_id: string;
+  user_id: string;
+  user_nickname: string | null;
+  current_identity_level: string | null;
+  requested_level: string;
+  status: string;
+  applicant_name: string | null;
+  applicant_phone: string | null;
+  reject_reason: string | null;
+  review_note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PromotionApplicationListResponse {
+  items: PromotionApplicationResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PromotionCommissionListResponse {
+  items: PromotionCommissionResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PromotionWithdrawalResponse {
+  withdrawal_id: string;
+  user_id: string;
+  user_nickname: string | null;
+  identity_level: string | null;
+  status: string;
+  points_used: number;
+  amount_cents: number;
+  rebate_points_balance_snapshot: number;
+  cash_rate_snapshot: number;
+  reject_reason: string | null;
+  review_note: string | null;
+  payout_method: string | null;
+  payout_proof: string | null;
+  payout_failure_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PromotionWithdrawalListResponse {
+  items: PromotionWithdrawalResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PromotionRulesResponse {
+  normal_threshold_cents: number;
+  senior_threshold_cents: number;
+  normal_commission_rate: number;
+  senior_commission_rate: number;
+  min_withdraw_cents: number;
+  order_completion_days: number;
+  rebate_to_cash_rate: number;
+  rebate_to_points_rate: number;
 }

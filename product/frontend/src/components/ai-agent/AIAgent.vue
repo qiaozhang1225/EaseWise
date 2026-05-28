@@ -160,13 +160,13 @@ const quickQueries = [
         </div>
 
         <div class="space-y-2 max-w-[90%]">
-          <h2 class="font-brand text-heading-1 font-bold text-brand-ink-strong leading-tight">易如反掌 · 智能体决策助手</h2>
-          <p class="font-ui text-body text-brand-secondary leading-relaxed">
+          <h2 class="font-serif text-[20px] font-bold text-brand-ink-strong leading-tight">易如反掌 · 智能体决策助手</h2>
+          <p class="font-sans text-[13px] text-brand-secondary leading-relaxed">
             为提供定制的奇门排盘和黄历沟通服务，智能体需要关联您的手机测算历史与资产。游客无法免费启用连续对话功能。
           </p>
         </div>
 
-        <div class="bg-white p-4 rounded-xl border border-gray-100 max-w-[95%] text-left space-y-2 flex items-start gap-2 font-ui text-body text-brand-secondary">
+        <div class="bg-white p-4 rounded-xl border border-gray-100 max-w-[95%] text-left space-y-2 flex items-start gap-2 font-sans text-[13px] text-brand-secondary">
           <AlertCircle :size="16" class="text-brand-primary shrink-0 mt-0.5" />
           <div>
             <span class="font-bold text-brand-ink-strong">安全声明: </span>
@@ -176,7 +176,7 @@ const quickQueries = [
 
         <button 
           @click="handleLogin"
-          class="w-full py-3.5 bg-brand-primary text-white rounded-xl font-ui text-body font-bold shadow-sm hover:bg-brand-primary-strong active:scale-[0.98] transition-all cursor-pointer outline-none flex items-center justify-center gap-2"
+          class="w-full py-3.5 bg-brand-primary text-white rounded-xl font-sans text-[13px] font-bold shadow-sm hover:bg-brand-primary-strong active:scale-[0.98] transition-all cursor-pointer outline-none flex items-center justify-center gap-2"
         >
           <Smartphone :size="16" />
           <span>微信/手机号一键快捷登录体验</span>
@@ -196,7 +196,7 @@ const quickQueries = [
               <Sparkle :size="16" class="text-brand-gold-fixed animate-spin" style="animation-duration: 4s" fill="currentColor" />
               <span class="absolute -top-1 -right-1 block w-2 h-2 bg-green-500 border-2 border-white rounded-full"></span>
             </div>
-            <p class="font-ui text-caption text-brand-secondary leading-relaxed font-semibold">
+            <p class="font-sans text-[11px] text-brand-secondary leading-relaxed font-semibold">
               智能体决策器：今日结合实时大黄历气运为您解读
             </p>
           </div>
@@ -228,13 +228,13 @@ const quickQueries = [
             <!-- Content wrapper -->
             <div class="flex flex-col gap-1 w-full text-left">
               <!-- Message bubble -->
-              <div class="px-3.5 py-2.5 rounded-2xl border font-ui text-body leading-relaxed shadow-sm"
+              <div class="px-3.5 py-2.5 rounded-2xl border font-sans text-[13px] leading-relaxed shadow-sm"
                    :class="msg.role === 'assistant' ? 'bg-white border-gray-100/60 rounded-tl-none text-brand-ink-strong' : 'bg-brand-primary text-white border-transparent rounded-tr-none'">
                 <p class="whitespace-pre-wrap">{{ msg.content }}</p>
               </div>
 
               <!-- Source tag & timestamp for scholarly trust -->
-              <div class="flex items-center gap-2 px-1 font-data text-micro text-brand-secondary/60"
+              <div class="flex items-center gap-2 px-1 font-mono text-[10px] text-brand-secondary/60"
                    :class="msg.role === 'assistant' ? 'justify-start' : 'justify-end'">
                 <span v-if="msg.role === 'assistant' && msg.source" class="font-bold text-brand-primary bg-brand-primary/5 px-1 rounded-sm scale-90 select-none">
                   {{ msg.source }}
@@ -248,7 +248,7 @@ const quickQueries = [
                   v-for="chip in msg.chips"
                   :key="chip"
                   @click="handleSend(chip)"
-                  class="bg-brand-paper hover:bg-gray-100 text-brand-primary border border-gray-200/50 px-2.5 py-1 rounded-full font-ui text-micro font-bold transition-all outline-none shrink-0"
+                  class="bg-brand-paper hover:bg-gray-100 text-brand-primary border border-gray-200/50 px-2.5 py-1 rounded-full font-sans text-[10px] font-bold transition-all outline-none shrink-0"
                 >
                   {{ chip }}
                 </button>
@@ -265,7 +265,7 @@ const quickQueries = [
               v-for="q in quickQueries"
               :key="q"
               @click="handleSend(q)"
-              class="whitespace-nowrap px-3 py-2 bg-white border border-gray-200 rounded-full font-ui text-caption text-brand-secondary font-bold hover:border-brand-primary transition-colors cursor-pointer outline-none shadow-sm"
+              class="whitespace-nowrap px-3 py-2 bg-white border border-gray-200 rounded-full font-sans text-[11px] text-brand-secondary font-bold hover:border-brand-primary transition-colors cursor-pointer outline-none shadow-sm"
             >
               {{ q }}
             </button>
@@ -275,7 +275,7 @@ const quickQueries = [
           <div class="px-4 pb-4 flex items-center gap-3">
             <div class="flex-1 bg-white p-1 rounded-2xl flex items-center gap-1.5 border border-gray-100 shadow-sm pr-3">
               <input 
-                class="bg-transparent border-none focus:ring-0 w-full pl-3 pr-1 py-2 font-ui text-body text-brand-ink-strong outline-none placeholder-gray-400 font-medium"
+                class="bg-transparent border-none focus:ring-0 w-full pl-3 pr-1 py-2 font-sans text-[13px] text-brand-ink-strong outline-none placeholder-gray-400 font-medium"
                 placeholder="请输入对起盘结论的追问..."
                 type="text"
                 v-model="input"

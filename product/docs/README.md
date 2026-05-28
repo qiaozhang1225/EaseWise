@@ -10,6 +10,8 @@
   - current product positioning, scope, workflow, and stage constraints
 - `admin-prd.md`
   - admin console draft for testing, operations, and runtime configuration
+- `h5-typography-replica.md`
+  - H5 user-facing typography replica rules based on the reference frontend
 
 ## Notes
 
