@@ -147,7 +147,7 @@ const quickQueries = [
 </script>
 
 <template>
-  <div class="flex flex-col h-[100dvh] pt-16 pb-[84px] max-w-md mx-auto w-full bg-brand-paper overflow-hidden overscroll-none">
+  <div class="flex flex-col h-[100dvh] pb-[84px] max-w-md mx-auto w-full bg-brand-paper overflow-hidden overscroll-none">
     <transition name="fade" mode="out-in">
       <!-- State 1: Login Gate UI -->
       <div 

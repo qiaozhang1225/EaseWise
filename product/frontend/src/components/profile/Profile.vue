@@ -16,10 +16,10 @@ import {
 } from 'lucide-vue-next';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 import type { PointsLedgerEntryResponse, ReviewSummary } from '../../types/api';
+import SystemIntro from './SystemIntro.vue';
 
 const emit = defineEmits<{
   (e: 'navigate-to-tab', tab: string): void;
-  (e: 'open-ambassador-detail'): void;
 }>();
 
 const {
@@ -42,6 +42,7 @@ const activeModal = ref<string | null>(null);
 const copied = ref(false);
 const feedbackText = ref('');
 const ambassadorStatus = ref<'regular' | 'ambassador'>('regular');
+const showSystemIntro = ref(false);
 const openingReviewId = ref<string | null>(null);
 const historyActionError = ref('');
 
@@ -98,10 +99,6 @@ function handleFeedbackSubmit(): void {
   window.alert('感谢你的反馈，我们已经记录，后续会结合产品排期继续完善。');
   feedbackText.value = '';
   activeModal.value = null;
-}
-
-function handlePartnerInfo(): void {
-  emit('open-ambassador-detail');
 }
 
 function formatDateTime(value: string): string {
@@ -239,7 +236,7 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
 </script>
 
 <template>
-  <div class="pt-16 pb-32 max-w-md mx-auto px-margin-mobile relative text-left">
+  <div class="pb-32 max-w-md mx-auto px-margin-mobile relative text-left">
     <section class="mb-5 mt-4">
       <div
         v-if="userReady"
@@ -265,7 +262,7 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
           v-if="ambassadorStatus === 'ambassador'"
           type="button"
           class="inline-flex self-start mt-1 px-2.5 py-1 font-sans text-[10px] font-semibold bg-brand-paper hover:bg-brand-primary/10 rounded text-brand-secondary hover:text-brand-primary transition-colors cursor-pointer outline-none"
-          @click="handlePartnerInfo"
+          @click="showSystemIntro = true"
         >
           VIP推广大使
         </button>
@@ -322,29 +319,43 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
 
     <section class="mb-5">
       <div
-        class="bg-gradient-to-r from-brand-primary/5 to-purple-500/5 rounded-2xl p-4 border border-brand-primary/10 flex items-center justify-between cursor-pointer"
-        @click="handlePartnerInfo"
+        @click="showSystemIntro = true"
+        class="bg-gradient-to-r from-brand-primary/5 to-purple-500/5 rounded-2xl p-4 border border-brand-primary/10 flex items-center justify-between cursor-pointer hover:brightness-98 transition-all"
       >
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-full bg-brand-primary/10 flex items-center justify-center text-brand-primary shrink-0">
             <Share2 :size="16" />
           </div>
           <div class="text-left">
-            <p class="font-sans text-[13px] font-bold text-brand-ink-strong">推广大使</p>
-            <p class="font-sans text-[11px] text-brand-secondary mt-0.5">升级条件、返佣比例和权益展示以后端规则配置为准</p>
+            <p class="font-sans text-[13px] font-bold text-brand-ink-strong">升级为「易如反掌」推广大使</p>
+            <p class="font-sans text-[11px] text-brand-secondary mt-0.5">邀请朋友一起体验优秀传统文化，赚取高额佣金</p>
           </div>
         </div>
         <button
-          @click.stop="handlePartnerInfo"
+          @click.stop="showSystemIntro = true"
           class="font-sans text-[11px] font-bold text-brand-primary bg-white hover:bg-brand-primary/5 px-3 py-1.5 rounded-full border border-brand-primary/20 shrink-0 cursor-pointer transition-all outline-none"
         >
-          查看权益
+          详情
         </button>
       </div>
     </section>
 
     <section class="mb-8">
       <div class="bg-white rounded-2xl overflow-hidden hairline-border divide-y divide-gray-100 shadow-sm">
+        <div
+          @click="showSystemIntro = true"
+          class="flex items-center justify-between p-4 bg-brand-primary/[0.02] hover:bg-brand-primary/[0.05] transition-colors cursor-pointer select-none"
+        >
+          <div class="flex items-center gap-3">
+            <Share2 :size="18" class="text-brand-primary" />
+            <span class="font-sans text-[14px] font-black text-brand-primary-strong">合伙与推广说明书</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-[9.5px] text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded-full font-extrabold font-sans">福利与返佣体系</span>
+            <ChevronRight :size="16" class="text-brand-primary" />
+          </div>
+        </div>
+
         <div
           @click="activeModal = 'ledger'"
           class="flex items-center justify-between p-4 bg-white hover:bg-gray-50/50 transition-colors cursor-pointer select-none"
@@ -582,6 +593,10 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         </div>
       </div>
     </transition>
+
+    <transition name="slide">
+      <SystemIntro v-if="showSystemIntro" @close="showSystemIntro = false" />
+    </transition>
   </div>
 </template>
 
@@ -591,5 +606,13 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
 }
 .fade-enter-from, .fade-leave-to {
   opacity: 0;
+}
+
+.slide-enter-active, .slide-leave-active {
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+}
+.slide-enter-from, .slide-leave-to {
+  transform: translateY(100%);
+  opacity: 0.95;
 }
 </style>

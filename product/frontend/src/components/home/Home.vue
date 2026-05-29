@@ -70,12 +70,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="pt-16 pb-32 max-w-md mx-auto px-margin-mobile relative">
+  <div class="pb-32 max-w-md mx-auto px-margin-mobile relative">
     <!-- Toast Notification -->
     <transition name="fade-slide">
       <div 
         v-if="toast"
-        class="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-brand-ink-strong text-white px-4 py-2.5 rounded-full font-sans text-[13px] shadow-lg font-medium flex items-center gap-2 max-w-[90%] whitespace-nowrap"
+        class="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-brand-ink-strong text-white px-4 py-2.5 rounded-full font-sans text-[13px] shadow-lg font-medium flex items-center gap-2 max-w-[90%] whitespace-nowrap"
       >
         <AlertCircle :size="15" class="text-brand-accent shrink-0" />
         <span>{{ toast }}</span>
