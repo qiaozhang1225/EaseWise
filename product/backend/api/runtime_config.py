@@ -60,8 +60,6 @@ CONFIG_KEY_PROMOTION_NORMAL_COMMISSION_RATE = "promotion.normal_commission_rate"
 CONFIG_KEY_PROMOTION_SENIOR_COMMISSION_RATE = "promotion.senior_commission_rate"
 CONFIG_KEY_PROMOTION_MIN_WITHDRAW_CENTS = "promotion.min_withdraw_cents"
 CONFIG_KEY_PROMOTION_ORDER_COMPLETION_DAYS = "promotion.order_completion_days"
-CONFIG_KEY_PROMOTION_REBATE_TO_CASH_RATE = "promotion.rebate_to_cash_rate"
-CONFIG_KEY_PROMOTION_REBATE_TO_POINTS_RATE = "promotion.rebate_to_points_rate"
 
 
 def normalize_scope_type(scope_type: str) -> str:

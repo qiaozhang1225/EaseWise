@@ -59,8 +59,6 @@ _RUNTIME_CONFIG_SCHEMA_ITEMS: list[dict[str, object]] = [
     {"config_key": "promotion.senior_commission_rate", "label": "高级返佣比例", "value_type": "float", "default_value": 0.2, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "高级推广大使返佣比例"},
     {"config_key": "promotion.min_withdraw_cents", "label": "最低提现门槛", "value_type": "int", "default_value": 3000, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "最低提现金额"},
     {"config_key": "promotion.order_completion_days", "label": "订单完成判定天数", "value_type": "int", "default_value": 7, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": True, "description": "充值订单完成判定天数"},
-    {"config_key": "promotion.rebate_to_cash_rate", "label": "返佣提现比例", "value_type": "float", "default_value": 1.0, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "返佣积分兑换现金比例"},
-    {"config_key": "promotion.rebate_to_points_rate", "label": "返佣转积分比例", "value_type": "float", "default_value": 1.0, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "返佣积分转普通积分比例"},
 ]
 
 app = FastAPI(title=APP_TITLE, version=APP_VERSION)
@@ -209,16 +207,21 @@ def login_with_wechat(payload: WeChatLoginRequest, request: Request) -> AuthLogi
         if str(guest_user.get("status") or "") != "guest":
             raise HTTPException(status_code=422, detail="guest_access_token_must_belong_to_guest_user")
 
-    user = upsert_wechat_user(
-        appid=exchange.appid,
-        openid=exchange.openid,
-        unionid=exchange.unionid,
-        session_key=exchange.session_key,
-        nickname=payload.nickname,
-        avatar_url=payload.avatar_url,
-        initial_points=0 if guest_user is not None else get_runtime_initial_points(),
-        now_text=now_text,
-    )
+    try:
+        user = upsert_wechat_user(
+            appid=exchange.appid,
+            openid=exchange.openid,
+            unionid=exchange.unionid,
+            session_key=exchange.session_key,
+            nickname=payload.nickname,
+            avatar_url=payload.avatar_url,
+            initial_points=0 if guest_user is not None else get_runtime_initial_points(),
+            now_text=now_text,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 409 if detail == "wechat_identity_conflict" else 422
+        raise HTTPException(status_code=status_code, detail=detail) from exc
     if guest_user is not None and str(guest_user["user_id"]) != str(user["user_id"]):
         merge_guest_user_into_user(guest_user_id=str(guest_user["user_id"]), target_user_id=str(user["user_id"]), now_text=now_text)
         refreshed_user = get_user(str(user["user_id"]))
@@ -1007,8 +1010,6 @@ def put_internal_promotion_rules(payload: PromotionRulesUpdateRequest, _: None =
         "promotion.senior_commission_rate": payload.senior_commission_rate,
         "promotion.min_withdraw_cents": payload.min_withdraw_cents,
         "promotion.order_completion_days": payload.order_completion_days,
-        "promotion.rebate_to_cash_rate": payload.rebate_to_cash_rate,
-        "promotion.rebate_to_points_rate": payload.rebate_to_points_rate,
     }
     for config_key, value in updates.items():
         if value is not None:
@@ -1232,14 +1233,24 @@ def _build_internal_user_response(user: dict[str, object]) -> InternalUserRespon
         user_id=str(user["user_id"]),
         status=str(user["status"]),
         identity_level=str(user.get("identity_level") or "normal_user"),
+        primary_identity_type=str(user.get("primary_identity_type") or "session"),
+        registered_channel=str(user["registered_channel"]) if user.get("registered_channel") else None,
         promoter_parent_user_id=str(user["promoter_parent_user_id"]) if user.get("promoter_parent_user_id") else None,
         nickname=user.get("nickname"),
         avatar_url=user.get("avatar_url"),
         profile_completed=bool(user["profile_completed"]),
         points_balance=int(user.get("points_balance", 0) or 0),
         frozen_balance=int(user.get("frozen_balance", 0) or 0),
+        withdrawable_balance_cents=int(user.get("withdrawable_balance_cents", 0) or 0),
+        frozen_commission_cents=int(user.get("frozen_commission_cents", 0) or 0),
+        withdrawn_amount_cents=int(user.get("withdrawn_amount_cents", 0) or 0),
         rebate_points_balance=int(user.get("rebate_points_balance", 0) or 0),
         rebate_frozen_balance=int(user.get("rebate_frozen_balance", 0) or 0),
+        primary_phone=str(user["primary_phone"]) if user.get("primary_phone") else None,
+        phone_verified_at=str(user["phone_verified_at"]) if user.get("phone_verified_at") else None,
+        primary_unionid=str(user["primary_unionid"]) if user.get("primary_unionid") else None,
+        first_login_at=str(user.get("first_login_at") or user["created_at"]),
+        registered_at=str(user.get("registered_at") or user["created_at"]),
         created_at=str(user["created_at"]),
         updated_at=str(user["updated_at"]),
         last_active_at=str(user["last_active_at"]),

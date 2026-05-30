@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     status TEXT NOT NULL,
     identity_level TEXT NOT NULL DEFAULT 'normal_user',
+    primary_identity_type TEXT NOT NULL DEFAULT 'session',
+    registered_channel TEXT,
     promoter_parent_user_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -54,6 +56,25 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     profile_completed INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+)
+"""
+
+CREATE_USER_PHONE_IDENTITIES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS user_phone_identities (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    country_code TEXT NOT NULL DEFAULT '86',
+    phone_number TEXT NOT NULL,
+    normalized_phone TEXT NOT NULL,
+    is_primary INTEGER NOT NULL DEFAULT 1,
+    verified_at TEXT,
+    password_hash TEXT,
+    password_updated_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_login_at TEXT,
+    UNIQUE(country_code, normalized_phone),
     FOREIGN KEY(user_id) REFERENCES users(id)
 )
 """
@@ -107,6 +128,19 @@ CREATE TABLE IF NOT EXISTS promotion_rebate_accounts (
     user_id TEXT PRIMARY KEY,
     balance INTEGER NOT NULL DEFAULT 0,
     frozen_balance INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+)
+"""
+
+CREATE_PROMOTION_WALLET_ACCOUNTS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS promotion_wallet_accounts (
+    user_id TEXT PRIMARY KEY,
+    withdrawable_balance_cents INTEGER NOT NULL DEFAULT 0,
+    frozen_commission_cents INTEGER NOT NULL DEFAULT 0,
+    withdrawn_amount_cents INTEGER NOT NULL DEFAULT 0,
     version INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -369,6 +403,9 @@ CREATE TABLE IF NOT EXISTS promotion_withdrawals (
 CREATE_INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS idx_reviews_created_at ON reviews(created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_reviews_user_created_at ON reviews(user_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_users_identity_type_created_at ON users(primary_identity_type, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_phone_identity_user_id ON user_phone_identities(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_phone_identity_normalized_phone ON user_phone_identities(country_code, normalized_phone)",
     "CREATE INDEX IF NOT EXISTS idx_wechat_identity_user_id ON user_wechat_identities(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_wechat_identity_unionid ON user_wechat_identities(unionid)",
     "CREATE INDEX IF NOT EXISTS idx_guest_identity_user_id ON guest_identities(user_id)",
@@ -422,6 +459,10 @@ def _ensure_users_columns(connection: sqlite3.Connection) -> None:
     columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
     if "identity_level" not in columns:
         connection.execute("ALTER TABLE users ADD COLUMN identity_level TEXT NOT NULL DEFAULT 'normal_user'")
+    if "primary_identity_type" not in columns:
+        connection.execute("ALTER TABLE users ADD COLUMN primary_identity_type TEXT NOT NULL DEFAULT 'session'")
+    if "registered_channel" not in columns:
+        connection.execute("ALTER TABLE users ADD COLUMN registered_channel TEXT")
     if "promoter_parent_user_id" not in columns:
         connection.execute("ALTER TABLE users ADD COLUMN promoter_parent_user_id TEXT")
 
@@ -442,6 +483,28 @@ def _ensure_recharge_orders_columns(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE recharge_orders ADD COLUMN closed_at TEXT")
 
 
+def _ensure_promotion_wallet_accounts(connection: sqlite3.Connection) -> None:
+    now_text = _utc_now_text()
+    rows = connection.execute(
+        "SELECT user_id, balance, frozen_balance, created_at, updated_at FROM promotion_rebate_accounts"
+    ).fetchall()
+    for row in rows:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO promotion_wallet_accounts
+                (user_id, withdrawable_balance_cents, frozen_commission_cents, withdrawn_amount_cents, version, created_at, updated_at)
+            VALUES (?, ?, ?, 0, 0, ?, ?)
+            """,
+            (
+                str(row["user_id"]),
+                int(row["balance"] or 0),
+                int(row["frozen_balance"] or 0),
+                str(row["created_at"] or now_text),
+                str(row["updated_at"] or now_text),
+            ),
+        )
+
+
 
 def ensure_schema() -> None:
     with open_connection() as connection:
@@ -450,12 +513,15 @@ def ensure_schema() -> None:
         connection.execute(CREATE_USERS_TABLE_SQL)
         _ensure_users_columns(connection)
         connection.execute(CREATE_USER_PROFILES_TABLE_SQL)
+        connection.execute(CREATE_USER_PHONE_IDENTITIES_TABLE_SQL)
         connection.execute(CREATE_USER_WECHAT_IDENTITIES_TABLE_SQL)
         connection.execute(CREATE_GUEST_IDENTITIES_TABLE_SQL)
         connection.execute(CREATE_GUEST_USER_MERGES_TABLE_SQL)
         connection.execute(CREATE_USER_SESSIONS_TABLE_SQL)
         connection.execute(CREATE_POINTS_ACCOUNTS_TABLE_SQL)
         connection.execute(CREATE_PROMOTION_REBATE_ACCOUNTS_TABLE_SQL)
+        connection.execute(CREATE_PROMOTION_WALLET_ACCOUNTS_TABLE_SQL)
+        _ensure_promotion_wallet_accounts(connection)
         connection.execute(CREATE_POINTS_LEDGERS_TABLE_SQL)
         connection.execute(CREATE_ADMIN_OPERATION_LOGS_TABLE_SQL)
         connection.execute(CREATE_USAGE_RECORDS_TABLE_SQL)
@@ -678,8 +744,10 @@ def list_reviews(
 
 
 def upsert_wechat_user(*, appid: str, openid: str, unionid: str | None, session_key: str | None, nickname: str | None, avatar_url: str | None, initial_points: int, now_text: str) -> dict[str, Any]:
+    normalized_unionid = _normalize_optional_text(unionid)
+    normalized_identity_type = "wechat_unionid" if normalized_unionid else "wechat_pending_unionid"
     with open_connection() as connection:
-        existing = connection.execute(
+        matched_by_openid = connection.execute(
             """
             SELECT i.id AS identity_id, i.user_id, i.unionid, p.nickname, p.avatar_url
             FROM user_wechat_identities i
@@ -689,17 +757,38 @@ def upsert_wechat_user(*, appid: str, openid: str, unionid: str | None, session_
             """,
             (appid, openid),
         ).fetchone()
+        matched_by_unionid = None
+        if normalized_unionid:
+            matched_by_unionid = connection.execute(
+                """
+                SELECT i.id AS identity_id, i.user_id, i.unionid, p.nickname, p.avatar_url
+                FROM user_wechat_identities i
+                JOIN users u ON u.id = i.user_id
+                LEFT JOIN user_profiles p ON p.user_id = u.id
+                WHERE i.unionid = ?
+                ORDER BY i.last_login_at DESC
+                LIMIT 1
+                """,
+                (normalized_unionid,),
+            ).fetchone()
 
+        if matched_by_openid is not None and matched_by_unionid is not None and str(matched_by_openid["user_id"]) != str(matched_by_unionid["user_id"]):
+            raise ValueError("wechat_identity_conflict")
+
+        existing = matched_by_openid or matched_by_unionid
         if existing is None:
             user_id = uuid4().hex
-            connection.execute("INSERT INTO users (id, status, created_at, updated_at, last_active_at) VALUES (?, ?, ?, ?, ?)", (user_id, "active", now_text, now_text, now_text))
+            connection.execute(
+                "INSERT INTO users (id, status, primary_identity_type, registered_channel, created_at, updated_at, last_active_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, "active", normalized_identity_type, f"wechat:{appid}", now_text, now_text, now_text),
+            )
             connection.execute(
                 "INSERT INTO user_profiles (user_id, nickname, avatar_url, profile_completed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
                 (user_id, nickname, avatar_url, _profile_completed(nickname, avatar_url), now_text, now_text),
             )
             connection.execute(
                 "INSERT INTO user_wechat_identities (id, user_id, appid, openid, unionid, session_key, created_at, updated_at, last_login_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (uuid4().hex, user_id, appid, openid, unionid, session_key, now_text, now_text, now_text),
+                (uuid4().hex, user_id, appid, openid, normalized_unionid, session_key, now_text, now_text, now_text),
             )
             connection.execute(
                 "INSERT INTO points_accounts (user_id, balance, frozen_balance, version, created_at, updated_at) VALUES (?, ?, 0, 0, ?, ?)",
@@ -714,8 +803,12 @@ def upsert_wechat_user(*, appid: str, openid: str, unionid: str | None, session_
             user_id = str(existing["user_id"])
             final_nickname = _normalize_optional_text(nickname) or _normalize_optional_text(existing["nickname"])
             final_avatar_url = _normalize_optional_text(avatar_url) or _normalize_optional_text(existing["avatar_url"])
-            final_unionid = _normalize_optional_text(unionid) or _normalize_optional_text(existing["unionid"])
-            connection.execute("UPDATE users SET updated_at = ?, last_active_at = ? WHERE id = ?", (now_text, now_text, user_id))
+            final_unionid = normalized_unionid or _normalize_optional_text(existing["unionid"])
+            final_identity_type = "wechat_unionid" if final_unionid else normalized_identity_type
+            connection.execute(
+                "UPDATE users SET primary_identity_type = ?, registered_channel = COALESCE(registered_channel, ?), updated_at = ?, last_active_at = ? WHERE id = ?",
+                (final_identity_type, f"wechat:{appid}", now_text, now_text, user_id),
+            )
             connection.execute(
                 "INSERT OR IGNORE INTO user_profiles (user_id, nickname, avatar_url, profile_completed, created_at, updated_at) VALUES (?, NULL, NULL, 0, ?, ?)",
                 (user_id, now_text, now_text),
@@ -724,10 +817,16 @@ def upsert_wechat_user(*, appid: str, openid: str, unionid: str | None, session_
                 "UPDATE user_profiles SET nickname = ?, avatar_url = ?, profile_completed = ?, updated_at = ? WHERE user_id = ?",
                 (final_nickname, final_avatar_url, _profile_completed(final_nickname, final_avatar_url), now_text, user_id),
             )
-            connection.execute(
-                "UPDATE user_wechat_identities SET unionid = ?, session_key = ?, updated_at = ?, last_login_at = ? WHERE id = ?",
-                (final_unionid, session_key, now_text, now_text, str(existing["identity_id"])),
-            )
+            if matched_by_openid is None:
+                connection.execute(
+                    "INSERT INTO user_wechat_identities (id, user_id, appid, openid, unionid, session_key, created_at, updated_at, last_login_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (uuid4().hex, user_id, appid, openid, final_unionid, session_key, now_text, now_text, now_text),
+                )
+            else:
+                connection.execute(
+                    "UPDATE user_wechat_identities SET unionid = ?, session_key = ?, updated_at = ?, last_login_at = ? WHERE id = ?",
+                    (final_unionid, session_key, now_text, now_text, str(matched_by_openid["identity_id"])),
+                )
             connection.execute(
                 "INSERT OR IGNORE INTO points_accounts (user_id, balance, frozen_balance, version, created_at, updated_at) VALUES (?, 0, 0, 0, ?, ?)",
                 (user_id, now_text, now_text),
@@ -757,7 +856,10 @@ def upsert_guest_user(*, channel: str, guest_key: str | None, appid: str | None,
         matched_identity = matched_by_openid or matched_by_guest_key
         if matched_identity is None:
             user_id = uuid4().hex
-            connection.execute("INSERT INTO users (id, status, created_at, updated_at, last_active_at) VALUES (?, ?, ?, ?, ?)", (user_id, "guest", now_text, now_text, now_text))
+            connection.execute(
+                "INSERT INTO users (id, status, primary_identity_type, registered_channel, created_at, updated_at, last_active_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, "guest", "session", normalized_channel, now_text, now_text, now_text),
+            )
             connection.execute(
                 "INSERT INTO user_profiles (user_id, nickname, avatar_url, profile_completed, created_at, updated_at) VALUES (?, NULL, NULL, 0, ?, ?)",
                 (user_id, now_text, now_text),
@@ -776,7 +878,10 @@ def upsert_guest_user(*, channel: str, guest_key: str | None, appid: str | None,
             final_appid = normalized_appid or _normalize_optional_text(matched_identity.get("guest_appid"))
             final_openid = normalized_openid or _normalize_optional_text(matched_identity.get("guest_openid"))
             final_unionid = normalized_unionid or _normalize_optional_text(matched_identity.get("guest_unionid"))
-            connection.execute("UPDATE users SET updated_at = ?, last_active_at = ? WHERE id = ?", (now_text, now_text, user_id))
+            connection.execute(
+                "UPDATE users SET registered_channel = COALESCE(registered_channel, ?), updated_at = ?, last_active_at = ? WHERE id = ?",
+                (normalized_channel, now_text, now_text, user_id),
+            )
             connection.execute(
                 "UPDATE guest_identities SET channel = ?, guest_key = ?, appid = ?, openid = ?, unionid = ?, updated_at = ?, last_seen_at = ? WHERE id = ?",
                 (normalized_channel, final_guest_key, final_appid, final_openid, final_unionid, now_text, now_text, str(matched_identity["guest_identity_id"])),
@@ -886,17 +991,23 @@ def get_user(user_id: str) -> dict[str, Any] | None:
 
 def get_internal_user(user_id: str) -> dict[str, Any] | None:
     sql = (
-        "SELECT u.id AS user_id, u.status, u.identity_level, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, pra.balance AS rebate_points_balance, pra.frozen_balance AS rebate_frozen_balance, "
+        "SELECT u.id AS user_id, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, "
+        "COALESCE(pwa.withdrawable_balance_cents, pra.balance, 0) AS withdrawable_balance_cents, COALESCE(pwa.frozen_commission_cents, pra.frozen_balance, 0) AS frozen_commission_cents, COALESCE(pwa.withdrawn_amount_cents, 0) AS withdrawn_amount_cents, "
+        "pra.balance AS rebate_points_balance, pra.frozen_balance AS rebate_frozen_balance, "
+        "MAX(pi.normalized_phone) AS primary_phone, MAX(pi.verified_at) AS phone_verified_at, COALESCE(MAX(w.unionid), MAX(g.unionid)) AS primary_unionid, "
+        "MIN(pi.verified_at) AS phone_registered_at, MIN(CASE WHEN w.unionid IS NOT NULL THEN COALESCE(w.updated_at, w.created_at) END) AS unionid_registered_at, "
         "MAX(w.openid) AS openid, MAX(w.unionid) AS unionid, "
         "MAX(g.channel) AS guest_channel, MAX(g.guest_key) AS guest_key, MAX(g.appid) AS guest_appid, MAX(g.openid) AS guest_openid, MAX(g.unionid) AS guest_unionid "
         "FROM users u "
         "LEFT JOIN user_profiles p ON p.user_id = u.id "
         "LEFT JOIN points_accounts pa ON pa.user_id = u.id "
+        "LEFT JOIN user_phone_identities pi ON pi.user_id = u.id AND pi.is_primary = 1 "
         "LEFT JOIN promotion_rebate_accounts pra ON pra.user_id = u.id "
+        "LEFT JOIN promotion_wallet_accounts pwa ON pwa.user_id = u.id "
         "LEFT JOIN user_wechat_identities w ON w.user_id = u.id "
         "LEFT JOIN guest_identities g ON g.user_id = u.id "
         "WHERE u.id = ? "
-        "GROUP BY u.id, u.status, u.identity_level, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, pra.balance, pra.frozen_balance"
+        "GROUP BY u.id, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, pra.balance, pra.frozen_balance, pwa.withdrawable_balance_cents, pwa.frozen_commission_cents, pwa.withdrawn_amount_cents"
     )
     with open_connection() as connection:
         row = connection.execute(sql, (user_id,)).fetchone()
@@ -958,22 +1069,28 @@ def list_users(
     normalized_offset = max(0, int(offset))
     normalized_query = _normalize_optional_text(keyword) or _normalize_optional_text(query)
     sql = (
-        "SELECT u.id AS user_id, u.status, u.identity_level, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, pra.balance AS rebate_points_balance, pra.frozen_balance AS rebate_frozen_balance, "
+        "SELECT u.id AS user_id, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, "
+        "COALESCE(pwa.withdrawable_balance_cents, pra.balance, 0) AS withdrawable_balance_cents, COALESCE(pwa.frozen_commission_cents, pra.frozen_balance, 0) AS frozen_commission_cents, COALESCE(pwa.withdrawn_amount_cents, 0) AS withdrawn_amount_cents, "
+        "pra.balance AS rebate_points_balance, pra.frozen_balance AS rebate_frozen_balance, "
+        "MAX(pi.normalized_phone) AS primary_phone, MAX(pi.verified_at) AS phone_verified_at, COALESCE(MAX(w.unionid), MAX(g.unionid)) AS primary_unionid, "
+        "MIN(pi.verified_at) AS phone_registered_at, MIN(CASE WHEN w.unionid IS NOT NULL THEN COALESCE(w.updated_at, w.created_at) END) AS unionid_registered_at, "
         "MAX(w.openid) AS openid, MAX(w.unionid) AS unionid, "
         "MAX(g.channel) AS guest_channel, MAX(g.guest_key) AS guest_key, MAX(g.appid) AS guest_appid, MAX(g.openid) AS guest_openid, MAX(g.unionid) AS guest_unionid "
         "FROM users u "
         "LEFT JOIN user_profiles p ON p.user_id = u.id "
         "LEFT JOIN points_accounts pa ON pa.user_id = u.id "
+        "LEFT JOIN user_phone_identities pi ON pi.user_id = u.id AND pi.is_primary = 1 "
         "LEFT JOIN promotion_rebate_accounts pra ON pra.user_id = u.id "
+        "LEFT JOIN promotion_wallet_accounts pwa ON pwa.user_id = u.id "
         "LEFT JOIN user_wechat_identities w ON w.user_id = u.id "
         "LEFT JOIN guest_identities g ON g.user_id = u.id"
     )
     conditions: list[str] = []
     parameters: list[Any] = []
     if normalized_query:
-        conditions.append("(u.id LIKE ? OR IFNULL(p.nickname, '') LIKE ? OR IFNULL(w.openid, '') LIKE ? OR IFNULL(w.unionid, '') LIKE ? OR IFNULL(g.guest_key, '') LIKE ? OR IFNULL(g.openid, '') LIKE ?)")
+        conditions.append("(u.id LIKE ? OR IFNULL(p.nickname, '') LIKE ? OR IFNULL(pi.normalized_phone, '') LIKE ? OR IFNULL(w.unionid, '') LIKE ? OR IFNULL(g.unionid, '') LIKE ? OR IFNULL(g.guest_key, '') LIKE ? OR IFNULL(w.openid, '') LIKE ? OR IFNULL(g.openid, '') LIKE ?)")
         like_value = f"%{normalized_query}%"
-        parameters.extend([like_value, like_value, like_value, like_value, like_value, like_value])
+        parameters.extend([like_value, like_value, like_value, like_value, like_value, like_value, like_value, like_value])
     if _normalize_optional_text(status):
         conditions.append("u.status = ?")
         parameters.append(str(status))
@@ -981,8 +1098,8 @@ def list_users(
         conditions.append("u.identity_level = ?")
         parameters.append(str(identity_level))
     if _normalize_optional_text(channel):
-        conditions.append("g.channel = ?")
-        parameters.append(str(channel))
+        conditions.append("(u.registered_channel = ? OR g.channel = ?)")
+        parameters.extend([str(channel), str(channel)])
     if _normalize_optional_text(date_from):
         conditions.append("u.created_at >= ?")
         parameters.append(str(date_from))
@@ -991,7 +1108,7 @@ def list_users(
         parameters.append(str(date_to))
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)
-    sql += " GROUP BY u.id, u.status, u.identity_level, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, pra.balance, pra.frozen_balance ORDER BY u.last_active_at DESC LIMIT ? OFFSET ?"
+    sql += " GROUP BY u.id, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, pra.balance, pra.frozen_balance, pwa.withdrawable_balance_cents, pwa.frozen_commission_cents, pwa.withdrawn_amount_cents ORDER BY u.last_active_at DESC LIMIT ? OFFSET ?"
     parameters.extend([normalized_limit, normalized_offset])
     with open_connection() as connection:
         rows = connection.execute(sql, parameters).fetchall()
@@ -1358,10 +1475,15 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
     with open_connection() as connection:
         now_text = _utc_now_text()
         total_users = int(connection.execute("SELECT COUNT(*) AS total FROM users").fetchone()["total"])
-        today_new_users = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE date(created_at) = date('now')").fetchone()["total"])
-        yesterday_new_users = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE date(created_at) = date('now', '-1 day')").fetchone()["total"])
-        active_users_7d = int(connection.execute("SELECT COUNT(DISTINCT user_id) AS total FROM user_sessions WHERE last_seen_at >= datetime('now', '-7 day')").fetchone()["total"])
-        active_users_30d = int(connection.execute("SELECT COUNT(DISTINCT user_id) AS total FROM user_sessions WHERE last_seen_at >= datetime('now', '-30 day')").fetchone()["total"])
+        today_new_users = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE date(datetime(created_at), '+8 hours') = date('now', '+8 hours')").fetchone()["total"])
+        yesterday_new_users = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE date(datetime(created_at), '+8 hours') = date('now', '+8 hours', '-1 day')").fetchone()["total"])
+        week_new_users = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE datetime(created_at, '+8 hours') >= date('now', '+8 hours', 'weekday 1', '-7 days')").fetchone()["total"])
+        last_week_new_users = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE datetime(created_at, '+8 hours') >= date('now', '+8 hours', 'weekday 1', '-14 days') AND datetime(created_at, '+8 hours') < date('now', '+8 hours', 'weekday 1', '-7 days')").fetchone()["total"])
+        month_new_users = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE strftime('%Y-%m', datetime(created_at), '+8 hours') = strftime('%Y-%m', 'now', '+8 hours')").fetchone()["total"])
+        last_month_new_users = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE strftime('%Y-%m', datetime(created_at), '+8 hours') = strftime('%Y-%m', 'now', '+8 hours', '-1 month')").fetchone()["total"])
+        daily_active_users = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE date(datetime(last_active_at), '+8 hours') = date('now', '+8 hours')").fetchone()["total"])
+        active_users_7d = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE datetime(last_active_at) >= datetime('now', '-7 day')").fetchone()["total"])
+        active_users_30d = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE datetime(last_active_at) >= datetime('now', '-30 day')").fetchone()["total"])
         total_promoters = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE identity_level IN ('promoter', 'promotion_ambassador', 'senior_promoter', 'senior_promotion_ambassador')").fetchone()["total"])
         senior_promoters = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE identity_level IN ('senior_promoter', 'senior_promotion_ambassador')").fetchone()["total"])
         total_orders = int(connection.execute("SELECT COUNT(*) AS total FROM recharge_orders").fetchone()["total"])
@@ -1383,17 +1505,59 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
         total_points_balance = int(connection.execute("SELECT COALESCE(SUM(balance), 0) AS total FROM points_accounts").fetchone()["total"])
         total_recharge_amount_cents = int(connection.execute("SELECT COALESCE(SUM(amount_cents), 0) AS total FROM recharge_orders WHERE status IN ('approved', 'paid', 'completed')").fetchone()["total"])
         total_approved_orders = int(connection.execute("SELECT COUNT(*) AS total FROM recharge_orders WHERE status IN ('approved', 'paid', 'completed')").fetchone()["total"])
-        total_commission_points = int(connection.execute("SELECT COALESCE(SUM(commission_points), 0) AS total FROM promotion_commissions WHERE status IN ('pending', 'settled')").fetchone()["total"])
+        total_commission_amount_cents = int(connection.execute("SELECT COALESCE(SUM(commission_points), 0) AS total FROM promotion_commissions WHERE status IN ('pending', 'settled')").fetchone()["total"])
         total_withdraw_amount_cents = int(connection.execute("SELECT COALESCE(SUM(amount_cents), 0) AS total FROM promotion_withdrawals WHERE status IN ('paid', 'paying')").fetchone()["total"])
         pending_applications = int(connection.execute("SELECT COUNT(*) AS total FROM promotion_applications WHERE status = 'pending'").fetchone()["total"])
         pending_withdrawals = int(connection.execute("SELECT COUNT(*) AS total FROM promotion_withdrawals WHERE status = 'pending'").fetchone()["total"])
         payout_failed_withdrawals = int(connection.execute("SELECT COUNT(*) AS total FROM promotion_withdrawals WHERE status = 'payout_failed'").fetchone()["total"])
         total_usage_records = int(connection.execute("SELECT COUNT(*) AS total FROM usage_records").fetchone()["total"])
-        today_usage_records = int(connection.execute("SELECT COUNT(*) AS total FROM usage_records WHERE date(created_at) = date('now')").fetchone()["total"])
-        phone_review_usage_records = int(connection.execute("SELECT COUNT(*) AS total FROM usage_records WHERE scene IN ('phone_review_base', 'phone_review_aspect_unlock')").fetchone()["total"])
+        today_usage_records = int(connection.execute("SELECT COUNT(*) AS total FROM usage_records WHERE date(datetime(created_at), '+8 hours') = date('now', '+8 hours')").fetchone()["total"])
+        yesterday_usage_records = int(connection.execute("SELECT COUNT(*) AS total FROM usage_records WHERE date(datetime(created_at), '+8 hours') = date('now', '+8 hours', '-1 day')").fetchone()["total"])
+        week_usage_records = int(connection.execute("SELECT COUNT(*) AS total FROM usage_records WHERE datetime(created_at, '+8 hours') >= date('now', '+8 hours', 'weekday 1', '-7 days')").fetchone()["total"])
+        month_usage_records = int(connection.execute("SELECT COUNT(*) AS total FROM usage_records WHERE strftime('%Y-%m', datetime(created_at), '+8 hours') = strftime('%Y-%m', 'now', '+8 hours')").fetchone()["total"])
+        phone_review_base_usage_records = int(connection.execute("SELECT COUNT(*) AS total FROM usage_records WHERE scene = 'phone_review_base'").fetchone()["total"])
+        phone_review_unlock_usage_records = int(connection.execute("SELECT COUNT(*) AS total FROM usage_records WHERE scene = 'phone_review_aspect_unlock'").fetchone()["total"])
+        phone_review_usage_records = phone_review_base_usage_records + phone_review_unlock_usage_records
         agent_usage_records = int(connection.execute("SELECT COUNT(*) AS total FROM usage_records WHERE scene = 'agent_reply'").fetchone()["total"])
         almanac_usage_records = int(connection.execute("SELECT COUNT(*) AS total FROM usage_records WHERE scene = 'almanac_query'").fetchone()["total"])
         five_elements_usage_records = int(connection.execute("SELECT COUNT(*) AS total FROM usage_records WHERE scene = 'five_elements_query'").fetchone()["total"])
+        feature_scene_labels = {
+            "phone_review_base": "手机号评测",
+            "phone_review_aspect_unlock": "维度解锁",
+            "agent_reply": "智能体玄学技能",
+            "almanac_query": "黄历查询",
+            "five_elements_query": "五行属性查询",
+        }
+        feature_usage_window_metrics: list[dict[str, Any]] = []
+        feature_usage_window_conditions = [
+            ("今日使用", "date(datetime(created_at), '+8 hours') = date('now', '+8 hours')"),
+            ("昨日使用", "date(datetime(created_at), '+8 hours') = date('now', '+8 hours', '-1 day')"),
+            ("本周使用", "datetime(created_at, '+8 hours') >= date('now', '+8 hours', 'weekday 1', '-7 days')"),
+            ("本月使用", "strftime('%Y-%m', datetime(created_at), '+8 hours') = strftime('%Y-%m', 'now', '+8 hours')"),
+        ]
+        for window_label, window_condition in feature_usage_window_conditions:
+            rows = connection.execute(
+                f"""
+                SELECT scene, COUNT(*) AS total
+                FROM usage_records
+                WHERE {window_condition}
+                GROUP BY scene
+                ORDER BY total DESC, scene ASC
+                LIMIT 5
+                """
+            ).fetchall()
+            for row in rows:
+                scene = str(row["scene"] or "unknown")
+                count = int(row["total"])
+                feature_name = feature_scene_labels.get(scene, scene)
+                feature_usage_window_metrics.append(
+                    {
+                        "label": f"{window_label}·{feature_name}",
+                        "value": count,
+                        "display_value": str(count),
+                        "unit": "条",
+                    }
+                )
         llm_enabled_keys = int(connection.execute("SELECT COUNT(*) AS total FROM llm_api_keys WHERE enabled = 1").fetchone()["total"])
         llm_total_keys = int(connection.execute("SELECT COUNT(*) AS total FROM llm_api_keys").fetchone()["total"])
 
@@ -1404,7 +1568,8 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
         "current_year_amount_cents": year_paid_amount_cents,
         "last_year_amount_cents": last_year_paid_amount_cents,
         "total_amount_cents": total_recharge_amount_cents,
-        "commission_points": total_commission_points,
+        "commission_amount_cents": total_commission_amount_cents,
+        "commission_points": total_commission_amount_cents,
         "withdrawn_amount_cents": total_withdraw_amount_cents,
         "net_revenue_cents": max(0, total_recharge_amount_cents - total_withdraw_amount_cents),
         "refund_amount_cents": refund_amount_cents,
@@ -1413,8 +1578,14 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
         "total_users": total_users,
         "today_new_users": today_new_users,
         "yesterday_new_users": yesterday_new_users,
+        "week_new_users": week_new_users,
+        "last_week_new_users": last_week_new_users,
+        "month_new_users": month_new_users,
+        "last_month_new_users": last_month_new_users,
+        "daily_active_users": daily_active_users,
         "active_users_7d": active_users_7d,
         "active_users_30d": active_users_30d,
+        "monthly_active_users": active_users_30d,
         "promoter_count": total_promoters,
         "senior_promoter_count": senior_promoters,
         "users_with_points": users_with_points,
@@ -1437,7 +1608,8 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
         "pending_applications": pending_applications,
         "pending_withdrawals": pending_withdrawals,
         "payout_failed_withdrawals": payout_failed_withdrawals,
-        "commission_points": total_commission_points,
+        "commission_amount_cents": total_commission_amount_cents,
+        "commission_points": total_commission_amount_cents,
         "withdrawn_amount_cents": total_withdraw_amount_cents,
     }
 
@@ -1461,7 +1633,7 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
                     {"label": "累计总收益", "value": total_recharge_amount_cents, "display_value": _format_money_cents(total_recharge_amount_cents), "unit": "元"},
                     {"label": "今日支付", "value": today_paid_amount_cents, "display_value": _format_money_cents(today_paid_amount_cents), "unit": "元"},
                     {"label": "已完成订单", "value": total_approved_orders, "display_value": str(total_approved_orders), "unit": "单"},
-                    {"label": "已产生返佣金额", "value": total_commission_points, "display_value": str(total_commission_points), "unit": "推广积分"},
+                    {"label": "已产生返佣金额", "value": total_commission_amount_cents, "display_value": _format_money_cents(total_commission_amount_cents), "unit": "元"},
                     {"label": "已提现金额", "value": total_withdraw_amount_cents, "display_value": _format_money_cents(total_withdraw_amount_cents), "unit": "元"},
                     {"label": "净收益", "value": revenue_block["net_revenue_cents"], "display_value": _format_money_cents(revenue_block["net_revenue_cents"]), "unit": "元"},
                     {"label": "退款金额", "value": refund_amount_cents, "display_value": _format_money_cents(refund_amount_cents), "unit": "元"},
@@ -1474,7 +1646,11 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
                     {"label": "总用户", "value": total_users, "display_value": str(total_users), "unit": "人"},
                     {"label": "今日新增", "value": today_new_users, "display_value": str(today_new_users), "unit": "人"},
                     {"label": "昨日新增", "value": yesterday_new_users, "display_value": str(yesterday_new_users), "unit": "人"},
-                    {"label": "日活", "value": active_users_7d, "display_value": str(active_users_7d), "unit": "人"},
+                    {"label": "本周新增", "value": week_new_users, "display_value": str(week_new_users), "unit": "人"},
+                    {"label": "上周新增", "value": last_week_new_users, "display_value": str(last_week_new_users), "unit": "人"},
+                    {"label": "本月新增", "value": month_new_users, "display_value": str(month_new_users), "unit": "人"},
+                    {"label": "上月新增", "value": last_month_new_users, "display_value": str(last_month_new_users), "unit": "人"},
+                    {"label": "日活", "value": daily_active_users, "display_value": str(daily_active_users), "unit": "人"},
                     {"label": "7日活跃", "value": active_users_7d, "display_value": str(active_users_7d), "unit": "人"},
                     {"label": "月活", "value": active_users_30d, "display_value": str(active_users_30d), "unit": "人"},
                     {"label": "30日活跃", "value": active_users_30d, "display_value": str(active_users_30d), "unit": "人"},
@@ -1500,19 +1676,30 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
             },
             {
                 "title": "推广合作",
-                "summary": "申请、提现、返佣和密钥占位的可见状态",
+                "summary": "申请、提现和返佣记录的可见状态",
                 "metrics": [
                     {"label": "普通大使", "value": max(0, total_promoters - senior_promoters), "display_value": str(max(0, total_promoters - senior_promoters)), "unit": "人"},
                     {"label": "高级大使", "value": senior_promoters, "display_value": str(senior_promoters), "unit": "人"},
                     {"label": "待审核申请", "value": pending_applications, "display_value": str(pending_applications), "unit": "条"},
                     {"label": "待提现申请", "value": pending_withdrawals, "display_value": str(pending_withdrawals), "unit": "笔"},
                     {"label": "打款失败", "value": payout_failed_withdrawals, "display_value": str(payout_failed_withdrawals), "unit": "笔"},
+                ],
+            },
+            {
+                "title": "功能使用",
+                "summary": "功能调用按自然日、自然周、自然月和功能类型排名统计",
+                "metrics": [
                     {"label": "使用记录", "value": total_usage_records, "display_value": str(total_usage_records), "unit": "条"},
                     {"label": "今日使用", "value": today_usage_records, "display_value": str(today_usage_records), "unit": "条"},
-                    {"label": "手机号评测", "value": phone_review_usage_records, "display_value": str(phone_review_usage_records), "unit": "条"},
+                    {"label": "昨日使用", "value": yesterday_usage_records, "display_value": str(yesterday_usage_records), "unit": "条"},
+                    {"label": "本周使用", "value": week_usage_records, "display_value": str(week_usage_records), "unit": "条"},
+                    {"label": "本月使用", "value": month_usage_records, "display_value": str(month_usage_records), "unit": "条"},
+                    {"label": "手机号评测", "value": phone_review_base_usage_records, "display_value": str(phone_review_base_usage_records), "unit": "条"},
+                    {"label": "维度解锁", "value": phone_review_unlock_usage_records, "display_value": str(phone_review_unlock_usage_records), "unit": "条"},
                     {"label": "智能体", "value": agent_usage_records, "display_value": str(agent_usage_records), "unit": "条"},
                     {"label": "黄历查询", "value": almanac_usage_records, "display_value": str(almanac_usage_records), "unit": "条"},
                     {"label": "五行查询", "value": five_elements_usage_records, "display_value": str(five_elements_usage_records), "unit": "条"},
+                    *feature_usage_window_metrics,
                     {"label": "启用密钥", "value": llm_enabled_keys, "display_value": str(llm_enabled_keys), "unit": "个"},
                     {"label": "密钥总数", "value": llm_total_keys, "display_value": str(llm_total_keys), "unit": "个"},
                 ],
@@ -1934,8 +2121,6 @@ def get_promotion_rules() -> dict[str, Any]:
         "senior_commission_rate": float(values.get("promotion.senior_commission_rate") or 0.2),
         "min_withdraw_cents": int(values.get("promotion.min_withdraw_cents") or 3000),
         "order_completion_days": int(values.get("promotion.order_completion_days") or 7),
-        "rebate_to_cash_rate": float(values.get("promotion.rebate_to_cash_rate") or 1),
-        "rebate_to_points_rate": float(values.get("promotion.rebate_to_points_rate") or 1),
     }
 
 
@@ -2339,6 +2524,7 @@ def _deserialize_promotion_commission_row(row: sqlite3.Row) -> dict[str, Any]:
         "order_id": row["order_id"],
         "order_amount_cents": int(row["order_amount_cents"] or 0),
         "commission_rate": float(row["commission_rate"] or 0),
+        "commission_amount_cents": int(row["commission_amount_cents"] or row["commission_points"] or 0) if "commission_amount_cents" in row.keys() else int(row["commission_points"] or 0),
         "commission_points": int(row["commission_points"] or 0),
         "commission_type": row["commission_type"],
         "status": row["status"],
@@ -2357,6 +2543,8 @@ def _deserialize_promotion_withdrawal_row(row: sqlite3.Row) -> dict[str, Any]:
         "user_nickname": row["user_nickname"] if "user_nickname" in row.keys() else None,
         "identity_level": row["identity_level"] if "identity_level" in row.keys() else None,
         "status": row["status"],
+        "withdrawable_balance_snapshot_cents": int(row["withdrawable_balance_snapshot_cents"] or row["rebate_points_balance_snapshot"] or 0) if "withdrawable_balance_snapshot_cents" in row.keys() else int(row["rebate_points_balance_snapshot"] or 0),
+        "frozen_commission_snapshot_cents": int(row["frozen_commission_snapshot_cents"] or 0) if "frozen_commission_snapshot_cents" in row.keys() else 0,
         "points_used": int(row["points_used"] or 0),
         "amount_cents": int(row["amount_cents"] or 0),
         "rebate_points_balance_snapshot": int(row["rebate_points_balance_snapshot"] or 0),
@@ -2427,18 +2615,37 @@ def _deserialize_user_row(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def _deserialize_internal_user_row(row: sqlite3.Row) -> dict[str, Any]:
+    identity_registered_candidates = [
+        value
+        for value in (
+            row["phone_registered_at"] if "phone_registered_at" in row.keys() else None,
+            row["unionid_registered_at"] if "unionid_registered_at" in row.keys() else None,
+        )
+        if value
+    ]
+    registered_at = min(identity_registered_candidates) if identity_registered_candidates else row["created_at"]
     return {
         "user_id": row["user_id"],
         "status": row["status"],
         "identity_level": row["identity_level"] if "identity_level" in row.keys() else "normal_user",
+        "primary_identity_type": row["primary_identity_type"] if "primary_identity_type" in row.keys() else "session",
+        "registered_channel": row["registered_channel"] if "registered_channel" in row.keys() else None,
         "promoter_parent_user_id": row["promoter_parent_user_id"] if "promoter_parent_user_id" in row.keys() else None,
         "nickname": row["nickname"],
         "avatar_url": row["avatar_url"],
         "profile_completed": bool(row["profile_completed"]),
         "points_balance": int(row["balance"] or 0),
         "frozen_balance": int(row["frozen_balance"] or 0),
+        "withdrawable_balance_cents": int(row["withdrawable_balance_cents"] or 0) if "withdrawable_balance_cents" in row.keys() else 0,
+        "frozen_commission_cents": int(row["frozen_commission_cents"] or 0) if "frozen_commission_cents" in row.keys() else 0,
+        "withdrawn_amount_cents": int(row["withdrawn_amount_cents"] or 0) if "withdrawn_amount_cents" in row.keys() else 0,
         "rebate_points_balance": int(row["rebate_points_balance"] or 0) if "rebate_points_balance" in row.keys() else 0,
         "rebate_frozen_balance": int(row["rebate_frozen_balance"] or 0) if "rebate_frozen_balance" in row.keys() else 0,
+        "primary_phone": row["primary_phone"] if "primary_phone" in row.keys() else None,
+        "phone_verified_at": row["phone_verified_at"] if "phone_verified_at" in row.keys() else None,
+        "primary_unionid": row["primary_unionid"] if "primary_unionid" in row.keys() else None,
+        "first_login_at": row["created_at"],
+        "registered_at": registered_at,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "last_active_at": row["last_active_at"],

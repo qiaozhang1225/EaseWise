@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, type Component } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue';
 import {
   AlertTriangle,
   Award,
@@ -17,7 +17,6 @@ import {
 import {
   ApiError,
   adjustInternalUserPoints,
-  adjustInternalUserRebatePoints,
   createInternalLlmApiKey,
   createInternalRechargeOrderRefund,
   deleteInternalLlmApiKey,
@@ -51,6 +50,7 @@ import {
   updateInternalUserStatus,
   type InternalLlmApiKeyPayload,
 } from '../../lib/api';
+import AdminSelect from './AdminSelect.vue';
 import type {
   DashboardResponse,
   InternalUserAdminSummaryResponse,
@@ -74,6 +74,35 @@ type PrimaryNavKey = 'dashboard' | 'orders' | 'users' | 'features' | 'promotion'
 type FeatureNavKey = 'almanac' | 'phone-review';
 type PromotionNavKey = 'review' | 'withdrawals' | 'commissions' | 'rules';
 type DashboardMetric = DashboardResponse['sections'][number]['metrics'][number];
+type UserLinkedDestination = 'orders' | 'usage';
+type UserPointOperation = 'increase' | 'decrease' | 'set';
+type FeatureUsageWindowKey = 'today' | 'yesterday' | 'week' | 'month';
+type SelectedUserInfoCard = {
+  key: 'identity' | 'channel' | 'registered_at' | 'phone' | 'unionid';
+  label: string;
+  value: string;
+  sub: string;
+};
+type FeatureUsageRankItem = {
+  name: string;
+  count: number;
+  percentage: number;
+};
+type FeatureUsageWindowCard = {
+  key: FeatureUsageWindowKey;
+  label: string;
+  total: string;
+  sub: string;
+  items: FeatureUsageRankItem[];
+};
+type AdminRouteQuery = {
+  view: PrimaryNavKey;
+  feature?: FeatureNavKey;
+  promotion?: PromotionNavKey;
+  modal?: 'user';
+  user_id?: string;
+  return?: 'user';
+};
 
 const primaryNavItems: Array<{key: PrimaryNavKey; label: string; desc: string}> = [
   {key: 'dashboard', label: '数据大盘', desc: '核心收益与运营摘要'},
@@ -116,6 +145,59 @@ const promotionNavIcons: Record<PromotionNavKey, Component> = {
   commissions: Search,
   rules: Settings,
 };
+
+const orderStatusSelectOptions = [
+  {value: '', label: '全状态流转', dotClass: 'bg-indigo-500'},
+  {value: 'unpaid', label: '未支付', dotClass: 'bg-amber-500'},
+  {value: 'paid', label: '已支付', dotClass: 'bg-blue-500'},
+  {value: 'completed', label: '已完成', dotClass: 'bg-emerald-500'},
+  {value: 'refund_pending', label: '退款中', dotClass: 'bg-red-500 animate-pulse'},
+  {value: 'refunded', label: '已退款', dotClass: 'bg-gray-400'},
+  {value: 'closed', label: '已关闭', dotClass: 'bg-slate-400'},
+];
+
+const userStatusSelectOptions = [
+  {value: '', label: '全状态', dotClass: 'bg-indigo-500'},
+  {value: 'active', label: '正常', dotClass: 'bg-emerald-500'},
+  {value: 'guest', label: '游客', dotClass: 'bg-amber-500'},
+  {value: 'disabled', label: '禁用', dotClass: 'bg-red-500'},
+];
+
+const userEditStatusSelectOptions = [
+  {value: 'guest', label: '游客', dotClass: 'bg-amber-500'},
+  {value: 'active', label: '正常', dotClass: 'bg-emerald-500'},
+  {value: 'disabled', label: '禁用', dotClass: 'bg-red-500'},
+  {value: 'blocked', label: '封禁', dotClass: 'bg-slate-500'},
+];
+
+const userIdentitySelectOptions = [
+  {value: '', label: '全身份', dotClass: 'bg-indigo-500'},
+  {value: 'normal_user', label: '普通会员', dotClass: 'bg-gray-400'},
+  {value: 'promoter', label: '推广大使', dotClass: 'bg-emerald-500'},
+  {value: 'senior_promoter', label: '高级推广大使', dotClass: 'bg-purple-500'},
+];
+
+const userEditIdentitySelectOptions = userIdentitySelectOptions.filter((option) => option.value !== '');
+
+const usageSceneSelectOptions = [
+  {value: '', label: '全部功能', dotClass: 'bg-indigo-500'},
+  {value: 'phone_review_base', label: '手机号评测', dotClass: 'bg-blue-500'},
+  {value: 'phone_review_aspect_unlock', label: '维度解锁', dotClass: 'bg-emerald-500'},
+  {value: 'agent_reply', label: '智能体对话', dotClass: 'bg-purple-500'},
+  {value: 'almanac_query', label: '黄历查询', dotClass: 'bg-amber-500'},
+  {value: 'five_elements_query', label: '五行属性查询', dotClass: 'bg-cyan-500'},
+];
+
+const booleanToggleSelectOptions = [
+  {value: true, label: '开启', dotClass: 'bg-emerald-500'},
+  {value: false, label: '关闭', dotClass: 'bg-gray-400'},
+];
+
+const userPointOperationOptions: Array<{value: UserPointOperation; label: string; desc: string}> = [
+  {value: 'increase', label: '增加', desc: '在当前余额上增加'},
+  {value: 'decrease', label: '减少', desc: '从当前余额中扣减'},
+  {value: 'set', label: '设置', desc: '直接设置为目标值'},
+];
 
 const savedToken = typeof window !== 'undefined' ? window.localStorage.getItem(ADMIN_TOKEN_KEY) : '';
 const adminToken = ref(savedToken || '');
@@ -175,8 +257,15 @@ const userFilters = ref({
 });
 const users = ref<InternalUserResponse[]>([]);
 const selectedUser = ref<InternalUserAdminSummaryResponse | null>(null);
+const expandedUserInfoKey = ref('');
+const adminReturnContext = ref<{
+  userId: string;
+  userLabel: string;
+  destination: UserLinkedDestination;
+} | null>(null);
 const userEditOpen = ref(false);
-const userEditMode = ref<'points' | 'rebate' | 'status' | 'identity' | 'parent' | null>(null);
+const userEditMode = ref<'points' | 'status' | 'identity' | 'parent' | null>(null);
+const userPointOperation = ref<UserPointOperation>('increase');
 const userEditValue = ref('');
 const userEditReason = ref('');
 const userEditNote = ref('');
@@ -193,6 +282,48 @@ const orderReviewNote = ref('');
 const orderActionMessage = ref('');
 
 const isLoggedIn = computed(() => Boolean(adminToken.value.trim()));
+const activeOrderReturnContext = computed(() => (
+  adminReturnContext.value?.destination === 'orders' && orderFilters.value.user_id
+    ? adminReturnContext.value
+    : null
+));
+const activeUsageReturnContext = computed(() => (
+  adminReturnContext.value?.destination === 'usage' && usageFilters.value.user_id
+    ? adminReturnContext.value
+    : null
+));
+const userPointInputPlaceholder = computed(() => {
+  if (userPointOperation.value === 'increase') return '请输入要增加的积分数';
+  if (userPointOperation.value === 'decrease') return '请输入要减少的积分数';
+  return '请输入要设置成的积分余额';
+});
+const userPointDeltaPreview = computed(() => {
+  if (!selectedUser.value || userEditMode.value !== 'points') return '';
+  const amount = Number(userEditValue.value || 0);
+  if (!Number.isFinite(amount)) return '';
+  const normalizedAmount = Math.trunc(Math.max(0, amount));
+  const current = selectedUser.value.user.points_balance;
+  if (userPointOperation.value === 'increase') return `提交后预计增加 ${normalizedAmount} 积分`;
+  if (userPointOperation.value === 'decrease') return `提交后预计减少 ${normalizedAmount} 积分`;
+  const delta = normalizedAmount - current;
+  if (delta === 0) return '目标值与当前积分一致';
+  return delta > 0 ? `提交后预计增加 ${delta} 积分` : `提交后预计减少 ${Math.abs(delta)} 积分`;
+});
+const selectedUserInfoCards = computed<SelectedUserInfoCard[]>(() => {
+  if (!selectedUser.value) return [];
+  const user = selectedUser.value.user;
+  const identityValue = selectedUserIdentityValue();
+  const registeredAt = formatTime(user.registered_at || user.created_at);
+  const firstLoginAt = formatTime(user.first_login_at || user.created_at);
+  return [
+    {key: 'identity', label: '主身份', value: identitySourceLabel(user.primary_identity_type), sub: '身份来源'},
+    {key: 'channel', label: '注册渠道', value: user.registered_channel || '--', sub: '来源渠道'},
+    {key: 'registered_at', label: '注册时间', value: registeredAt, sub: `首次 ${firstLoginAt}`},
+    {key: 'phone', label: '手机号', value: user.primary_phone || '--', sub: user.phone_verified_at ? `验证 ${formatTime(user.phone_verified_at)}` : '待绑定'},
+    {key: 'unionid', label: 'UnionID / Guest', value: identityValue, sub: identityValue === '--' ? '待绑定' : '点击查看全文'},
+  ];
+});
+const expandedUserInfoCard = computed(() => selectedUserInfoCards.value.find((item) => item.key === expandedUserInfoKey.value) || null);
 const activeCode = computed(() => {
   if (activePrimary.value === 'features') {
     return activeFeature.value === 'almanac' ? 'features_almanac' : 'features_phone';
@@ -226,27 +357,63 @@ const revenueCards = computed(() => [
 
 const userOverviewCards = computed(() => [
   {label: '当前总用户量', value: metricText('用户', ['总用户', '当前总用户量'], String(users.value.length || 0)), sub: '系统累计注册'},
+  {label: '今日新增用户', value: metricText('用户', ['今日新增'], '0'), sub: 'UTC+8 今日'},
+  {label: '本周新增用户', value: metricText('用户', ['本周新增'], '0'), sub: '自然周累计'},
+  {label: '上周新增用户', value: metricText('用户', ['上周新增'], '0'), sub: '上一自然周'},
+  {label: '本月新增用户', value: metricText('用户', ['本月新增'], '0'), sub: '自然月累计'},
+  {label: '上月新增用户', value: metricText('用户', ['上月新增'], '0'), sub: '上一自然月'},
   {label: '日活用户 (DAU)', value: metricText('用户', ['日活', '今日活跃', '活跃用户'], '0'), sub: `月活: ${metricText('用户', ['月活', '30日活跃'], '0')}`},
 ]);
 
-const featureUsageStats = computed(() => {
-  const buckets = [
-    {name: '手机号评测', match: ['phone_review_base', '手机号评测']},
-    {name: '维度解锁', match: ['phone_review_aspect_unlock', '维度解锁']},
-    {name: '智能体玄学技能', match: ['agent', '智能体']},
-    {name: '黄历查询', match: ['almanac', '黄历']},
-    {name: '五行属性查询', match: ['five_elements', '五行']},
-  ];
-  const total = Math.max(usageRecords.value.length, 1);
-  return buckets.map((bucket) => {
-    const count = usageRecords.value.filter((item) => {
-      const haystack = `${item.scene} ${item.feature_key} ${item.feature_name || ''}`;
-      return bucket.match.some((word) => haystack.includes(word));
-    }).length;
+const featureUsageSceneLabels: Record<string, string> = {
+  phone_review_base: '手机号评测',
+  phone_review_aspect_unlock: '维度解锁',
+  agent_reply: '智能体玄学技能',
+  almanac_query: '黄历查询',
+  five_elements_query: '五行属性查询',
+};
+
+const featureUsageWindowConfigs: Array<{key: FeatureUsageWindowKey; label: string; sub: string}> = [
+  {key: 'today', label: '今日使用', sub: 'UTC+8 今日'},
+  {key: 'yesterday', label: '昨日使用', sub: '上一自然日'},
+  {key: 'week', label: '本周使用', sub: '自然周累计'},
+  {key: 'month', label: '本月使用', sub: '自然月累计'},
+];
+
+const featureUsageWindowCards = computed<FeatureUsageWindowCard[]>(() => {
+  return featureUsageWindowConfigs.map((config) => {
+    const total = metricNumber('功能使用', [config.label], 0);
+    const metrics = getSectionMetrics('功能使用')
+      .filter((metric) => metric.label.startsWith(`${config.label}·`))
+      .map((metric) => {
+        const name = metric.label.slice(config.label.length + 1);
+        const count = Number(metric.value);
+        return {
+          name,
+          count: Number.isFinite(count) ? count : 0,
+          percentage: total > 0 ? Math.round((Number.isFinite(count) ? count : 0) / total * 100) : 0,
+        };
+      })
+      .sort((left, right) => right.count - left.count)
+      .slice(0, 5);
+
+    if (metrics.length > 0) {
+      return {
+        key: config.key,
+        label: config.label,
+        total: metricText('功能使用', [config.label], '0'),
+        sub: config.sub,
+        items: metrics,
+      };
+    }
+
+    const fallbackItems = buildFeatureUsageFallbackItems(config.key, total);
     return {
-      name: bucket.name,
-      count,
-      percentage: Math.round((count / total) * 100),
+      key: config.key,
+      label: config.label,
+      total: metricText('功能使用', [config.label], '0'),
+      sub: config.sub,
+      items: fallbackItems,
     };
   });
 });
@@ -330,11 +497,148 @@ const visibleUsers = computed(() => {
   return users.value.filter((user) => [
     user.user_id,
     user.nickname || '',
-    user.openid || '',
+    user.primary_phone || '',
+    user.primary_unionid || '',
+    user.unionid || '',
     user.guest_key || '',
-    user.guest_openid || '',
+    user.guest_unionid || '',
   ].some((value) => value.toLowerCase().includes(keyword)));
 });
+
+function isPrimaryNavKey(value: string | null): value is PrimaryNavKey {
+  return ['dashboard', 'orders', 'users', 'features', 'promotion', 'settings'].includes(value || '');
+}
+
+function isFeatureNavKey(value: string | null): value is FeatureNavKey {
+  return ['almanac', 'phone-review'].includes(value || '');
+}
+
+function isPromotionNavKey(value: string | null): value is PromotionNavKey {
+  return ['review', 'withdrawals', 'commissions', 'rules'].includes(value || '');
+}
+
+function userDisplayLabel(userId: string) {
+  if (selectedUser.value?.user.user_id === userId) {
+    return selectedUser.value.user.nickname || selectedUser.value.user.primary_phone || shortText(userId, 8, 4);
+  }
+  const user = users.value.find((item) => item.user_id === userId);
+  return user?.nickname || user?.primary_phone || shortText(userId, 8, 4);
+}
+
+function setUserReturnContext(userId: string, destination: UserLinkedDestination) {
+  adminReturnContext.value = {
+    userId,
+    userLabel: userDisplayLabel(userId),
+    destination,
+  };
+}
+
+function clearLinkedUserContext() {
+  adminReturnContext.value = null;
+}
+
+function clearLinkedUserFilters() {
+  clearLinkedUserContext();
+  usageFilters.value.user_id = '';
+  orderFilters.value.user_id = '';
+}
+
+function writeAdminHistory(query: AdminRouteQuery, mode: 'push' | 'replace' = 'push') {
+  if (typeof window === 'undefined') return;
+  const url = new URL('/admin', window.location.origin);
+  Object.entries(query).forEach(([key, value]) => {
+    if (value) {
+      url.searchParams.set(key, String(value));
+    }
+  });
+  const state = {easewiseAdmin: true, ...query};
+  if (mode === 'replace') {
+    window.history.replaceState(state, '', url);
+  } else {
+    window.history.pushState(state, '', url);
+  }
+}
+
+function clearOverlayState() {
+  selectedUsage.value = null;
+  selectedUser.value = null;
+  selectedOrder.value = null;
+  selectedPromotionApplication.value = null;
+  selectedPromotionCommission.value = null;
+  selectedPromotionWithdrawal.value = null;
+  userEditOpen.value = false;
+  userEditMode.value = null;
+  userPointOperation.value = 'increase';
+  expandedUserInfoKey.value = '';
+}
+
+async function restoreAdminStateFromLocation() {
+  if (typeof window === 'undefined') {
+    await loadActivePage();
+    return;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const view = params.get('view');
+  const userId = params.get('user_id') || '';
+  if (!isPrimaryNavKey(view)) {
+    activePrimary.value = 'dashboard';
+    clearLinkedUserFilters();
+    clearOverlayState();
+    await loadActivePage();
+    return;
+  }
+
+  activePrimary.value = view;
+  clearOverlayState();
+
+  if (view === 'features') {
+    const featureParam = params.get('feature');
+    activeFeature.value = isFeatureNavKey(featureParam) ? featureParam : 'phone-review';
+    isFeaturesMenuOpen.value = true;
+  }
+  if (view === 'promotion') {
+    const promotionParam = params.get('promotion');
+    activePromotion.value = isPromotionNavKey(promotionParam) ? promotionParam : 'review';
+    isPromoMenuOpen.value = true;
+  }
+
+  if (view === 'orders' && userId) {
+    orderFilters.value.user_id = userId;
+    if (params.get('return') === 'user') {
+      setUserReturnContext(userId, 'orders');
+    } else {
+      clearLinkedUserContext();
+    }
+    await loadOrders();
+    return;
+  }
+
+  if (view === 'features' && userId) {
+    usageFilters.value.user_id = userId;
+    if (params.get('return') === 'user') {
+      setUserReturnContext(userId, 'usage');
+    } else {
+      clearLinkedUserContext();
+    }
+    await loadActivePage();
+    return;
+  }
+
+  if (view === 'users') {
+    clearLinkedUserFilters();
+    if (userId) {
+      userQuery.value = userId;
+    }
+    await loadUsers();
+    if (params.get('modal') === 'user' && userId) {
+      await openUserSummary(userId, {syncHistory: false});
+    }
+    return;
+  }
+
+  clearLinkedUserFilters();
+  await loadActivePage();
+}
 
 function login() {
   const token = loginToken.value.trim();
@@ -347,7 +651,7 @@ function login() {
     window.localStorage.setItem(ADMIN_TOKEN_KEY, token);
   }
   globalMessage.value = '';
-  void loadActivePage();
+  void restoreAdminStateFromLocation();
 }
 
 function logout() {
@@ -355,9 +659,12 @@ function logout() {
   loginToken.value = '';
   if (typeof window !== 'undefined') {
     window.localStorage.removeItem(ADMIN_TOKEN_KEY);
+    window.history.replaceState({easewiseAdmin: true, view: 'dashboard'}, '', '/admin');
   }
-  selectedUsage.value = null;
-  selectedUser.value = null;
+  clearLinkedUserFilters();
+  clearOverlayState();
+  userEditOpen.value = false;
+  userEditMode.value = null;
 }
 
 function goToFrontend() {
@@ -367,19 +674,39 @@ function goToFrontend() {
 }
 
 function switchPrimary(key: PrimaryNavKey) {
+  clearLinkedUserFilters();
   activePrimary.value = key;
-  selectedUsage.value = null;
-  selectedOrder.value = null;
-  selectedPromotionApplication.value = null;
-  selectedPromotionCommission.value = null;
-  selectedPromotionWithdrawal.value = null;
+  clearOverlayState();
   if (key === 'features') {
     isFeaturesMenuOpen.value = true;
   }
   if (key === 'promotion') {
     isPromoMenuOpen.value = true;
   }
+  writeAdminHistory({
+    view: key,
+    feature: key === 'features' ? activeFeature.value : undefined,
+    promotion: key === 'promotion' ? activePromotion.value : undefined,
+  });
   void loadActivePage();
+}
+
+function toggleFeaturesPrimary() {
+  clearLinkedUserFilters();
+  isFeaturesMenuOpen.value = !isFeaturesMenuOpen.value;
+  activePrimary.value = 'features';
+  clearOverlayState();
+  writeAdminHistory({view: 'features', feature: activeFeature.value});
+  void loadActivePage();
+}
+
+function togglePromotionPrimary() {
+  clearLinkedUserFilters();
+  isPromoMenuOpen.value = !isPromoMenuOpen.value;
+  activePrimary.value = 'promotion';
+  clearOverlayState();
+  writeAdminHistory({view: 'promotion', promotion: activePromotion.value});
+  void loadPromotionPage();
 }
 
 async function loadActivePage() {
@@ -529,15 +856,35 @@ function resetUserFilters() {
   userFilters.value = {status: '', identity_level: '', channel: ''};
 }
 
-async function openUserSummary(userId: string) {
+async function openUserSummary(userId: string, options: {syncHistory?: boolean} = {}) {
   userLoading.value = true;
+  userEditOpen.value = false;
+  userEditMode.value = null;
+  expandedUserInfoKey.value = '';
   try {
     selectedUser.value = await getInternalUserAdminSummary(adminToken.value, userId);
+    if (options.syncHistory !== false) {
+      writeAdminHistory({view: 'users', modal: 'user', user_id: userId});
+    }
     globalMessage.value = '';
   } catch (error) {
     globalMessage.value = resolveError(error);
   } finally {
     userLoading.value = false;
+  }
+}
+
+function closeUserSummary() {
+  selectedUser.value = null;
+  userEditOpen.value = false;
+  userEditMode.value = null;
+  userEditValue.value = '';
+  userEditReason.value = '';
+  userEditNote.value = '';
+  userPointOperation.value = 'increase';
+  expandedUserInfoKey.value = '';
+  if (activePrimary.value === 'users') {
+    writeAdminHistory({view: 'users'}, 'replace');
   }
 }
 
@@ -613,42 +960,80 @@ async function createRefundFromSelectedOrder() {
 function jumpToUser(userId: string) {
   activePrimary.value = 'users';
   userQuery.value = userId;
-  selectedUsage.value = null;
-  void loadUsers().then(() => openUserSummary(userId));
+  clearLinkedUserFilters();
+  clearOverlayState();
+  writeAdminHistory({view: 'users', modal: 'user', user_id: userId});
+  void loadUsers().then(() => openUserSummary(userId, {syncHistory: false}));
 }
 
 function jumpToUsageForUser(userId: string) {
   activePrimary.value = 'features';
   activeFeature.value = 'phone-review';
+  isFeaturesMenuOpen.value = true;
   usageFilters.value.user_id = userId;
-  selectedUser.value = null;
-  void loadUsageRecords();
+  setUserReturnContext(userId, 'usage');
+  clearOverlayState();
+  writeAdminHistory({view: 'features', feature: 'phone-review', user_id: userId, return: 'user'});
+  void loadActivePage();
 }
 
 function jumpToOrders(userId: string) {
   activePrimary.value = 'orders';
   orderFilters.value.user_id = userId;
-  selectedUsage.value = null;
+  setUserReturnContext(userId, 'orders');
+  clearOverlayState();
+  writeAdminHistory({view: 'orders', user_id: userId, return: 'user'});
   void loadOrders();
 }
 
+function returnToUserFile() {
+  const userId = adminReturnContext.value?.userId;
+  if (!userId) return;
+  activePrimary.value = 'users';
+  userQuery.value = userId;
+  clearLinkedUserFilters();
+  clearOverlayState();
+  writeAdminHistory({view: 'users', modal: 'user', user_id: userId});
+  void loadUsers().then(() => openUserSummary(userId, {syncHistory: false}));
+}
+
+function clearOrderUserScope() {
+  orderFilters.value.user_id = '';
+  clearLinkedUserContext();
+  selectedOrder.value = null;
+  writeAdminHistory({view: 'orders'}, 'replace');
+  void loadOrders();
+}
+
+function clearUsageUserScope() {
+  usageFilters.value.user_id = '';
+  clearLinkedUserContext();
+  selectedUsage.value = null;
+  writeAdminHistory({view: 'features', feature: activeFeature.value}, 'replace');
+  void loadUsageRecords();
+}
+
 function selectFeature(key: FeatureNavKey) {
+  clearLinkedUserFilters();
   isFeaturesMenuOpen.value = true;
   activeFeature.value = key;
   activePrimary.value = 'features';
   selectedUsage.value = null;
+  writeAdminHistory({view: 'features', feature: key});
   if (key === 'phone-review') {
     void loadUsageRecords();
   }
 }
 
 function selectPromotion(key: PromotionNavKey) {
+  clearLinkedUserFilters();
   isPromoMenuOpen.value = true;
   activePromotion.value = key;
   activePrimary.value = 'promotion';
   selectedPromotionApplication.value = null;
   selectedPromotionCommission.value = null;
   selectedPromotionWithdrawal.value = null;
+  writeAdminHistory({view: 'promotion', promotion: key});
   void loadPromotionPage();
 }
 
@@ -953,7 +1338,7 @@ async function removeLlmKey(keyId: string) {
   }
 }
 
-function openUserEditor(mode: 'points' | 'rebate' | 'status' | 'identity' | 'parent') {
+function openUserEditor(mode: 'points' | 'status' | 'identity' | 'parent') {
   userEditMode.value = mode;
   userEditOpen.value = true;
   userEditReason.value = '';
@@ -961,9 +1346,7 @@ function openUserEditor(mode: 'points' | 'rebate' | 'status' | 'identity' | 'par
   userEditValue.value = '';
   if (!selectedUser.value) return;
   if (mode === 'points') {
-    userEditValue.value = '0';
-  }
-  if (mode === 'rebate') {
+    userPointOperation.value = 'increase';
     userEditValue.value = '0';
   }
   if (mode === 'status') {
@@ -983,14 +1366,20 @@ async function submitUserEdit() {
   try {
     const userId = selectedUser.value.user.user_id;
     if (userEditMode.value === 'points') {
+      const rawAmount = Number(userEditValue.value);
+      if (!Number.isFinite(rawAmount) || rawAmount < 0) {
+        globalMessage.value = '请输入不小于 0 的积分数';
+        return;
+      }
+      const amount = Math.trunc(rawAmount);
+      const currentBalance = selectedUser.value.user.points_balance;
+      const delta = userPointOperation.value === 'increase'
+        ? amount
+        : userPointOperation.value === 'decrease'
+          ? -amount
+          : amount - currentBalance;
       await adjustInternalUserPoints(adminToken.value, userId, {
-        delta: Number(userEditValue.value || 0),
-        reason: userEditReason.value || null,
-        operator_note: userEditNote.value || null,
-      });
-    } else if (userEditMode.value === 'rebate') {
-      await adjustInternalUserRebatePoints(adminToken.value, userId, {
-        delta: Number(userEditValue.value || 0),
+        delta,
         reason: userEditReason.value || null,
         operator_note: userEditNote.value || null,
       });
@@ -1013,7 +1402,7 @@ async function submitUserEdit() {
         operator_note: userEditNote.value || null,
       });
     }
-    await openUserSummary(userId);
+    await openUserSummary(userId, {syncHistory: false});
     userEditOpen.value = false;
     userEditMode.value = null;
     await loadUsers();
@@ -1032,12 +1421,103 @@ function findMetric(sectionTitle: string, labels: string[]): DashboardMetric | n
   return section.metrics.find((metric) => labels.includes(metric.label)) || null;
 }
 
+function getSectionMetrics(sectionTitle: string) {
+  return dashboard.value?.sections.find((item) => item.title === sectionTitle)?.metrics || [];
+}
+
 function metricText(sectionTitle: string, labels: string[], fallback: string) {
   return findMetric(sectionTitle, labels)?.display_value || fallback;
 }
 
+function metricNumber(sectionTitle: string, labels: string[], fallback = 0) {
+  const value = findMetric(sectionTitle, labels)?.value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function metricCurrency(sectionTitle: string, labels: string[], fallback: string) {
   return metricText(sectionTitle, labels, fallback).replace(/^¥|^￥/, '');
+}
+
+function featureUsageDisplayName(scene: string, featureName: string | null | undefined) {
+  return featureUsageSceneLabels[scene] || featureName || scene || '未知功能';
+}
+
+function parseUtc8DateKey(value: string | null | undefined) {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const shifted = new Date(parsed.getTime() + 8 * 60 * 60 * 1000);
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`;
+}
+
+function currentUtc8DateKey() {
+  const shifted = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`;
+}
+
+function currentUtc8MonthKey() {
+  const shifted = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function currentUtc8WeekStartKey() {
+  const shifted = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  const day = shifted.getUTCDay();
+  const diffToMonday = (day + 6) % 7;
+  const monday = new Date(Date.UTC(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate() - diffToMonday,
+  ));
+  return `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, '0')}-${String(monday.getUTCDate()).padStart(2, '0')}`;
+}
+
+function isUsageRecordInWindow(record: UsageRecordResponse, windowKey: FeatureUsageWindowKey) {
+  const dateKey = parseUtc8DateKey(record.created_at);
+  if (!dateKey) return false;
+  const todayKey = currentUtc8DateKey();
+  if (windowKey === 'today') {
+    return dateKey === todayKey;
+  }
+  if (windowKey === 'yesterday') {
+    const today = new Date(Date.UTC(
+      Number(todayKey.slice(0, 4)),
+      Number(todayKey.slice(5, 7)) - 1,
+      Number(todayKey.slice(8, 10)),
+    ));
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayKey = `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth() + 1).padStart(2, '0')}-${String(yesterday.getUTCDate()).padStart(2, '0')}`;
+    return dateKey === yesterdayKey;
+  }
+  if (windowKey === 'week') {
+    return dateKey >= currentUtc8WeekStartKey();
+  }
+  if (windowKey === 'month') {
+    return dateKey.slice(0, 7) === currentUtc8MonthKey();
+  }
+  return false;
+}
+
+function buildFeatureUsageFallbackItems(windowKey: FeatureUsageWindowKey, total: number): FeatureUsageRankItem[] {
+  const counts = new Map<string, number>();
+  usageRecords.value
+    .filter((record) => isUsageRecordInWindow(record, windowKey))
+    .forEach((record) => {
+      const name = featureUsageDisplayName(record.scene, record.feature_name);
+      counts.set(name, (counts.get(name) || 0) + 1);
+    });
+  return [...counts.entries()]
+    .map(([name, count]) => ({
+      name,
+      count,
+      percentage: total > 0 ? Math.round((count / total) * 100) : 0,
+    }))
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 5);
 }
 
 function isPaidOrder(order: RechargeOrderResponse) {
@@ -1111,6 +1591,49 @@ function identityLabel(identity: string | null | undefined) {
   return map[identity || ''] || identity || '--';
 }
 
+function identitySourceLabel(identityType: string | null | undefined) {
+  const map: Record<string, string> = {
+    phone: '手机号',
+    wechat_unionid: '微信 UnionID',
+    wechat_pending_unionid: '微信待补 UnionID',
+    session: 'Session 临时态',
+  };
+  return map[identityType || 'session'] || identityType || 'Session 临时态';
+}
+
+function userPrimaryIdentityLine(user: InternalUserResponse) {
+  return user.primary_phone || user.primary_unionid || user.guest_key || user.user_id;
+}
+
+function selectedUserIdentityValue() {
+  const user = selectedUser.value?.user;
+  if (!user) return '--';
+  return user.primary_unionid || user.guest_key || user.guest_unionid || user.guest_openid || '--';
+}
+
+function toggleUserInfoCard(key: string) {
+  expandedUserInfoKey.value = expandedUserInfoKey.value === key ? '' : key;
+}
+
+function compactUserInfoValue(item: SelectedUserInfoCard) {
+  if (!item.value || item.value === '--') return '--';
+  if (item.key === 'registered_at') return item.value.slice(0, 16);
+  if (item.key === 'unionid') return shortText(item.value, 8, 4);
+  return shortText(item.value, 10, 6);
+}
+
+function compactUserInfoSub(item: SelectedUserInfoCard) {
+  if (!item.sub || item.sub === '--') return '--';
+  if (item.key === 'registered_at') return item.sub.slice(0, 19);
+  return shortText(item.sub, 9, 4);
+}
+
+function shortText(value: string | null | undefined, head = 8, tail = 4) {
+  if (!value) return '--';
+  if (value.length <= head + tail + 3) return value;
+  return `${value.slice(0, head)}...${value.slice(-tail)}`;
+}
+
 function promotionStatusLabel(status: string) {
   const map: Record<string, string> = {
     pending: '待审核',
@@ -1157,9 +1680,24 @@ function resolveError(error: unknown) {
   return '请求失败，请稍后重试';
 }
 
-onMounted(() => {
+function handleAdminPopState() {
   if (isLoggedIn.value) {
-    void loadActivePage();
+    void restoreAdminStateFromLocation();
+  }
+}
+
+onMounted(() => {
+  if (typeof window !== 'undefined') {
+    window.addEventListener('popstate', handleAdminPopState);
+  }
+  if (isLoggedIn.value) {
+    void restoreAdminStateFromLocation();
+  }
+});
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('popstate', handleAdminPopState);
   }
 });
 </script>
@@ -1233,7 +1771,7 @@ onMounted(() => {
 
             <div class="block">
               <button
-                @click="isFeaturesMenuOpen = !isFeaturesMenuOpen; activePrimary = 'features'"
+                @click="toggleFeaturesPrimary"
                 class="w-full flex items-center justify-between p-3 rounded-lg text-xs font-bold transition-all outline-none cursor-pointer"
                 :class="activePrimary === 'features' ? 'bg-brand-paper border-l-4 border-brand-primary text-brand-primary' : 'text-brand-ink/70 hover:bg-brand-paper hover:text-brand-ink-strong'"
               >
@@ -1262,7 +1800,7 @@ onMounted(() => {
 
             <div class="block">
               <button
-                @click="isPromoMenuOpen = !isPromoMenuOpen; activePrimary = 'promotion'"
+                @click="togglePromotionPrimary"
                 class="w-full flex items-center justify-between p-3 rounded-lg text-xs font-bold transition-all outline-none cursor-pointer"
                 :class="activePrimary === 'promotion' ? 'bg-brand-paper border-l-4 border-brand-primary text-brand-primary' : 'text-brand-ink/70 hover:bg-brand-paper hover:text-brand-ink-strong'"
               >
@@ -1351,7 +1889,7 @@ onMounted(() => {
           </div>
         </header>
 
-        <div class="p-6 max-w-7xl w-full mx-auto space-y-6">
+        <div class="p-6 w-full max-w-none space-y-6">
           <div v-if="activePrimary === 'dashboard'" class="space-y-6">
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 xl:gap-5 2xl:gap-6 items-stretch auto-rows-fr">
               <div class="bg-white/95 border border-[#E2E8F0]/80 rounded-2xl p-5 2xl:p-6 shadow-[0_12px_36px_rgba(15,23,42,0.045)] flex flex-col justify-between hover:shadow-[0_16px_44px_rgba(15,23,42,0.065)] transition-all text-left min-h-[330px]">
@@ -1409,8 +1947,12 @@ onMounted(() => {
                     </div>
                   </div>
 
-                  <div class="grid grid-cols-2 gap-2.5 xl:gap-3 mb-4">
-                    <div v-for="item in userOverviewCards" :key="item.label" class="bg-blue-50/30 p-3 rounded-xl border border-blue-100 min-h-[80px]">
+                  <div class="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-7 gap-2.5 xl:gap-3 mb-4">
+                    <div
+                      v-for="item in userOverviewCards"
+                      :key="item.label"
+                      class="bg-blue-50/30 p-3 rounded-xl border border-blue-100 min-h-[78px]"
+                    >
                       <span class="text-[10px] text-brand-secondary block font-medium">{{ item.label }}</span>
                       <div class="text-xl font-bold text-brand-ink-strong font-mono mt-0.5">{{ item.value }} 人</div>
                       <span class="text-[9.5px] text-brand-secondary font-mono">{{ item.sub }}</span>
@@ -1418,19 +1960,44 @@ onMounted(() => {
                   </div>
 
                   <div class="space-y-2.5">
-                    <span class="text-[11px] text-brand-secondary font-bold block">功能使用情况 (核心列表及走势占比)</span>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] font-mono">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <span class="text-[11px] text-brand-secondary font-bold block">功能使用情况 (按周期 Top 5)</span>
+                      <span class="text-[10px] text-brand-secondary font-mono">频次 / 周期内占比</span>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-4 gap-2 text-[11px] font-mono">
                       <div
-                        v-for="feat in featureUsageStats"
-                        :key="feat.name"
-                        class="bg-gray-50/80 border border-gray-100 p-2 rounded-xl block space-y-1 min-h-[50px]"
+                        v-for="item in featureUsageWindowCards"
+                        :key="item.key"
+                        class="bg-white border border-gray-100 rounded-xl p-2.5 min-h-[168px]"
                       >
-                        <div class="flex justify-between items-center font-bold">
-                          <span class="text-brand-ink-strong truncate">{{ feat.name }}</span>
-                          <span class="text-brand-primary text-xs">{{ feat.count }}次 ({{ feat.percentage }}%)</span>
+                        <div class="flex items-start justify-between gap-2 border-b border-gray-100 pb-2 mb-2">
+                          <div>
+                            <span class="text-[10px] text-brand-secondary block">{{ item.label }}</span>
+                            <span class="block text-[9px] text-brand-secondary">{{ item.sub }}</span>
+                          </div>
+                          <b class="text-base text-brand-ink-strong whitespace-nowrap">{{ item.total }} 次</b>
                         </div>
-                        <div class="w-full bg-gray-200/50 h-1.5 rounded-full overflow-hidden">
-                          <div class="bg-brand-primary h-full rounded-full" :style="{width: `${feat.percentage}%`}"></div>
+                        <div v-if="item.items.length" class="space-y-1.5">
+                          <div
+                            v-for="(feat, index) in item.items"
+                            :key="`${item.key}-${feat.name}`"
+                            class="space-y-1"
+                          >
+                            <div class="grid grid-cols-[minmax(0,1fr)_34px_40px] items-center gap-1.5">
+                              <span class="text-brand-ink-strong truncate">#{{ index + 1 }} {{ feat.name }}</span>
+                              <span class="text-right text-brand-primary font-bold">{{ feat.count }}次</span>
+                              <span class="text-right text-blue-700 font-bold">{{ feat.percentage }}%</span>
+                            </div>
+                            <div class="w-full bg-blue-50 h-1.5 rounded-full overflow-hidden">
+                              <div
+                                class="bg-gradient-to-r from-blue-500 to-brand-primary h-full rounded-full transition-all"
+                                :style="{width: `${Math.max(feat.percentage, feat.count > 0 ? 4 : 0)}%`}"
+                              ></div>
+                            </div>
+                          </div>
+                        </div>
+                        <div v-else class="h-[96px] flex items-center justify-center text-[10px] text-brand-secondary">
+                          暂无功能使用记录
                         </div>
                       </div>
                     </div>
@@ -1547,6 +2114,24 @@ onMounted(() => {
 
           <div v-else-if="activePrimary === 'orders'" class="space-y-4 text-left">
             <div class="bg-white border border-gray-100 rounded-2xl p-5 space-y-4 shadow-sm">
+              <div
+                v-if="activeOrderReturnContext"
+                class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-primary/10 bg-brand-primary/5 px-4 py-3 text-xs"
+              >
+                <div class="min-w-0">
+                  <p class="font-bold text-brand-ink-strong">正在查看用户「{{ activeOrderReturnContext.userLabel }}」的订单</p>
+                  <p class="font-mono text-[10px] text-brand-secondary truncate">{{ activeOrderReturnContext.userId }}</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button @click="returnToUserFile" class="bg-brand-primary text-white px-3 py-1.5 rounded-lg text-[10.5px] font-bold shadow-sm shadow-brand-primary/10">
+                    返回用户档案
+                  </button>
+                  <button @click="clearOrderUserScope" class="bg-white border border-gray-100 text-brand-secondary px-3 py-1.5 rounded-lg text-[10.5px] font-bold">
+                    清除筛选
+                  </button>
+                </div>
+              </div>
+
               <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-gray-100">
                 <div class="flex flex-wrap items-center gap-3">
                   <div class="relative w-72">
@@ -1558,18 +2143,11 @@ onMounted(() => {
                     />
                   </div>
 
-                  <select
+                  <AdminSelect
                     v-model="orderFilters.status"
-                    class="bg-gray-50 border border-gray-100 text-brand-ink p-2.5 rounded-xl text-xs focus:border-brand-primary outline-none"
-                  >
-                    <option value="">全状态流转</option>
-                    <option value="unpaid">未支付</option>
-                    <option value="paid">已支付</option>
-                    <option value="completed">已完成</option>
-                    <option value="refund_pending">退款中</option>
-                    <option value="refunded">已退款</option>
-                    <option value="closed">已关闭</option>
-                  </select>
+                    :options="orderStatusSelectOptions"
+                    panel-width-class="w-56"
+                  />
 
                   <input
                     v-model="orderFilters.channel"
@@ -1649,23 +2227,22 @@ onMounted(() => {
                     <Search class="absolute left-3 top-2.5 text-brand-secondary" :size="14" />
                     <input
                       v-model="userQuery"
-                      placeholder="按用户ID、昵称、openid 或 guest key 检索..."
+                      placeholder="按用户ID、昵称、手机号、UnionID 或 guest key 检索..."
                       @keyup.enter="loadUsers"
                       class="w-full bg-gray-50 border border-gray-100 p-2.5 pl-9 rounded-xl text-xs text-brand-ink-strong placeholder-brand-secondary focus:border-brand-primary focus:bg-white outline-none"
                     />
                   </div>
-                  <select v-model="userFilters.status" class="bg-gray-50 border border-gray-100 text-brand-ink p-2.5 rounded-xl text-xs focus:border-brand-primary outline-none">
-                    <option value="">全状态</option>
-                    <option value="active">正常</option>
-                    <option value="guest">游客</option>
-                    <option value="disabled">禁用</option>
-                  </select>
-                  <select v-model="userFilters.identity_level" class="bg-gray-50 border border-gray-100 text-brand-ink p-2.5 rounded-xl text-xs focus:border-brand-primary outline-none">
-                    <option value="">全身份</option>
-                    <option value="normal_user">普通会员</option>
-                    <option value="promoter">推广大使</option>
-                    <option value="senior_promoter">高级推广大使</option>
-                  </select>
+                  <AdminSelect
+                    v-model="userFilters.status"
+                    :options="userStatusSelectOptions"
+                    panel-width-class="w-44"
+                  />
+                  <AdminSelect
+                    v-model="userFilters.identity_level"
+                    :options="userIdentitySelectOptions"
+                    min-width-class="min-w-[150px]"
+                    panel-width-class="w-52"
+                  />
                   <input v-model="userFilters.channel" placeholder="渠道" class="bg-gray-50 border border-gray-100 text-brand-ink p-2.5 rounded-xl text-xs focus:border-brand-primary outline-none w-28" />
                 </div>
                 <div class="flex gap-2">
@@ -1682,124 +2259,65 @@ onMounted(() => {
                 {{ userError }}
               </div>
 
-              <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-4">
-                <div class="overflow-x-auto">
-                  <table class="w-full text-xs font-sans text-left">
-                    <thead>
-                      <tr class="text-brand-secondary border-b border-gray-100 uppercase font-mono text-[10.5px]">
-                        <th class="p-3">用户昵称</th>
-                        <th class="p-3 font-mono">用户ID / 状态</th>
-                        <th class="p-3">普通积分</th>
-                        <th class="p-3">返佣积分</th>
-                        <th class="p-3">身份</th>
-                        <th class="p-3">注册渠道</th>
-                        <th class="p-3">最近活跃</th>
-                        <th class="p-3 text-right">后台档案</th>
-                      </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                      <tr v-for="user in visibleUsers" :key="user.user_id" class="hover:bg-brand-paper/50 transition-colors">
-                        <td class="p-3 font-bold text-brand-ink-strong flex items-center gap-2">
-                          <span class="w-7 h-7 bg-brand-primary/10 text-brand-primary font-serif font-bold flex items-center justify-center rounded-lg text-xs">
+              <div class="overflow-x-auto">
+                <table class="w-full table-fixed text-xs font-sans text-left">
+                  <thead>
+                    <tr class="text-brand-secondary border-b border-gray-100 uppercase font-mono text-[10.5px]">
+                      <th class="p-3 w-[14%]">用户昵称</th>
+                      <th class="p-3 w-[15%] font-mono">用户ID / 状态</th>
+                      <th class="p-3 w-[7%]">积分</th>
+                      <th class="p-3 w-[10%]">可提现余额</th>
+                      <th class="p-3 w-[10%]">冻结返佣</th>
+                      <th class="p-3 w-[9%]">身份</th>
+                      <th class="p-3 w-[12%]">主身份</th>
+                      <th class="p-3 w-[9%]">注册时间</th>
+                      <th class="p-3 w-[9%]">最近活跃</th>
+                      <th class="p-3 w-[9%] text-right">后台档案</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100">
+                    <tr v-for="user in visibleUsers" :key="user.user_id" class="hover:bg-brand-paper/50 transition-colors">
+                      <td class="p-3">
+                        <div class="flex items-center gap-2 min-w-0">
+                          <span class="w-7 h-7 shrink-0 bg-brand-primary/10 text-brand-primary font-serif font-bold flex items-center justify-center rounded-lg text-xs">
                             {{ (user.nickname || user.user_id).substring(0, 1) }}
                           </span>
-                          <span>{{ user.nickname || '未命名用户' }}</span>
-                        </td>
-                        <td class="p-3 font-mono">
-                          <span class="text-brand-secondary block">{{ user.user_id }}</span>
-                          <span :class="user.status === 'active' ? 'text-emerald-600' : 'text-red-600'" class="text-[9.5px]/none font-bold block mt-1">
-                            ● {{ userStatusLabel(user.status) }}
-                          </span>
-                        </td>
-                        <td class="p-3 font-mono text-brand-primary font-bold text-sm">{{ user.points_balance }} pt</td>
-                        <td class="p-3 font-mono text-emerald-600 font-bold text-sm">{{ user.rebate_points_balance }} pt</td>
-                        <td class="p-3 text-brand-secondary">{{ identityLabel(user.identity_level) }}</td>
-                        <td class="p-3 text-brand-secondary font-mono">{{ user.guest_channel || '--' }}</td>
-                        <td class="p-3 text-brand-secondary font-mono">{{ formatTime(user.last_active_at) }}</td>
-                        <td class="p-3 text-right">
-                          <button
-                            @click="openUserSummary(user.user_id)"
-                            class="px-2.5 py-1.5 bg-brand-paper hover:bg-gray-100 text-brand-ink-strong text-xs font-bold rounded-lg cursor-pointer outline-none transition-colors border border-gray-100 shadow-xs"
-                          >
-                            调整及追踪档案
-                          </button>
-                        </td>
-                      </tr>
-                      <tr v-if="visibleUsers.length === 0">
-                        <td colspan="8" class="p-8 text-center text-brand-secondary font-mono">暂无用户数据</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <aside class="bg-gray-50/50 border border-gray-100 p-5 rounded-xl space-y-3 shadow-xs text-left">
-                  <template v-if="selectedUser">
-                    <h3 class="font-serif text-base font-bold text-brand-primary">用户摘要</h3>
-                    <p class="text-[11px] font-mono text-brand-secondary select-all">{{ selectedUser.user.user_id }}</p>
-                    <div class="grid grid-cols-2 gap-2 text-[11px]">
-                      <div class="bg-white rounded-lg border border-gray-100 p-2">
-                        <span class="text-brand-secondary block">普通积分</span>
-                        <b class="font-mono text-brand-primary">{{ selectedUser.user.points_balance }}</b>
-                      </div>
-                      <div class="bg-white rounded-lg border border-gray-100 p-2">
-                        <span class="text-brand-secondary block">返佣积分</span>
-                        <b class="font-mono text-emerald-600">{{ selectedUser.user.rebate_points_balance }}</b>
-                      </div>
-                      <div class="bg-white rounded-lg border border-gray-100 p-2">
-                        <span class="text-brand-secondary block">身份等级</span>
-                        <b class="font-mono text-brand-ink-strong">{{ identityLabel(selectedUser.identity_level) }}</b>
-                      </div>
-                      <div class="bg-white rounded-lg border border-gray-100 p-2">
-                        <span class="text-brand-secondary block">近期订单</span>
-                        <b class="font-mono text-brand-ink-strong">{{ selectedUser.recent_order_count }}</b>
-                      </div>
-                    </div>
-                    <p class="text-[11px] text-brand-secondary">近期充值额：{{ formatAmount(selectedUser.recent_recharge_amount_cents) }}</p>
-                    <p class="text-[11px] text-brand-secondary">累计充值额：{{ formatAmount(selectedUser.total_recharge_amount_cents) }}</p>
-                    <p class="text-[11px] text-brand-secondary">累计提现额：{{ formatAmount(selectedUser.total_withdraw_amount_cents) }}</p>
-                    <p class="text-[11px] text-brand-secondary">上级归属：{{ selectedUser.promoter_parent_user_id || '--' }}</p>
-                    <p class="text-[11px] text-brand-secondary">最近订单状态：{{ selectedUser.latest_order_status || '--' }}</p>
-                    <div class="flex flex-wrap gap-2 pt-1">
-                      <button @click="jumpToUsageForUser(selectedUser.user.user_id)" class="bg-brand-primary text-white px-3 py-1.5 rounded-lg text-[10.5px] font-bold">查看功能使用记录</button>
-                      <button @click="jumpToOrders(selectedUser.user.user_id)" class="bg-white border border-gray-100 text-brand-primary px-3 py-1.5 rounded-lg text-[10.5px] font-bold">查看订单</button>
-                      <button @click="openUserEditor('points')" class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[10.5px] font-bold">普通积分</button>
-                      <button @click="openUserEditor('rebate')" class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[10.5px] font-bold">返佣积分</button>
-                      <button @click="openUserEditor('status')" class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[10.5px] font-bold">状态管理</button>
-                      <button @click="openUserEditor('identity')" class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[10.5px] font-bold">身份设置</button>
-                      <button @click="openUserEditor('parent')" class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[10.5px] font-bold">上级归属</button>
-                    </div>
-                    <div v-if="userEditOpen" class="mt-3 border border-gray-100 rounded-xl bg-white p-3 space-y-2">
-                      <div class="text-[11px] font-bold text-brand-ink-strong">执行管理操作</div>
-                      <template v-if="userEditMode === 'status'">
-                        <select v-model="userEditValue" class="w-full bg-gray-50 border border-gray-100 p-2 rounded-lg text-xs outline-none">
-                          <option value="active">正常</option>
-                          <option value="disabled">禁用</option>
-                          <option value="blocked">封禁</option>
-                        </select>
-                      </template>
-                      <template v-else-if="userEditMode === 'identity'">
-                        <select v-model="userEditValue" class="w-full bg-gray-50 border border-gray-100 p-2 rounded-lg text-xs outline-none">
-                          <option value="normal_user">普通会员</option>
-                          <option value="promoter">推广大使</option>
-                          <option value="senior_promoter">高级推广大使</option>
-                        </select>
-                      </template>
-                      <template v-else>
-                        <input v-model="userEditValue" :type="userEditMode === 'points' || userEditMode === 'rebate' ? 'number' : 'text'" class="w-full bg-gray-50 border border-gray-100 p-2 rounded-lg text-xs outline-none" :placeholder="userEditMode === 'parent' ? '上级推广大使用户ID，留空为解绑' : '积分变化值，可为负数'" />
-                      </template>
-                      <input v-model="userEditReason" class="w-full bg-gray-50 border border-gray-100 p-2 rounded-lg text-xs outline-none" placeholder="操作原因" />
-                      <input v-model="userEditNote" class="w-full bg-gray-50 border border-gray-100 p-2 rounded-lg text-xs outline-none" placeholder="内部备注" />
-                      <div class="flex gap-2">
-                        <button @click="submitUserEdit" class="flex-1 bg-brand-primary text-white px-3 py-1.5 rounded-lg text-[10.5px] font-bold">确认提交</button>
-                        <button @click="userEditOpen = false" class="bg-brand-paper text-brand-secondary px-3 py-1.5 rounded-lg text-[10.5px] font-bold">取消</button>
-                      </div>
-                    </div>
-                  </template>
-                  <template v-else>
-                    <h3 class="font-serif text-base font-bold text-brand-primary">轻量用户查看</h3>
-                    <p class="text-xs text-brand-secondary leading-relaxed">从左侧用户列表选择用户，或从功能使用记录详情跳转过来。功能端不提供高风险操作。</p>
-                  </template>
-                </aside>
+                          <div class="min-w-0">
+                            <div class="font-bold text-brand-ink-strong truncate">{{ user.nickname || '未命名用户' }}</div>
+                            <div class="text-[10px] text-brand-secondary font-mono truncate">{{ user.registered_channel || '--' }}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td class="p-3 font-mono min-w-0">
+                        <span class="text-brand-secondary block truncate" :title="user.user_id">{{ shortText(user.user_id, 10, 6) }}</span>
+                        <span :class="user.status === 'active' ? 'text-emerald-600' : 'text-red-600'" class="text-[9.5px]/none font-bold block mt-1">
+                          ● {{ userStatusLabel(user.status) }}
+                        </span>
+                      </td>
+                      <td class="p-3 font-mono text-brand-primary font-bold text-sm">{{ user.points_balance }} pt</td>
+                      <td class="p-3 font-mono text-emerald-600 font-bold text-sm">{{ formatAmount(user.withdrawable_balance_cents) }}</td>
+                      <td class="p-3 font-mono text-amber-600 font-bold text-sm">{{ formatAmount(user.frozen_commission_cents) }}</td>
+                      <td class="p-3 text-brand-secondary">{{ identityLabel(user.identity_level) }}</td>
+                      <td class="p-3 text-brand-secondary min-w-0">
+                        <div class="font-semibold text-brand-ink-strong">{{ identitySourceLabel(user.primary_identity_type) }}</div>
+                        <div class="font-mono text-[10px] truncate" :title="userPrimaryIdentityLine(user)">{{ shortText(userPrimaryIdentityLine(user), 8, 4) }}</div>
+                      </td>
+                      <td class="p-3 text-brand-secondary font-mono">{{ formatTime(user.registered_at || user.created_at) }}</td>
+                      <td class="p-3 text-brand-secondary font-mono">{{ formatTime(user.last_active_at) }}</td>
+                      <td class="p-3 text-right">
+                        <button
+                          @click="openUserSummary(user.user_id)"
+                          class="px-2.5 py-1.5 bg-brand-paper hover:bg-gray-100 text-brand-ink-strong text-xs font-bold rounded-lg cursor-pointer outline-none transition-colors border border-gray-100 shadow-xs"
+                        >
+                          调整及追踪档案
+                        </button>
+                      </td>
+                    </tr>
+                    <tr v-if="visibleUsers.length === 0">
+                      <td colspan="10" class="p-8 text-center text-brand-secondary font-mono">暂无用户数据</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -1880,14 +2398,13 @@ onMounted(() => {
                       </span>
                     </div>
                     <template v-if="item.value_type === 'bool'">
-                      <select
+                      <AdminSelect
                         v-model="runtimeConfigDrafts[item.config_key]"
                         @change="runtimeConfigDirty = true"
-                        class="w-full bg-gray-50 border border-gray-100 rounded-lg p-2 text-xs outline-none"
-                      >
-                        <option :value="true">开启</option>
-                        <option :value="false">关闭</option>
-                      </select>
+                        :options="booleanToggleSelectOptions"
+                        min-width-class="w-full"
+                        panel-width-class="w-full"
+                      />
                     </template>
                     <template v-else-if="item.value_type === 'json'">
                       <textarea
@@ -1914,16 +2431,32 @@ onMounted(() => {
               </div>
 
               <div class="bg-gray-50/50 border border-gray-100 p-5 rounded-xl space-y-4 shadow-xs text-left">
+                <div
+                  v-if="activeUsageReturnContext"
+                  class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-primary/10 bg-brand-primary/5 px-4 py-3 text-xs"
+                >
+                  <div class="min-w-0">
+                    <p class="font-bold text-brand-ink-strong">正在查看用户「{{ activeUsageReturnContext.userLabel }}」的功能使用记录</p>
+                    <p class="font-mono text-[10px] text-brand-secondary truncate">{{ activeUsageReturnContext.userId }}</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button @click="returnToUserFile" class="bg-brand-primary text-white px-3 py-1.5 rounded-lg text-[10.5px] font-bold shadow-sm shadow-brand-primary/10">
+                      返回用户档案
+                    </button>
+                    <button @click="clearUsageUserScope" class="bg-white border border-gray-100 text-brand-secondary px-3 py-1.5 rounded-lg text-[10.5px] font-bold">
+                      清除筛选
+                    </button>
+                  </div>
+                </div>
+
                 <div class="flex flex-wrap gap-3">
                   <input v-model="usageFilters.keyword" class="bg-white border border-gray-200 p-2.5 rounded-lg text-xs text-brand-ink-strong outline-none focus:border-brand-primary w-64" placeholder="用户 / 昵称 / 手机号 / 业务 ID" />
-                  <select v-model="usageFilters.scene" class="bg-white border border-gray-200 p-2.5 rounded-lg text-xs text-brand-ink-strong outline-none focus:border-brand-primary">
-                    <option value="">全部功能</option>
-                    <option value="phone_review_base">手机号评测</option>
-                    <option value="phone_review_aspect_unlock">维度解锁</option>
-                    <option value="agent_reply">智能体对话</option>
-                    <option value="almanac_query">黄历查询</option>
-                    <option value="five_elements_query">五行属性查询</option>
-                  </select>
+                  <AdminSelect
+                    v-model="usageFilters.scene"
+                    :options="usageSceneSelectOptions"
+                    min-width-class="min-w-[160px]"
+                    panel-width-class="w-56"
+                  />
                   <input v-model="usageFilters.channel" class="bg-white border border-gray-200 p-2.5 rounded-lg text-xs text-brand-ink-strong outline-none focus:border-brand-primary" placeholder="渠道" />
                   <input v-model="usageFilters.status" class="bg-white border border-gray-200 p-2.5 rounded-lg text-xs text-brand-ink-strong outline-none focus:border-brand-primary" placeholder="状态" />
                 </div>
@@ -1941,8 +2474,7 @@ onMounted(() => {
                         <th class="p-3">用户标识</th>
                         <th class="p-3">渠道</th>
                         <th class="p-3">状态</th>
-                        <th class="p-3 text-right">普通积分</th>
-                        <th class="p-3 text-right">返佣积分</th>
+                        <th class="p-3 text-right">消耗积分</th>
                         <th class="p-3">业务ID</th>
                         <th class="p-3 text-right">操作</th>
                       </tr>
@@ -1955,14 +2487,13 @@ onMounted(() => {
                         <td class="p-3 font-mono text-brand-secondary">{{ record.channel || '--' }}</td>
                         <td class="p-3"><span class="px-2 py-0.5 rounded text-[9px] font-bold inline-block border" :class="usageStatusClass(record.status)">{{ record.status }}</span></td>
                         <td class="p-3 text-right font-mono text-brand-primary font-bold">{{ record.normal_points_cost }}</td>
-                        <td class="p-3 text-right font-mono text-emerald-600 font-bold">{{ record.rebate_points_cost }}</td>
                         <td class="p-3 font-mono text-brand-secondary">{{ record.target_id || '--' }}</td>
                         <td class="p-3 text-right">
                           <button @click="openUsageDetail(record)" class="text-brand-primary font-bold hover:underline outline-none cursor-pointer">详情</button>
                         </td>
                       </tr>
                       <tr v-if="!usageLoading && usageRecords.length === 0">
-                        <td colspan="9" class="p-8 text-center text-brand-secondary font-mono">暂无使用记录</td>
+                        <td colspan="8" class="p-8 text-center text-brand-secondary font-mono">暂无使用记录</td>
                       </tr>
                     </tbody>
                   </table>
@@ -2151,14 +2682,6 @@ onMounted(() => {
                   <span class="text-brand-secondary">订单完成判定天数</span>
                   <input v-model.number="promotionRulesDraft.order_completion_days" type="number" class="w-full bg-gray-50 border border-gray-100 rounded-xl p-2.5 outline-none" />
                 </label>
-                <label class="space-y-1 block">
-                  <span class="text-brand-secondary">返佣提现比例</span>
-                  <input v-model.number="promotionRulesDraft.rebate_to_cash_rate" type="number" step="0.01" class="w-full bg-gray-50 border border-gray-100 rounded-xl p-2.5 outline-none" />
-                </label>
-                <label class="space-y-1 block">
-                  <span class="text-brand-secondary">返佣转积分比例</span>
-                  <input v-model.number="promotionRulesDraft.rebate_to_points_rate" type="number" step="0.01" class="w-full bg-gray-50 border border-gray-100 rounded-xl p-2.5 outline-none" />
-                </label>
               </div>
             </div>
           </div>
@@ -2198,10 +2721,13 @@ onMounted(() => {
                       </span>
                     </div>
                     <template v-if="item.value_type === 'bool'">
-                      <select v-model="runtimeConfigDrafts[item.config_key]" class="w-full bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none">
-                        <option :value="true">开启</option>
-                        <option :value="false">关闭</option>
-                      </select>
+                      <AdminSelect
+                        v-model="runtimeConfigDrafts[item.config_key]"
+                        @change="runtimeConfigDirty = true"
+                        :options="booleanToggleSelectOptions"
+                        min-width-class="w-full"
+                        panel-width-class="w-full"
+                      />
                     </template>
                     <template v-else-if="item.value_type === 'json'">
                       <textarea v-model="runtimeConfigDrafts[item.config_key]" class="w-full bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none min-h-24 font-mono"></textarea>
@@ -2290,6 +2816,201 @@ onMounted(() => {
         </div>
       </main>
 
+      <div v-if="selectedUser" class="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-sm px-4 py-6 flex items-center justify-center">
+        <div class="w-full max-w-6xl max-h-[92vh] bg-white border border-gray-100 rounded-3xl shadow-2xl overflow-hidden flex flex-col text-left">
+          <div class="px-6 py-5 border-b border-gray-100 flex flex-wrap items-start justify-between gap-5 bg-white">
+            <div class="min-w-0 shrink-0 lg:w-[34%]">
+              <p class="text-[10px] font-mono text-brand-secondary uppercase font-bold">User Operation File</p>
+              <h2 class="font-serif text-xl font-bold text-brand-ink-strong truncate">{{ selectedUser.user.nickname || '未命名用户' }}</h2>
+              <p class="font-mono text-[11px] text-brand-secondary select-all break-all">{{ selectedUser.user.user_id }}</p>
+            </div>
+            <div class="hidden lg:grid flex-1 grid-cols-5 gap-2 text-[10.5px]">
+              <button
+                v-for="item in selectedUserInfoCards"
+                :key="item.key"
+                type="button"
+                @click="toggleUserInfoCard(item.key)"
+                class="bg-brand-paper/60 border rounded-xl px-3 py-2 h-[62px] min-w-0 overflow-hidden text-left transition-colors"
+                :title="`${item.label}: ${item.value}`"
+                :class="expandedUserInfoKey === item.key ? 'border-brand-primary/30 bg-brand-primary/5' : 'border-gray-100 hover:bg-brand-paper'"
+              >
+                <span class="block text-brand-secondary">{{ item.label }}</span>
+                <b class="block font-mono text-brand-ink-strong truncate leading-snug">{{ compactUserInfoValue(item) }}</b>
+                <span class="block font-mono text-[9px] text-brand-secondary truncate">{{ compactUserInfoSub(item) }}</span>
+              </button>
+            </div>
+            <button @click="closeUserSummary" class="bg-brand-paper hover:bg-gray-100 text-brand-ink-strong text-xs px-3 py-1.5 rounded-lg border border-gray-100 shrink-0">
+              关闭
+            </button>
+            <div v-if="expandedUserInfoCard" class="basis-full bg-brand-primary/5 border border-brand-primary/10 rounded-2xl p-3 text-xs">
+              <div class="flex items-center justify-between gap-3 mb-1">
+                <span class="font-bold text-brand-ink-strong">{{ expandedUserInfoCard.label }}完整信息</span>
+                <span class="text-[10px] text-brand-secondary font-mono">点击卡片可收起</span>
+              </div>
+              <p class="font-mono text-brand-ink-strong break-all select-all leading-relaxed">{{ expandedUserInfoCard.value }}</p>
+              <p class="font-mono text-[10px] text-brand-secondary break-all mt-1">{{ expandedUserInfoCard.sub }}</p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] flex-1 overflow-hidden">
+            <section class="p-6 overflow-y-auto space-y-5">
+              <div class="grid grid-cols-2 gap-2 text-[10.5px] lg:hidden">
+                <button
+                  v-for="item in selectedUserInfoCards"
+                  :key="item.key"
+                  type="button"
+                  @click="toggleUserInfoCard(item.key)"
+                  class="bg-brand-paper/60 border rounded-xl px-3 py-2 h-[62px] text-left min-w-0 overflow-hidden transition-colors"
+                  :title="`${item.label}: ${item.value}`"
+                  :class="expandedUserInfoKey === item.key ? 'border-brand-primary/30 bg-brand-primary/5' : 'border-gray-100'"
+                >
+                  <span class="block text-brand-secondary">{{ item.label }}</span>
+                  <b class="block font-mono text-brand-ink-strong truncate leading-snug">{{ compactUserInfoValue(item) }}</b>
+                  <span class="block font-mono text-[9px] text-brand-secondary truncate">{{ compactUserInfoSub(item) }}</span>
+                </button>
+              </div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
+                <div class="bg-brand-paper/50 rounded-xl border border-gray-100 p-3">
+                  <span class="text-brand-secondary block">积分</span>
+                  <b class="font-mono text-brand-primary text-base">{{ selectedUser.user.points_balance }}</b>
+                </div>
+                <div class="bg-emerald-50/40 rounded-xl border border-emerald-100 p-3">
+                  <span class="text-brand-secondary block">可提现余额</span>
+                  <b class="font-mono text-emerald-600 text-base">{{ formatAmount(selectedUser.user.withdrawable_balance_cents) }}</b>
+                </div>
+                <div class="bg-amber-50/40 rounded-xl border border-amber-100 p-3">
+                  <span class="text-brand-secondary block">冻结返佣</span>
+                  <b class="font-mono text-amber-600 text-base">{{ formatAmount(selectedUser.user.frozen_commission_cents) }}</b>
+                </div>
+                <div class="bg-white rounded-xl border border-gray-100 p-3">
+                  <span class="text-brand-secondary block">身份等级</span>
+                  <b class="font-mono text-brand-ink-strong text-base">{{ identityLabel(selectedUser.identity_level) }}</b>
+                </div>
+              </div>
+
+              <div class="border border-gray-100 rounded-xl p-4 bg-white">
+                <div class="flex items-center justify-between gap-3 mb-3">
+                  <h3 class="font-bold text-brand-ink-strong text-sm">经营摘要</h3>
+                  <span class="text-[10px] text-brand-secondary font-mono">Business Snapshot</span>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                  <p class="text-brand-secondary">近期订单：<b class="text-brand-ink-strong font-mono">{{ selectedUser.recent_order_count }}</b></p>
+                  <p class="text-brand-secondary">近期充值额：<b class="text-emerald-600 font-mono">{{ formatAmount(selectedUser.recent_recharge_amount_cents) }}</b></p>
+                  <p class="text-brand-secondary">累计充值额：<b class="text-emerald-600 font-mono">{{ formatAmount(selectedUser.total_recharge_amount_cents) }}</b></p>
+                  <p class="text-brand-secondary">累计提现额：<b class="text-brand-ink-strong font-mono">{{ formatAmount(selectedUser.total_withdraw_amount_cents) }}</b></p>
+                  <p class="text-brand-secondary truncate" :title="selectedUser.promoter_parent_user_id || '--'">上级归属：<b class="text-brand-ink-strong font-mono">{{ shortText(selectedUser.promoter_parent_user_id, 8, 4) }}</b></p>
+                  <p class="text-brand-secondary">最近订单状态：<b class="text-brand-ink-strong">{{ selectedUser.latest_order_status || '--' }}</b></p>
+                </div>
+              </div>
+
+              <div class="border border-gray-100 rounded-xl overflow-hidden bg-white">
+                <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                  <h3 class="font-bold text-brand-ink-strong text-sm">最近订单</h3>
+                  <button @click="jumpToOrders(selectedUser.user.user_id)" class="text-brand-primary text-[11px] font-bold hover:underline">查看全部订单</button>
+                </div>
+                <div class="max-h-[300px] overflow-y-auto">
+                  <table class="w-full text-xs">
+                    <thead class="sticky top-0 z-10 bg-gray-50 text-brand-secondary font-mono text-[10px] uppercase">
+                      <tr>
+                        <th class="p-3 text-left">订单</th>
+                        <th class="p-3 text-left">套餐</th>
+                        <th class="p-3 text-right">金额</th>
+                        <th class="p-3 text-left">状态</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                      <tr v-for="order in selectedUser.recent_orders" :key="order.order_id">
+                        <td class="p-3 font-mono text-brand-secondary" :title="order.order_id">{{ shortText(order.order_id, 8, 4) }}</td>
+                        <td class="p-3 text-brand-ink-strong">{{ order.package_title }}</td>
+                        <td class="p-3 text-right font-mono text-emerald-600 font-bold">{{ formatAmount(order.amount_cents) }}</td>
+                        <td class="p-3 text-brand-secondary">{{ order.status }}</td>
+                      </tr>
+                      <tr v-if="!selectedUser.recent_orders.length">
+                        <td colspan="4" class="p-6 text-center text-brand-secondary font-mono">暂无订单摘要</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section class="border-t lg:border-t-0 lg:border-l border-gray-100 bg-gray-50/50 p-6 overflow-y-auto space-y-4">
+              <div class="space-y-2">
+                <h3 class="font-serif text-base font-bold text-brand-primary">调整及追踪档案</h3>
+                <p class="text-xs text-brand-secondary leading-relaxed">这里集中处理积分、状态、身份和上级归属。长 ID 不再占用列表宽度，完整信息保留在弹窗内。</p>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <button @click="jumpToUsageForUser(selectedUser.user.user_id)" class="bg-brand-primary text-white px-3 py-2 rounded-xl text-[10.5px] font-bold">查看功能使用记录</button>
+                <button @click="jumpToOrders(selectedUser.user.user_id)" class="bg-white border border-gray-100 text-brand-primary px-3 py-2 rounded-xl text-[10.5px] font-bold">查看订单</button>
+                <button @click="openUserEditor('points')" class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-2 rounded-xl text-[10.5px] font-bold">调整积分</button>
+                <button @click="openUserEditor('status')" class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-2 rounded-xl text-[10.5px] font-bold">状态管理</button>
+                <button @click="openUserEditor('identity')" class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-2 rounded-xl text-[10.5px] font-bold">身份设置</button>
+                <button @click="openUserEditor('parent')" class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-2 rounded-xl text-[10.5px] font-bold">上级归属</button>
+              </div>
+
+              <div v-if="userEditOpen" class="border border-gray-100 rounded-2xl bg-white p-4 space-y-3 shadow-sm">
+                <div class="text-xs font-bold text-brand-ink-strong">执行管理操作</div>
+                <template v-if="userEditMode === 'status'">
+                  <AdminSelect
+                    v-model="userEditValue"
+                    :options="userEditStatusSelectOptions"
+                    min-width-class="w-full"
+                    panel-width-class="w-full"
+                  />
+                </template>
+                <template v-else-if="userEditMode === 'identity'">
+                  <AdminSelect
+                    v-model="userEditValue"
+                    :options="userEditIdentitySelectOptions"
+                    min-width-class="w-full"
+                    panel-width-class="w-full"
+                  />
+                </template>
+                <template v-else-if="userEditMode === 'points'">
+                  <div class="grid grid-cols-3 gap-2">
+                    <button
+                      v-for="item in userPointOperationOptions"
+                      :key="item.value"
+                      type="button"
+                      @click="userPointOperation = item.value"
+                      class="rounded-xl border px-3 py-2 text-left transition-colors"
+                      :class="userPointOperation === item.value ? 'bg-brand-primary text-white border-brand-primary shadow-sm shadow-brand-primary/10' : 'bg-gray-50 text-brand-ink-strong border-gray-100 hover:bg-white'"
+                    >
+                      <span class="block text-[11px] font-bold">{{ item.label }}</span>
+                      <span class="block text-[9px] opacity-70">{{ item.desc }}</span>
+                    </button>
+                  </div>
+                  <input
+                    v-model="userEditValue"
+                    type="number"
+                    min="0"
+                    step="1"
+                    class="w-full bg-gray-50 border border-gray-100 p-2.5 rounded-xl text-xs outline-none"
+                    :placeholder="userPointInputPlaceholder"
+                  />
+                  <p class="text-[10.5px] text-brand-secondary">
+                    当前积分：<b class="font-mono text-brand-ink-strong">{{ selectedUser.user.points_balance }}</b> · {{ userPointDeltaPreview }}
+                  </p>
+                </template>
+                <template v-else>
+                  <input v-model="userEditValue" type="text" class="w-full bg-gray-50 border border-gray-100 p-2.5 rounded-xl text-xs outline-none" placeholder="上级推广大使用户ID，留空为解绑" />
+                </template>
+                <input v-model="userEditReason" class="w-full bg-gray-50 border border-gray-100 p-2.5 rounded-xl text-xs outline-none" placeholder="操作原因" />
+                <input v-model="userEditNote" class="w-full bg-gray-50 border border-gray-100 p-2.5 rounded-xl text-xs outline-none" placeholder="内部备注" />
+                <div class="flex gap-2">
+                  <button @click="submitUserEdit" class="flex-1 bg-brand-primary text-white px-3 py-2 rounded-xl text-[10.5px] font-bold">
+                    {{ userLoading ? '提交中...' : '确认提交' }}
+                  </button>
+                  <button @click="userEditOpen = false" class="bg-brand-paper text-brand-secondary px-3 py-2 rounded-xl text-[10.5px] font-bold">取消</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+
       <aside v-if="selectedUsage" class="fixed top-0 right-0 w-full max-w-lg bg-white border-l border-gray-100 h-full flex flex-col p-6 shadow-2xl text-left overflow-y-auto z-50">
         <div class="flex items-start justify-between pb-4 border-b border-gray-100">
           <div>
@@ -2306,14 +3027,14 @@ onMounted(() => {
             <p>状态：{{ selectedUsage.record.status }}</p>
             <p>渠道：{{ selectedUsage.record.channel || '--' }}</p>
             <p>业务 ID：{{ selectedUsage.record.target_id || '--' }}</p>
-            <p>普通积分消耗：{{ selectedUsage.record.normal_points_cost }}</p>
+            <p>积分消耗：{{ selectedUsage.record.normal_points_cost }}</p>
           </section>
 
           <section class="space-y-2 border-t border-gray-100 pt-4">
             <h3 class="font-bold text-brand-ink-strong">查看用户</h3>
             <p>{{ selectedUsage.user.nickname || selectedUsage.user.user_id }}</p>
             <p>状态：{{ selectedUsage.user.status }}</p>
-            <p>普通积分：{{ selectedUsage.user.points_balance }}</p>
+            <p>积分余额：{{ selectedUsage.user.points_balance }}</p>
             <button class="bg-brand-primary text-white px-3 py-1.5 rounded-lg text-[10.5px] font-bold" @click="jumpToUser(selectedUsage.user.user_id)">打开用户管理</button>
           </section>
 
@@ -2420,7 +3141,7 @@ onMounted(() => {
                 </div>
                 <p>推广用户：{{ commission.promoter_nickname || commission.promoter_user_id }}</p>
                 <p>关联用户：{{ commission.invited_user_nickname || commission.invited_user_id || '--' }}</p>
-                <p>返佣比例：{{ formatRate(commission.commission_rate) }}，返佣积分：{{ commission.commission_points }}</p>
+                <p>返佣比例：{{ formatRate(commission.commission_rate) }}，返佣金额：{{ formatAmount(commission.commission_amount_cents) }}</p>
               </div>
             </div>
             <p v-else>暂无返佣记录</p>
@@ -2504,18 +3225,19 @@ onMounted(() => {
               <span class="font-semibold text-emerald-600 font-mono">{{ formatAmount(selectedPromotionWithdrawal.amount_cents) }}</span>
             </div>
             <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
-              <span class="block text-[10px] uppercase font-bold">使用积分</span>
-              <span class="font-semibold text-brand-ink-strong">{{ selectedPromotionWithdrawal.points_used }}</span>
+              <span class="block text-[10px] uppercase font-bold">可提现快照</span>
+              <span class="font-semibold text-brand-ink-strong">{{ formatAmount(selectedPromotionWithdrawal.withdrawable_balance_snapshot_cents) }}</span>
             </div>
             <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
-              <span class="block text-[10px] uppercase font-bold">现金比例</span>
-              <span class="font-semibold text-brand-ink-strong">{{ selectedPromotionWithdrawal.cash_rate_snapshot }}</span>
+              <span class="block text-[10px] uppercase font-bold">冻结返佣快照</span>
+              <span class="font-semibold text-brand-ink-strong">{{ formatAmount(selectedPromotionWithdrawal.frozen_commission_snapshot_cents) }}</span>
             </div>
           </section>
 
           <section class="space-y-2 border-t border-gray-100 pt-4">
             <h3 class="font-bold text-brand-ink-strong">打款与审核信息</h3>
-            <p>返佣余额快照：{{ selectedPromotionWithdrawal.rebate_points_balance_snapshot }}</p>
+            <p>可提现余额快照：{{ formatAmount(selectedPromotionWithdrawal.withdrawable_balance_snapshot_cents) }}</p>
+            <p>冻结中返佣快照：{{ formatAmount(selectedPromotionWithdrawal.frozen_commission_snapshot_cents) }}</p>
             <p>拒绝原因：{{ selectedPromotionWithdrawal.reject_reason || '--' }}</p>
             <p>审核备注：{{ selectedPromotionWithdrawal.review_note || '--' }}</p>
             <p>打款方式：{{ selectedPromotionWithdrawal.payout_method || '--' }}</p>
@@ -2563,8 +3285,8 @@ onMounted(() => {
               <span class="font-semibold text-brand-ink-strong">{{ promotionStatusLabel(selectedPromotionCommission.status) }}</span>
             </div>
             <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
-              <span class="block text-[10px] uppercase font-bold">返佣积分</span>
-              <span class="font-semibold text-emerald-600">{{ selectedPromotionCommission.commission_points }}</span>
+              <span class="block text-[10px] uppercase font-bold">返佣金额</span>
+              <span class="font-semibold text-emerald-600">{{ formatAmount(selectedPromotionCommission.commission_amount_cents) }}</span>
             </div>
             <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
               <span class="block text-[10px] uppercase font-bold">返佣比例</span>

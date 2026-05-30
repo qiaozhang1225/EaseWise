@@ -287,14 +287,24 @@ export interface InternalUserResponse {
   user_id: string;
   status: string;
   identity_level: string;
+  primary_identity_type: string;
+  registered_channel: string | null;
   promoter_parent_user_id: string | null;
   nickname: string | null;
   avatar_url: string | null;
   profile_completed: boolean;
   points_balance: number;
   frozen_balance: number;
+  withdrawable_balance_cents: number;
+  frozen_commission_cents: number;
+  withdrawn_amount_cents: number;
   rebate_points_balance: number;
   rebate_frozen_balance: number;
+  primary_phone: string | null;
+  phone_verified_at: string | null;
+  primary_unionid: string | null;
+  first_login_at: string;
+  registered_at: string;
   created_at: string;
   updated_at: string;
   last_active_at: string;
@@ -339,6 +349,7 @@ export interface PromotionCommissionResponse {
   order_id: string | null;
   order_amount_cents: number;
   commission_rate: number;
+  commission_amount_cents: number;
   commission_points: number;
   commission_type: string;
   status: string;
@@ -566,6 +577,8 @@ export interface PromotionWithdrawalResponse {
   user_nickname: string | null;
   identity_level: string | null;
   status: string;
+  withdrawable_balance_snapshot_cents: number;
+  frozen_commission_snapshot_cents: number;
   points_used: number;
   amount_cents: number;
   rebate_points_balance_snapshot: number;
@@ -596,6 +609,4 @@ export interface PromotionRulesResponse {
   senior_commission_rate: number;
   min_withdraw_cents: number;
   order_completion_days: number;
-  rebate_to_cash_rate: number;
-  rebate_to_points_rate: number;
 }

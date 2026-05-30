@@ -242,14 +242,24 @@ class InternalUserResponse(BaseModel):
     user_id: str
     status: str
     identity_level: str = 'normal_user'
+    primary_identity_type: str = 'session'
+    registered_channel: str | None = None
     promoter_parent_user_id: str | None = None
     nickname: str | None = None
     avatar_url: str | None = None
     profile_completed: bool
     points_balance: int
     frozen_balance: int
+    withdrawable_balance_cents: int = 0
+    frozen_commission_cents: int = 0
+    withdrawn_amount_cents: int = 0
     rebate_points_balance: int = 0
     rebate_frozen_balance: int = 0
+    primary_phone: str | None = None
+    phone_verified_at: str | None = None
+    primary_unionid: str | None = None
+    first_login_at: str
+    registered_at: str
     created_at: str
     updated_at: str
     last_active_at: str
@@ -306,6 +316,7 @@ class PromotionCommissionResponse(BaseModel):
     order_id: str | None = None
     order_amount_cents: int
     commission_rate: float
+    commission_amount_cents: int = 0
     commission_points: int
     commission_type: str
     status: str
@@ -567,6 +578,8 @@ class PromotionWithdrawalResponse(BaseModel):
     user_nickname: str | None = None
     identity_level: str | None = None
     status: str
+    withdrawable_balance_snapshot_cents: int = 0
+    frozen_commission_snapshot_cents: int = 0
     points_used: int
     amount_cents: int
     rebate_points_balance_snapshot: int
@@ -603,8 +616,6 @@ class PromotionRulesResponse(BaseModel):
     senior_commission_rate: float
     min_withdraw_cents: int
     order_completion_days: int
-    rebate_to_cash_rate: float
-    rebate_to_points_rate: float
 
 
 class PromotionRulesUpdateRequest(BaseModel):
@@ -614,8 +625,6 @@ class PromotionRulesUpdateRequest(BaseModel):
     senior_commission_rate: float | None = None
     min_withdraw_cents: int | None = None
     order_completion_days: int | None = None
-    rebate_to_cash_rate: float | None = None
-    rebate_to_points_rate: float | None = None
 
 
 class LlmApiKeyResponse(BaseModel):
