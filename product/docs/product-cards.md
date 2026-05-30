@@ -653,11 +653,11 @@
 
 参考来源：
 
-- `knowledge/sections/phone_summary/judgement-knowledge.md`
-- `knowledge/sections/phone_summary/taxonomy.md`
-- `knowledge/shared/model-baseline.md`
-- `scoring/total_score/engine.py`
-- `scoring/total_score/score_facts.py`
+- `features/phone_qimen/knowledge/sections/phone_summary/judgement-knowledge.md`
+- `features/phone_qimen/knowledge/sections/phone_summary/taxonomy.md`
+- `features/phone_qimen/knowledge/shared/model-baseline.md`
+- `features/phone_qimen/scoring/total_score/engine.py`
+- `features/phone_qimen/scoring/total_score/score_facts.py`
 
 #### Acceptance Criteria
 

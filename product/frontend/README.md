@@ -19,12 +19,13 @@
 
 ## 当前已接入的本地 API
 
-- `POST /api/v1/guest/session`
+- `POST /api/v1/auth/guest-session`
 - `GET /api/v1/runtime-config/public`
 - `GET /api/v1/almanac/today`
-- `GET /api/v1/me/points`
-- `GET /api/v1/me/points/ledger`
-- `POST /api/v1/reviews`
-- `GET /api/v1/reviews`
-- `GET /api/v1/reviews/{id}`
-- `POST /api/v1/reviews/{id}/aspect-unlocks`
+- `GET /api/v1/account/points`
+- `GET /api/v1/account/points/ledger`
+- `POST /api/v1/phone-qimen/reviews`
+- `GET /api/v1/phone-qimen/reviews`
+- `GET /api/v1/phone-qimen/reviews/{id}`
+- `GET /api/v1/phone-qimen/reviews/{id}/aspect-unlocks`
+- `POST /api/v1/phone-qimen/reviews/{id}/aspect-unlocks`

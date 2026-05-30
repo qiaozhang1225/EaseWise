@@ -139,7 +139,7 @@ function resolveApiBaseUrl(): string {
 }
 
 export function createGuestSession(guestKey?: string | null): Promise<GuestSessionResponse> {
-  return requestJson<GuestSessionResponse>('/api/v1/guest/session', {
+  return requestJson<GuestSessionResponse>('/api/v1/auth/guest-session', {
     method: 'POST',
     body: {
       channel: 'h5',
@@ -157,19 +157,19 @@ export function getTodayAlmanac(): Promise<AlmanacResponse> {
 }
 
 export function getMyPoints(accessToken: string): Promise<PointsAccountResponse> {
-  return requestJson<PointsAccountResponse>('/api/v1/me/points', {
+  return requestJson<PointsAccountResponse>('/api/v1/account/points', {
     accessToken,
   });
 }
 
 export function listMyPointsLedger(accessToken: string, limit = 20): Promise<PointsLedgerListResponse> {
-  return requestJson<PointsLedgerListResponse>(`/api/v1/me/points/ledger?limit=${limit}`, {
+  return requestJson<PointsLedgerListResponse>(`/api/v1/account/points/ledger?limit=${limit}`, {
     accessToken,
   });
 }
 
 export function createPhoneReview(accessToken: string, payload: { phone: string; gender: Gender; include_markdown?: boolean }): Promise<ReviewRecord> {
-  return requestJson<ReviewRecord>('/api/v1/reviews', {
+  return requestJson<ReviewRecord>('/api/v1/phone-qimen/reviews', {
     method: 'POST',
     accessToken,
     body: {
@@ -181,19 +181,19 @@ export function createPhoneReview(accessToken: string, payload: { phone: string;
 }
 
 export function listPhoneReviews(accessToken: string, limit = 20): Promise<ReviewListResponse> {
-  return requestJson<ReviewListResponse>(`/api/v1/reviews?limit=${limit}`, {
+  return requestJson<ReviewListResponse>(`/api/v1/phone-qimen/reviews?limit=${limit}`, {
     accessToken,
   });
 }
 
 export function getPhoneReviewDetail(accessToken: string, reviewId: string): Promise<ReviewRecord> {
-  return requestJson<ReviewRecord>(`/api/v1/reviews/${reviewId}`, {
+  return requestJson<ReviewRecord>(`/api/v1/phone-qimen/reviews/${reviewId}`, {
     accessToken,
   });
 }
 
 export function unlockPhoneReviewAspect(accessToken: string, reviewId: string, aspectKey: string): Promise<ReviewAspectUnlockResponse> {
-  return requestJson<ReviewAspectUnlockResponse>(`/api/v1/reviews/${reviewId}/aspect-unlocks`, {
+  return requestJson<ReviewAspectUnlockResponse>(`/api/v1/phone-qimen/reviews/${reviewId}/aspect-unlocks`, {
     method: 'POST',
     accessToken,
     body: {
@@ -211,7 +211,7 @@ export function getInternalDashboard(adminToken: string, params: Record<string, 
 }
 
 export function listInternalLlmApiKeys(adminToken: string, params: Record<string, QueryValue> = {}): Promise<LlmApiKeyListResponse> {
-  return requestJson<LlmApiKeyListResponse>(`/api/v1/internal/llm-api-keys${toQueryString(params)}`, {
+  return requestJson<LlmApiKeyListResponse>(`/api/v1/internal/llm/api-keys${toQueryString(params)}`, {
     adminToken,
   });
 }
@@ -229,7 +229,7 @@ export type InternalLlmApiKeyPayload = {
 };
 
 export function createInternalLlmApiKey(adminToken: string, payload: InternalLlmApiKeyPayload): Promise<LlmApiKeyResponse> {
-  return requestJson<LlmApiKeyResponse>('/api/v1/internal/llm-api-keys', {
+  return requestJson<LlmApiKeyResponse>('/api/v1/internal/llm/api-keys', {
     method: 'POST',
     adminToken,
     body: payload,
@@ -237,7 +237,7 @@ export function createInternalLlmApiKey(adminToken: string, payload: InternalLlm
 }
 
 export function updateInternalLlmApiKey(adminToken: string, keyId: string, payload: InternalLlmApiKeyPayload): Promise<LlmApiKeyResponse> {
-  return requestJson<LlmApiKeyResponse>(`/api/v1/internal/llm-api-keys/${encodeURIComponent(keyId)}`, {
+  return requestJson<LlmApiKeyResponse>(`/api/v1/internal/llm/api-keys/${encodeURIComponent(keyId)}`, {
     method: 'PATCH',
     adminToken,
     body: payload,
@@ -245,20 +245,20 @@ export function updateInternalLlmApiKey(adminToken: string, keyId: string, paylo
 }
 
 export function deleteInternalLlmApiKey(adminToken: string, keyId: string): Promise<{status: string}> {
-  return requestJson<{status: string}>(`/api/v1/internal/llm-api-keys/${encodeURIComponent(keyId)}`, {
+  return requestJson<{status: string}>(`/api/v1/internal/llm/api-keys/${encodeURIComponent(keyId)}`, {
     method: 'DELETE',
     adminToken,
   });
 }
 
 export function listInternalUsageRecords(adminToken: string, params: Record<string, QueryValue>): Promise<UsageRecordListResponse> {
-  return requestJson<UsageRecordListResponse>(`/api/v1/internal/usage-records${toQueryString(params)}`, {
+  return requestJson<UsageRecordListResponse>(`/api/v1/internal/platform/usage-records${toQueryString(params)}`, {
     adminToken,
   });
 }
 
 export function getInternalUsageRecord(adminToken: string, usageRecordId: string): Promise<UsageRecordDetailResponse> {
-  return requestJson<UsageRecordDetailResponse>(`/api/v1/internal/usage-records/${encodeURIComponent(usageRecordId)}`, {
+  return requestJson<UsageRecordDetailResponse>(`/api/v1/internal/platform/usage-records/${encodeURIComponent(usageRecordId)}`, {
     adminToken,
   });
 }
@@ -277,19 +277,19 @@ export function getInternalUserAdminSummary(adminToken: string, userId: string):
 }
 
 export function listInternalRechargeOrders(adminToken: string, params: Record<string, QueryValue>): Promise<RechargeOrderListResponse> {
-  return requestJson<RechargeOrderListResponse>(`/api/v1/internal/recharge-orders${toQueryString(params)}`, {
+  return requestJson<RechargeOrderListResponse>(`/api/v1/internal/billing/recharge-orders${toQueryString(params)}`, {
     adminToken,
   });
 }
 
 export function getInternalRechargeOrder(adminToken: string, orderId: string): Promise<RechargeOrderResponse> {
-  return requestJson<RechargeOrderResponse>(`/api/v1/internal/recharge-orders/${encodeURIComponent(orderId)}`, {
+  return requestJson<RechargeOrderResponse>(`/api/v1/internal/billing/recharge-orders/${encodeURIComponent(orderId)}`, {
     adminToken,
   });
 }
 
 export function reviewInternalRechargeOrder(adminToken: string, orderId: string, payload: {action: 'approve' | 'reject'; review_note?: string | null}): Promise<RechargeOrderReviewResponse> {
-  return requestJson<RechargeOrderReviewResponse>(`/api/v1/internal/recharge-orders/${encodeURIComponent(orderId)}/review`, {
+  return requestJson<RechargeOrderReviewResponse>(`/api/v1/internal/billing/recharge-orders/${encodeURIComponent(orderId)}/review`, {
     method: 'POST',
     adminToken,
     body: payload,
@@ -297,7 +297,7 @@ export function reviewInternalRechargeOrder(adminToken: string, orderId: string,
 }
 
 export function createInternalRechargeOrderRefund(adminToken: string, orderId: string, payload: {reason?: string | null; operator_note?: string | null}): Promise<RefundRequestResponse> {
-  return requestJson<RefundRequestResponse>(`/api/v1/internal/recharge-orders/${encodeURIComponent(orderId)}/refunds`, {
+  return requestJson<RefundRequestResponse>(`/api/v1/internal/billing/recharge-orders/${encodeURIComponent(orderId)}/refunds`, {
     method: 'POST',
     adminToken,
     body: payload,
@@ -305,7 +305,7 @@ export function createInternalRechargeOrderRefund(adminToken: string, orderId: s
 }
 
 export function reviewInternalRefund(adminToken: string, refundId: string, payload: {action: 'approve' | 'reject'; reject_reason?: string | null; operator_note?: string | null}): Promise<RefundRequestResponse> {
-  return requestJson<RefundRequestResponse>(`/api/v1/internal/refunds/${encodeURIComponent(refundId)}/review`, {
+  return requestJson<RefundRequestResponse>(`/api/v1/internal/billing/refunds/${encodeURIComponent(refundId)}/review`, {
     method: 'POST',
     adminToken,
     body: payload,
@@ -313,7 +313,7 @@ export function reviewInternalRefund(adminToken: string, refundId: string, paylo
 }
 
 export function retryInternalRefund(adminToken: string, refundId: string, payload: {operator_note?: string | null} = {}): Promise<RefundRequestResponse> {
-  return requestJson<RefundRequestResponse>(`/api/v1/internal/refunds/${encodeURIComponent(refundId)}/retry`, {
+  return requestJson<RefundRequestResponse>(`/api/v1/internal/billing/refunds/${encodeURIComponent(refundId)}/retry`, {
     method: 'POST',
     adminToken,
     body: payload,
@@ -321,13 +321,13 @@ export function retryInternalRefund(adminToken: string, refundId: string, payloa
 }
 
 export function listInternalReviews(adminToken: string, params: Record<string, QueryValue> = {}): Promise<ReviewListResponse> {
-  return requestJson<ReviewListResponse>(`/api/v1/internal/reviews${toQueryString(params)}`, {
+  return requestJson<ReviewListResponse>(`/api/v1/internal/phone-qimen/reviews${toQueryString(params)}`, {
     adminToken,
   });
 }
 
 export function getInternalReview(adminToken: string, reviewId: string): Promise<ReviewRecord> {
-  return requestJson<ReviewRecord>(`/api/v1/internal/reviews/${encodeURIComponent(reviewId)}`, {
+  return requestJson<ReviewRecord>(`/api/v1/internal/phone-qimen/reviews/${encodeURIComponent(reviewId)}`, {
     adminToken,
   });
 }

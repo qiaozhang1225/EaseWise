@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from scoring.dimensions import score_phone_dimensions, score_phone_stability_dimensions
+from features.phone_qimen.scoring.dimensions import score_phone_dimensions, score_phone_stability_dimensions
 
 PUBLIC_ASPECT_ORDER = [
     "career",

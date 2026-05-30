@@ -1349,16 +1349,16 @@ V1 需要支持：
 #### 数据大盘参考数据源
 
 - `GET /api/v1/internal/users`
-- `GET /api/v1/internal/recharge-orders`
-- `GET /api/v1/internal/usage-records`
+- `GET /api/v1/internal/billing/recharge-orders`
+- `GET /api/v1/internal/platform/usage-records`
 - `GET /api/v1/internal/runtime-config`
 - 现有接口可作为统计来源，但大盘补专用汇总接口
 
 #### 订单管理
 
-- `GET /api/v1/internal/recharge-orders`
-- `GET /api/v1/internal/recharge-orders/{order_id}`
-- `POST /api/v1/internal/recharge-orders/{order_id}/review`
+- `GET /api/v1/internal/billing/recharge-orders`
+- `GET /api/v1/internal/billing/recharge-orders/{order_id}`
+- `POST /api/v1/internal/billing/recharge-orders/{order_id}/review`
 
 说明：
 
@@ -1371,7 +1371,7 @@ V1 需要支持：
 - `GET /api/v1/internal/users/{user_id}`
 - `GET /api/v1/internal/users/{user_id}/points/ledger`
 - `POST /api/v1/internal/users/{user_id}/points/adjust`
-- `GET /api/v1/internal/usage-records`
+- `GET /api/v1/internal/platform/usage-records`
 
 说明：
 
@@ -1391,16 +1391,16 @@ V1 需要支持：
 
 #### 用户侧评测能力（后台排查参考）
 
-- `POST /api/v1/reviews`
-- `GET /api/v1/reviews`
-- `GET /api/v1/reviews/{review_id}`
-- `GET /api/v1/reviews/{review_id}/aspect-unlocks`
-- `POST /api/v1/reviews/{review_id}/aspect-unlocks`
+- `POST /api/v1/phone-qimen/reviews`
+- `GET /api/v1/phone-qimen/reviews`
+- `GET /api/v1/phone-qimen/reviews/{review_id}`
+- `GET /api/v1/phone-qimen/reviews/{review_id}/aspect-unlocks`
+- `POST /api/v1/phone-qimen/reviews/{review_id}/aspect-unlocks`
 
 说明：
 
 - 这组接口主要服务前台用户
-- 后台若要支持全量评测记录查询，仍应提供独立内部接口
+- 后台全量评测记录查询使用 `/api/v1/internal/phone-qimen/reviews`
 
 ### 9.3 当前建议新增的接口
 

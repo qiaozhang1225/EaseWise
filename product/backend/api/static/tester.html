@@ -134,7 +134,7 @@
     }
 
     async function loadHistory() {
-      const response = await fetch('/api/v1/reviews?limit=10');
+      const response = await fetch('/api/v1/phone-qimen/reviews?limit=10');
       const payload = await response.json();
       historyBody.innerHTML = '';
       for (const item of payload.items) {
@@ -158,7 +158,7 @@
         gender: document.getElementById('gender').value,
         include_markdown: document.getElementById('include_markdown').value === 'true',
       };
-      const response = await fetch('/api/v1/reviews', {
+      const response = await fetch('/api/v1/phone-qimen/reviews', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

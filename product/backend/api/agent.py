@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from product.backend.almanac import build_today_almanac
+from features.almanac.engine import build_today_almanac
 from product.backend.llm.deepseek import DeepSeekClient, load_env_file
 
 from .database import list_reviews

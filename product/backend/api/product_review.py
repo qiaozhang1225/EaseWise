@@ -5,10 +5,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any
 
-from product.backend.aspects import ASPECT_SPECS, render_aspects_from_package
+from features.phone_qimen.rendering import (
+    ASPECT_SPECS,
+    DEEPSEEK_PHONE_SUMMARY_ERROR,
+    render_aspects_from_package,
+    render_phone_summary_from_package,
+    render_stability_from_package,
+)
 from product.backend.llm import DeepSeekAPIError, DeepSeekClient, load_env_file
-from product.backend.phone_summary import DEEPSEEK_PHONE_SUMMARY_ERROR, render_phone_summary_from_package
-from product.backend.stability import render_stability_from_package
 
 PHONE_SUMMARY_MODEL = "deepseek-v4-pro"
 
