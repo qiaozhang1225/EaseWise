@@ -35,7 +35,7 @@ tarball="$tmp_dir/easewise-api-$release_id.tgz"
 remote_tarball="/tmp/easewise-api-$release_id.tgz"
 
 export COPYFILE_DISABLE=1
-tar -czf "$tarball" -C "$REPO_ROOT" README.md knowledge product/backend scoring
+tar -czf "$tarball" -C "$REPO_ROOT" README.md features product/backend
 scp_to_remote "$tarball" "$remote_tarball"
 
 if [[ $SYNC_ENV -eq 1 && -f "$TARGET_SERVER_ENV_FILE" ]]; then
