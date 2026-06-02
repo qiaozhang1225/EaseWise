@@ -129,6 +129,18 @@ export function getApiBaseUrl(): string {
   return API_BASE_URL;
 }
 
+export function resolveApiAssetUrl(assetUrl: string | null | undefined): string {
+  const trimmedUrl = String(assetUrl || '').trim();
+  if (!trimmedUrl) {
+    return '';
+  }
+  if (/^(https?:|data:|blob:)/i.test(trimmedUrl)) {
+    return trimmedUrl;
+  }
+  const normalizedPath = trimmedUrl.startsWith('/') ? trimmedUrl : `/${trimmedUrl}`;
+  return `${API_BASE_URL}${normalizedPath}`;
+}
+
 function resolveApiBaseUrl(): string {
   const configuredValue = import.meta.env.VITE_API_BASE_URL;
   if (configuredValue) {

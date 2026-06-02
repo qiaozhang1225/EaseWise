@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import handlers
-from .config import get_voice_cache_dir
+from .config import get_uploads_dir, get_voice_cache_dir
 from .routers import account, agent, almanac, auth, billing, phone_qimen, public, runtime_config, voice
 from .routers.internal import (
     almanac as internal_almanac,
@@ -23,8 +23,10 @@ from .routers.internal import (
 
 app = FastAPI(title=handlers.APP_TITLE, version=handlers.APP_VERSION)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+UPLOADS_STATIC_DIR = get_uploads_dir()
 VOICE_STATIC_DIR = get_voice_cache_dir()
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
+UPLOADS_STATIC_DIR.mkdir(parents=True, exist_ok=True)
 VOICE_STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.add_middleware(
     CORSMiddleware,
@@ -59,4 +61,5 @@ app.include_router(internal_billing.router)
 app.include_router(internal_llm.router)
 app.include_router(internal_promotion.router)
 app.mount("/api/v1/static/voice", StaticFiles(directory=str(VOICE_STATIC_DIR)), name="api_voice_static")
+app.mount("/api/v1/static/uploads", StaticFiles(directory=str(UPLOADS_STATIC_DIR)), name="api_uploads_static")
 app.mount("/api/v1/static", StaticFiles(directory=str(STATIC_DIR)), name="api_static")

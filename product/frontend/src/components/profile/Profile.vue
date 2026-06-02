@@ -16,6 +16,7 @@ import {
   KeyRound,
 } from 'lucide-vue-next';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
+import { resolveApiAssetUrl } from '../../lib/api';
 import type { PointsLedgerEntryResponse, ReviewSummary } from '../../types/api';
 import SystemIntro from './SystemIntro.vue';
 
@@ -53,6 +54,7 @@ const profileSaving = ref(false);
 const avatarInputRef = ref<HTMLInputElement | null>(null);
 const avatarUploading = ref(false);
 const avatarUploadError = ref('');
+const avatarImageFailed = ref(false);
 const passwordEditorVisible = ref(false);
 const currentPasswordDraft = ref('');
 const newPasswordDraft = ref('');
@@ -67,6 +69,7 @@ const currentPoints = computed(() => state.points?.balance ?? 0);
 const reportHistory = computed(() => state.reviewHistory);
 const ledgerRecords = computed(() => state.pointsLedger);
 const userReady = computed(() => Boolean(state.user));
+const profileAvatarUrl = computed(() => resolveApiAssetUrl(state.user?.avatar_url));
 const profileUserUidDisplay = computed(() => state.user?.uid || '未生成');
 const primaryAccountActionLabel = computed(() => (isRegisteredUser.value ? '退出登录' : '登录 / 注册'));
 const profileIdentityLabel = computed(() => {
@@ -130,6 +133,13 @@ const profileFallbackActionLabel = computed(() => {
 onMounted(() => {
   void bootstrapApp();
 });
+
+watch(
+  () => state.user?.avatar_url,
+  () => {
+    avatarImageFailed.value = false;
+  },
+);
 
 watch(activeModal, async (value) => {
   if (value !== 'history') {
@@ -218,6 +228,10 @@ async function handleAvatarFileChange(event: Event): Promise<void> {
   } finally {
     avatarUploading.value = false;
   }
+}
+
+function handleAvatarImageError(): void {
+  avatarImageFailed.value = true;
 }
 
 function buildAvatarDataUrl(file: File): Promise<string> {
@@ -513,14 +527,15 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         </div>
         <div class="flex items-center gap-3.5 z-10 min-w-0 flex-1">
           <div class="relative group shrink-0">
-            <div class="w-14 h-14 rounded-full overflow-hidden border-2 border-brand-primary/10 bg-brand-primary/5 flex items-center justify-center font-serif font-bold text-brand-primary text-[20px] shadow-inner select-none">
+            <div class="relative w-14 h-14 rounded-full overflow-hidden border-2 border-brand-primary/10 bg-brand-primary/5 flex items-center justify-center font-serif font-bold text-brand-primary text-[20px] shadow-inner select-none">
+              <span>{{ displayAvatarText }}</span>
               <img
-                v-if="state.user?.avatar_url"
-                :src="state.user.avatar_url"
-                alt="用户头像"
-                class="w-full h-full object-cover"
+                v-if="profileAvatarUrl && !avatarImageFailed"
+                :src="profileAvatarUrl"
+                alt=""
+                class="absolute inset-0 w-full h-full object-cover"
+                @error="handleAvatarImageError"
               />
-              <span v-else>{{ displayAvatarText }}</span>
             </div>
             <input
               ref="avatarInputRef"

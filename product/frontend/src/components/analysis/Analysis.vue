@@ -27,7 +27,7 @@ import { DEFAULT_ASPECT_UNLOCK_POINTS, DEFAULT_BASE_REVIEW_POINTS } from '../../
 import { EASEWISE_STORAGE_KEYS } from '../../constants/storage';
 import { ApiError } from '../../lib/api';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
-import { useVoicePlayback } from '../../composables/useVoicePlayback';
+import { useVoicePlayback, type VoiceSpeakResult } from '../../composables/useVoicePlayback';
 import type { Gender, ReviewAspect, ReviewProgressStage, ReviewRecord } from '../../types/api';
 
 const emit = defineEmits<{
@@ -413,11 +413,11 @@ function resolveFallbackStabilityLabel(): string {
   return '谨慎长期主用';
 }
 
-function showToast(message: string): void {
+function showToast(message: string, duration = 2200): void {
   toast.value = message;
   window.setTimeout(() => {
     toast.value = null;
-  }, 2200);
+  }, duration);
 }
 
 async function handlePhoneSummaryVoiceClick(): Promise<void> {
@@ -429,7 +429,7 @@ async function handlePhoneSummaryVoiceClick(): Promise<void> {
   const review = currentReview.value;
   const result = await speakPhoneSummaryWithAutoFollow(review, false);
   if (!result.started) {
-    showToast('当前综合评述暂时无法播报。');
+    showToast(resolveVoiceFailureMessage('综合评述', result), 3600);
   }
 }
 
@@ -441,7 +441,7 @@ async function handleStabilityVoiceClick(): Promise<void> {
   }
   const result = await voicePlayback.speakStability(currentReview.value);
   if (!result.started) {
-    showToast('当前长期建议暂时无法播报。');
+    showToast(resolveVoiceFailureMessage('长期建议', result), 3600);
   }
 }
 
@@ -453,8 +453,55 @@ async function handleSelectedAspectVoiceClick(): Promise<void> {
   }
   const result = await voicePlayback.speakAspect(currentReview.value, selectedAspect.value);
   if (!result.started) {
-    showToast('当前专项暂时无法播报。');
+    showToast(resolveVoiceFailureMessage(selectedAspectVoiceLabel.value || '专项', result), 3600);
   }
+}
+
+function resolveVoiceFailureMessage(subject: string, result: VoiceSpeakResult): string {
+  const reason = humanizeVoiceError(result.error);
+  return reason ? `${subject}无法播报：${reason}` : `${subject}暂时无法播报。`;
+}
+
+function humanizeVoiceError(errorCode: string | undefined): string {
+  if (!errorCode) {
+    return '';
+  }
+  if (
+    errorCode.includes('tts_not_configured') ||
+    errorCode.includes('provider_not_configured') ||
+    errorCode.includes('provider_not_supported') ||
+    errorCode.includes('nls_token_unavailable')
+  ) {
+    return '云语音服务未配置可用的 TTS 密钥。';
+  }
+  if (errorCode.includes('nls_token_fetch_failed') || errorCode.includes('nls_token_missing') || errorCode.includes('nls_token_invalid')) {
+    return '阿里云语音 Token 获取失败，请检查 NLS 凭据。';
+  }
+  if (errorCode === 'browser_speech_unavailable') {
+    return '当前浏览器不支持本地语音兜底。';
+  }
+  if (errorCode === 'autoplay_blocked') {
+    return '浏览器拦截了播放，请再点一次播放按钮。';
+  }
+  if (errorCode === 'audio_play_failed') {
+    return '语音文件加载或播放失败。';
+  }
+  if (errorCode === 'browser_speech_failed') {
+    return '浏览器本地语音播报失败。';
+  }
+  if (errorCode === 'voice_text_empty') {
+    return '当前没有可播报的文案。';
+  }
+  if (errorCode.includes('not_ready')) {
+    return '内容还在生成中，请稍后再试。';
+  }
+  if (errorCode.includes('too_long')) {
+    return '播报文案过长，请稍后拆分后再试。';
+  }
+  if (errorCode.includes('http_') || errorCode.includes('synthesis_failed')) {
+    return '云语音服务请求失败，请稍后再试。';
+  }
+  return '请稍后再试。';
 }
 
 function stopVoiceAndDisableAutoplay(): void {
@@ -1639,7 +1686,7 @@ function sleep(ms: number): Promise<void> {
     <transition name="fade">
       <div
         v-if="toast"
-        class="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-brand-ink-strong text-white px-4 py-2.5 rounded-full font-sans text-[13px] shadow-lg font-medium flex items-center gap-2 max-w-[90%] whitespace-nowrap"
+        class="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-brand-ink-strong text-white px-4 py-2.5 rounded-2xl font-sans text-[13px] shadow-lg font-medium flex items-start gap-2 max-w-[90%] leading-relaxed"
       >
         <AlertCircle :size="15" class="text-brand-accent shrink-0" />
         <span>{{ toast }}</span>

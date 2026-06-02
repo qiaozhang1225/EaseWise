@@ -48,6 +48,7 @@ import {
   updateInternalUserIdentity,
   updateInternalUserPromoterParent,
   updateInternalUserStatus,
+  resolveApiAssetUrl,
   type InternalLlmApiKeyPayload,
 } from '../../lib/api';
 import AdminSelect from './AdminSelect.vue';
@@ -550,6 +551,21 @@ function userDisplayLabel(userId: string) {
   }
   const user = users.value.find((item) => item.user_id === userId);
   return user?.nickname || user?.primary_phone || user?.uid || shortText(userId, 8, 4);
+}
+
+function userAvatarUrl(user: InternalUserResponse): string {
+  return resolveApiAssetUrl(user.avatar_url);
+}
+
+function userAvatarInitial(user: InternalUserResponse): string {
+  return (user.nickname || user.uid || user.user_id || '?').substring(0, 1);
+}
+
+function handleUserAvatarError(event: Event): void {
+  const image = event.currentTarget as HTMLImageElement | null;
+  if (image) {
+    image.style.display = 'none';
+  }
 }
 
 function setUserReturnContext(userId: string, destination: UserLinkedDestination) {
@@ -2338,14 +2354,15 @@ onBeforeUnmount(() => {
                     <tr v-for="user in visibleUsers" :key="user.user_id" class="hover:bg-brand-paper/50 transition-colors">
                       <td class="p-3">
                         <div class="flex items-center gap-2 min-w-0">
-                          <div class="w-7 h-7 shrink-0 bg-brand-primary/10 text-brand-primary font-serif font-bold flex items-center justify-center rounded-lg text-xs overflow-hidden">
+                          <div class="relative w-7 h-7 shrink-0 bg-brand-primary/10 text-brand-primary font-serif font-bold flex items-center justify-center rounded-lg text-xs overflow-hidden">
+                            <span>{{ userAvatarInitial(user) }}</span>
                             <img
-                              v-if="user.avatar_url"
-                              :src="user.avatar_url"
-                              alt="用户头像"
-                              class="w-full h-full object-cover"
+                              v-if="userAvatarUrl(user)"
+                              :src="userAvatarUrl(user)"
+                              alt=""
+                              class="absolute inset-0 w-full h-full object-cover"
+                              @error="handleUserAvatarError"
                             />
-                            <span v-else>{{ (user.nickname || user.uid || user.user_id).substring(0, 1) }}</span>
                           </div>
                           <div class="min-w-0">
                             <div class="font-bold text-brand-ink-strong truncate">{{ user.nickname || '未命名用户' }}</div>
@@ -2935,14 +2952,15 @@ onBeforeUnmount(() => {
         <div class="w-full max-w-6xl max-h-[92vh] bg-white border border-gray-100 rounded-3xl shadow-2xl overflow-hidden flex flex-col text-left">
           <div class="px-6 py-5 border-b border-gray-100 flex flex-wrap items-start justify-between gap-5 bg-white">
             <div class="min-w-0 shrink-0 lg:w-[34%] flex items-center gap-3">
-              <div class="w-12 h-12 rounded-2xl bg-brand-primary/10 text-brand-primary font-serif font-black flex items-center justify-center text-lg overflow-hidden border border-brand-primary/10 shrink-0">
+              <div class="relative w-12 h-12 rounded-2xl bg-brand-primary/10 text-brand-primary font-serif font-black flex items-center justify-center text-lg overflow-hidden border border-brand-primary/10 shrink-0">
+                <span>{{ userAvatarInitial(selectedUser.user) }}</span>
                 <img
-                  v-if="selectedUser.user.avatar_url"
-                  :src="selectedUser.user.avatar_url"
-                  alt="用户头像"
-                  class="w-full h-full object-cover"
+                  v-if="userAvatarUrl(selectedUser.user)"
+                  :src="userAvatarUrl(selectedUser.user)"
+                  alt=""
+                  class="absolute inset-0 w-full h-full object-cover"
+                  @error="handleUserAvatarError"
                 />
-                <span v-else>{{ (selectedUser.user.nickname || selectedUser.user.uid || selectedUser.user.user_id).substring(0, 1) }}</span>
               </div>
               <div class="min-w-0">
                 <p class="text-[10px] font-mono text-brand-secondary uppercase font-bold">User Operation File</p>

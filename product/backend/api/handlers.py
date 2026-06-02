@@ -21,7 +21,7 @@ from features.phone_qimen.scoring.total_score.bundle import build_scoring_bundle
 
 from .agent import build_agent_reply
 from .auth import build_session_expiry, exchange_wechat_code, hash_access_token, hash_password, issue_access_token, require_authenticated_user, require_authenticated_user_with_token_hash, require_internal_admin_access, require_registered_user, resolve_authenticated_user, verify_password
-from .config import APP_TITLE, APP_VERSION, allow_mock_wechat_login, get_cors_origins, get_database_path, get_public_base_url, get_wechat_oa_app_id
+from .config import APP_TITLE, APP_VERSION, allow_mock_wechat_login, get_cors_origins, get_database_path, get_public_base_url, get_uploads_dir, get_wechat_oa_app_id
 from .database import InsufficientPointsError, adjust_points, adjust_rebate_points, complete_review, complete_review_with_message, complete_usage_record, create_payment_transaction, create_phone_user, create_recharge_order, create_refund_request, create_review_aspect_unlock, create_review_with_charge, create_session, create_usage_record, delete_llm_api_key, ensure_schema, fail_review, fail_usage_record, get_dashboard_summary, get_internal_user, get_latest_payment_transaction_for_order, get_llm_api_key, get_phone_identity_by_normalized_phone, get_points_account, get_primary_phone_identity_by_user_id, get_promotion_application, get_promotion_commission, get_promotion_rules, get_promotion_withdrawal, get_recharge_order, get_review, get_usage_record, get_user, list_llm_api_keys, list_payment_transactions_for_order, list_points_ledger, list_promotion_applications, list_promotion_commissions, list_promotion_withdrawals, list_recharge_orders, list_recent_recharge_orders_for_user, list_refund_requests_for_order, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, mark_phone_identity_login, mark_promotion_withdrawal_paid, refund_points, revoke_session_by_token_hash, retry_promotion_withdrawal_payout, retry_refund_request, review_promotion_application, review_promotion_withdrawal, review_recharge_order, review_refund_request, settle_payment_transaction, update_phone_identity_password, update_review_generation_payload, update_review_progress, update_review_score_template, update_user_identity, update_user_profile, update_user_promoter_parent, update_user_status, upsert_llm_api_key, upsert_runtime_config_entry, upsert_wechat_user
 from .phone_review_view import PUBLIC_ASPECT_ORDER, build_phone_review_product_view
 from .payments import create_payment_request
@@ -34,7 +34,6 @@ from .wechat_h5 import STATE_COOKIE_NAME, build_oauth_state, build_wechat_oauth_
 PHONE_PATTERN = re.compile(r"^\d{11}$")
 MAINLAND_MOBILE_PATTERN = re.compile(r"^1[3-9]\d{9}$")
 TESTER_PAGE_PATH = Path(__file__).resolve().parent / "static" / "tester.html"
-AVATAR_UPLOAD_DIR = Path(__file__).resolve().parent / "static" / "uploads" / "avatars"
 AVATAR_DATA_URL_PATTERN = re.compile(r"^data:image/(?P<kind>png|jpe?g|webp);base64,(?P<data>.+)$", re.DOTALL)
 MAX_AVATAR_UPLOAD_BYTES = 1_500_000
 load_env_file()
@@ -249,15 +248,20 @@ def patch_me_profile(payload: UserProfileUpdateRequest, current_user: dict[str, 
 def upload_my_avatar(payload: AvatarUploadRequest, current_user: dict[str, object] = Depends(require_registered_user)) -> UserResponse:
     image_bytes, extension = _decode_avatar_data_url(payload.image_data_url)
     user_id = str(current_user["user_id"])
-    AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    avatar_upload_dir = _get_avatar_upload_dir()
+    avatar_upload_dir.mkdir(parents=True, exist_ok=True)
     file_name = f"{user_id}-{uuid4().hex}.{extension}"
-    file_path = AVATAR_UPLOAD_DIR / file_name
+    file_path = avatar_upload_dir / file_name
     file_path.write_bytes(image_bytes)
     avatar_url = f"/api/v1/static/uploads/avatars/{file_name}"
     updated = update_user_profile(user_id=user_id, nickname=None, avatar_url=avatar_url, now_text=_utc_now())
     if updated is None:
         raise HTTPException(status_code=404, detail="user_not_found")
     return _build_user_response(updated)
+
+
+def _get_avatar_upload_dir() -> Path:
+    return get_uploads_dir() / "avatars"
 
 
 def change_my_password(payload: PasswordChangeRequest, current_user: dict[str, object] = Depends(require_registered_user)) -> PasswordChangeResponse:

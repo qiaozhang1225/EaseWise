@@ -87,6 +87,13 @@ def get_voice_cache_dir() -> Path:
     return (Path(__file__).resolve().parent / "static" / "voice").resolve()
 
 
+def get_uploads_dir() -> Path:
+    raw_path = os.getenv("EASEWISE_UPLOADS_DIR", "").strip()
+    if raw_path:
+        return Path(raw_path).expanduser().resolve()
+    return (Path(__file__).resolve().parent / "static" / "uploads").resolve()
+
+
 def _get_configured_service_secret(*, provider: str, model: str) -> str | None:
     try:
         from .database import get_enabled_llm_api_key
