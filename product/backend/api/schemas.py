@@ -12,6 +12,7 @@ RuntimeConfigScopeType = Literal['global', 'channel']
 RechargeOrderStatus = Literal['pending', 'approved', 'rejected']
 RechargeOrderReviewAction = Literal['approve', 'reject']
 AdminRechargeOrderStatus = Literal['unpaid', 'paid', 'completed', 'refund_pending', 'refunded', 'closed']
+PaymentTransactionStatus = Literal['pending', 'provider_unconfigured', 'paid', 'failed', 'cancelled']
 AdminReviewAction = Literal['approve', 'reject']
 
 
@@ -201,25 +202,27 @@ class WeChatLoginRequest(BaseModel):
     code: str = Field(min_length=1, max_length=256)
     nickname: str | None = Field(default=None, max_length=64)
     avatar_url: str | None = Field(default=None, max_length=1024)
-    guest_access_token: str | None = Field(default=None, max_length=512)
 
 
-class GuestSessionRequest(BaseModel):
-    channel: str = Field(default='h5', min_length=1, max_length=64)
-    guest_key: str | None = Field(default=None, max_length=128)
-    appid: str | None = Field(default=None, max_length=128)
-    openid: str | None = Field(default=None, max_length=256)
-    unionid: str | None = Field(default=None, max_length=256)
+class PhoneStatusRequest(BaseModel):
+    phone: str = Field(min_length=1, max_length=32)
 
 
-class GuestSessionResponse(BaseModel):
-    access_token: str
-    token_type: str = 'Bearer'
-    expires_at: str
-    channel: str
-    guest_key: str
-    user: 'UserResponse'
-    points: 'PointsAccountResponse'
+class PhoneStatusResponse(BaseModel):
+    registered: bool
+    normalized_phone: str
+    next_action: Literal['login', 'register']
+
+
+class PhonePasswordRegisterRequest(BaseModel):
+    phone: str = Field(min_length=1, max_length=32)
+    password: str = Field(min_length=1, max_length=128)
+    confirm_password: str = Field(min_length=1, max_length=128)
+
+
+class PhonePasswordLoginRequest(BaseModel):
+    phone: str = Field(min_length=1, max_length=32)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class UserProfileUpdateRequest(BaseModel):
@@ -227,9 +230,24 @@ class UserProfileUpdateRequest(BaseModel):
     avatar_url: str | None = Field(default=None, max_length=1024)
 
 
+class AvatarUploadRequest(BaseModel):
+    image_data_url: str = Field(min_length=1, max_length=2_000_000)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=1, max_length=128)
+    confirm_password: str = Field(min_length=1, max_length=128)
+
+
+class PasswordChangeResponse(BaseModel):
+    status: str = 'ok'
+
+
 class UserResponse(BaseModel):
     user_id: str
     status: str
+    identity_level: str = 'normal_user'
     nickname: str | None = None
     avatar_url: str | None = None
     profile_completed: bool
@@ -242,7 +260,7 @@ class InternalUserResponse(BaseModel):
     user_id: str
     status: str
     identity_level: str = 'normal_user'
-    primary_identity_type: str = 'session'
+    primary_identity_type: str = 'unknown'
     registered_channel: str | None = None
     promoter_parent_user_id: str | None = None
     nickname: str | None = None
@@ -265,11 +283,6 @@ class InternalUserResponse(BaseModel):
     last_active_at: str
     openid: str | None = None
     unionid: str | None = None
-    guest_channel: str | None = None
-    guest_key: str | None = None
-    guest_appid: str | None = None
-    guest_openid: str | None = None
-    guest_unionid: str | None = None
 
 
 class InternalUserListResponse(BaseModel):
@@ -368,11 +381,50 @@ class RechargePackageListResponse(BaseModel):
 
 class RechargeOrderCreateRequest(BaseModel):
     package_key: str = Field(min_length=1, max_length=128)
-    source: str = Field(default='customer_service_h5', min_length=1, max_length=64)
+    source: str = Field(default='h5_recharge_page', min_length=1, max_length=64)
     external_order_id: str | None = Field(default=None, max_length=128)
     idempotency_key: str | None = Field(default=None, max_length=128)
     proof_url: str | None = Field(default=None, max_length=1024)
     remark: str | None = Field(default=None, max_length=512)
+
+
+class PaymentTransactionResponse(BaseModel):
+    transaction_id: str
+    order_id: str
+    user_id: str
+    provider: str
+    payment_method: str
+    amount_cents: int
+    status: PaymentTransactionStatus | str
+    provider_transaction_id: str | None = None
+    prepay_id: str | None = None
+    idempotency_key: str | None = None
+    payment_params: dict[str, Any] = Field(default_factory=dict)
+    client_message: str | None = None
+    failure_reason: str | None = None
+    paid_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class PaymentTransactionCreateRequest(BaseModel):
+    provider: str = Field(default='wechat_h5', min_length=1, max_length=64)
+    payment_method: str | None = Field(default=None, max_length=64)
+    idempotency_key: str | None = Field(default=None, max_length=128)
+    return_url: str | None = Field(default=None, max_length=1024)
+    client_context: dict[str, Any] | None = None
+
+
+class PaymentNotifyResponse(BaseModel):
+    status: str
+    transaction: PaymentTransactionResponse | None = None
+    order: 'RechargeOrderResponse' | None = None
+    ledger: PointsLedgerEntryResponse | None = None
+
+
+class RechargeOrderPaymentStatusResponse(BaseModel):
+    order: 'RechargeOrderResponse'
+    latest_payment: PaymentTransactionResponse | None = None
 
 
 class RechargeOrderResponse(BaseModel):
@@ -401,6 +453,8 @@ class RechargeOrderResponse(BaseModel):
     closed_at: str | None = None
     refund_requests: list[RefundRequestResponse] = Field(default_factory=list)
     commission_records: list[PromotionCommissionResponse] = Field(default_factory=list)
+    payment_transactions: list[PaymentTransactionResponse] = Field(default_factory=list)
+    latest_payment: PaymentTransactionResponse | None = None
     granted_ledger_id: str | None = None
     created_at: str
     updated_at: str
@@ -767,7 +821,6 @@ class RuntimeConfigSchemaResponse(BaseModel):
 
 class RuntimePointsConfigResponse(BaseModel):
     initial_grant: int
-    guest_initial_grant: int
 
 
 class RuntimeRechargeConfigResponse(BaseModel):
@@ -812,4 +865,5 @@ class PublicRuntimeConfigResponse(BaseModel):
     modules: RuntimeModulesConfigResponse
 
 
-GuestSessionResponse.model_rebuild()
+PaymentNotifyResponse.model_rebuild()
+RechargeOrderPaymentStatusResponse.model_rebuild()

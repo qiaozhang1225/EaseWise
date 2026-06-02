@@ -47,11 +47,7 @@ def allow_mock_wechat_login() -> bool:
 
 
 def get_initial_points() -> int:
-    return _parse_int_env("EASEWISE_INITIAL_POINTS", default=100, minimum=0)
-
-
-def get_guest_initial_points() -> int:
-    return _parse_int_env("EASEWISE_GUEST_INITIAL_POINTS", default=get_initial_points(), minimum=0)
+    return _parse_int_env("EASEWISE_INITIAL_POINTS", default=10000, minimum=0)
 
 
 def get_phone_review_base_points_cost() -> int:

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from . import handlers
 from .routers import account, agent, almanac, auth, billing, phone_qimen, public, runtime_config
@@ -18,6 +21,8 @@ from .routers.internal import (
 )
 
 app = FastAPI(title=handlers.APP_TITLE, version=handlers.APP_VERSION)
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=handlers.get_cors_origins(),
@@ -49,3 +54,4 @@ app.include_router(internal_runtime_config.router)
 app.include_router(internal_billing.router)
 app.include_router(internal_llm.router)
 app.include_router(internal_promotion.router)
+app.mount("/api/v1/static", StaticFiles(directory=str(STATIC_DIR)), name="api_static")

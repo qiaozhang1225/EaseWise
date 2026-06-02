@@ -8,5 +8,7 @@ router = APIRouter(prefix="/api/v1/account", tags=["account"])
 
 router.add_api_route("/me", handlers.get_me, methods=["GET"], response_model=handlers.CurrentUserResponse)
 router.add_api_route("/profile", handlers.patch_me_profile, methods=["PATCH"], response_model=handlers.UserResponse)
+router.add_api_route("/avatar", handlers.upload_my_avatar, methods=["POST"], response_model=handlers.UserResponse)
+router.add_api_route("/password/change", handlers.change_my_password, methods=["POST"], response_model=handlers.PasswordChangeResponse)
 router.add_api_route("/points", handlers.get_my_points, methods=["GET"], response_model=handlers.PointsAccountResponse)
 router.add_api_route("/points/ledger", handlers.get_my_points_ledger, methods=["GET"], response_model=handlers.PointsLedgerListResponse)

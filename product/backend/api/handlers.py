@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import html
 import re
 import threading
@@ -18,17 +20,22 @@ from features.phone_qimen.scoring.total_score.engine import load_rules, score_ph
 from features.phone_qimen.scoring.total_score.bundle import build_scoring_bundle
 
 from .agent import build_agent_reply
-from .auth import build_session_expiry, exchange_wechat_code, hash_access_token, issue_access_token, require_authenticated_user, require_internal_admin_access, require_registered_user, resolve_authenticated_user
+from .auth import build_session_expiry, exchange_wechat_code, hash_access_token, hash_password, issue_access_token, require_authenticated_user, require_authenticated_user_with_token_hash, require_internal_admin_access, require_registered_user, resolve_authenticated_user, verify_password
 from .config import APP_TITLE, APP_VERSION, allow_mock_wechat_login, get_cors_origins, get_database_path, get_public_base_url, get_wechat_oa_app_id
-from .database import InsufficientPointsError, adjust_points, adjust_rebate_points, complete_review, complete_review_with_message, complete_usage_record, create_recharge_order, create_refund_request, create_review_aspect_unlock, create_review_with_charge, create_session, create_usage_record, delete_llm_api_key, ensure_schema, fail_review, fail_usage_record, get_dashboard_summary, get_internal_user, get_points_account, get_promotion_application, get_promotion_commission, get_promotion_rules, get_promotion_withdrawal, get_recharge_order, get_review, get_session_user_by_token_hash, get_usage_record, get_user, list_llm_api_keys, list_points_ledger, list_promotion_applications, list_promotion_commissions, list_promotion_withdrawals, list_recharge_orders, list_recent_recharge_orders_for_user, list_refund_requests_for_order, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, mark_promotion_withdrawal_paid, merge_guest_user_into_user, refund_points, retry_promotion_withdrawal_payout, retry_refund_request, review_promotion_application, review_promotion_withdrawal, review_recharge_order, review_refund_request, update_review_generation_payload, update_review_progress, update_review_score_template, update_user_identity, update_user_profile, update_user_promoter_parent, update_user_status, upsert_guest_user, upsert_llm_api_key, upsert_runtime_config_entry, upsert_wechat_user
+from .database import InsufficientPointsError, adjust_points, adjust_rebate_points, complete_review, complete_review_with_message, complete_usage_record, create_payment_transaction, create_phone_user, create_recharge_order, create_refund_request, create_review_aspect_unlock, create_review_with_charge, create_session, create_usage_record, delete_llm_api_key, ensure_schema, fail_review, fail_usage_record, get_dashboard_summary, get_internal_user, get_latest_payment_transaction_for_order, get_phone_identity_by_normalized_phone, get_points_account, get_primary_phone_identity_by_user_id, get_promotion_application, get_promotion_commission, get_promotion_rules, get_promotion_withdrawal, get_recharge_order, get_review, get_usage_record, get_user, list_llm_api_keys, list_payment_transactions_for_order, list_points_ledger, list_promotion_applications, list_promotion_commissions, list_promotion_withdrawals, list_recharge_orders, list_recent_recharge_orders_for_user, list_refund_requests_for_order, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, mark_phone_identity_login, mark_promotion_withdrawal_paid, refund_points, revoke_session_by_token_hash, retry_promotion_withdrawal_payout, retry_refund_request, review_promotion_application, review_promotion_withdrawal, review_recharge_order, review_refund_request, settle_payment_transaction, update_phone_identity_password, update_review_generation_payload, update_review_progress, update_review_score_template, update_user_identity, update_user_profile, update_user_promoter_parent, update_user_status, upsert_llm_api_key, upsert_runtime_config_entry, upsert_wechat_user
 from .phone_review_view import PUBLIC_ASPECT_ORDER, build_phone_review_product_view
+from .payments import create_payment_request
 from .product_review import build_product_review_aspects_render, build_product_review_core_render
-from .runtime_config import get_runtime_agent_metaphysics_skill_enabled, get_runtime_available_recharge_packages, get_runtime_guest_initial_points, get_runtime_initial_points, get_runtime_phone_review_aspect_order, get_runtime_phone_review_aspect_unlock_points_cost, get_runtime_phone_review_base_points_cost, get_runtime_phone_review_free_aspect_keys, get_runtime_phone_review_unlock_enforcement_enabled, is_module_enabled, normalize_channel_key, normalize_config_key, normalize_scope_key, normalize_scope_type, resolve_public_runtime_config
-from .schemas import AdminReviewRequest, AgentReplyRequest, AgentReplyResponse, AlmanacResponse, AuthLoginResponse, ComplianceConfigResponse, CurrentUserResponse, CustomerServiceConfigResponse, DashboardResponse, DashboardMetricResponse, DashboardSectionResponse, GuestSessionRequest, GuestSessionResponse, InternalUserAdminSummaryResponse, InternalUserListResponse, InternalUserResponse, LlmApiKeyListResponse, LlmApiKeyResponse, LlmApiKeyUpsertRequest, ManualPointsAdjustRequest, ManualPointsAdjustResponse, ModuleRuntimeConfigResponse, PointsAccountResponse, PointsLedgerEntryResponse, PointsLedgerListResponse, PublicRuntimeConfigResponse, PromotionApplicationListResponse, PromotionApplicationResponse, PromotionCommissionListResponse, PromotionCommissionResponse, PromotionRulesResponse, PromotionRulesUpdateRequest, PromotionWithdrawalListResponse, PromotionWithdrawalPayoutRequest, PromotionWithdrawalResponse, RebatePointsAdjustRequest, RebatePointsAdjustResponse, RebatePointsAccountResponse, RefundCreateRequest, RefundRequestResponse, RefundRetryRequest, RechargeOrderCreateRequest, RechargeOrderListResponse, RechargeOrderResponse, RechargeOrderReviewRequest, RechargeOrderReviewResponse, RechargeOrderSummaryResponse, RechargePackageListResponse, RechargePackageResponse, ReviewAspectResponse, ReviewAspectUnlockListResponse, ReviewAspectUnlockRequest, ReviewAspectUnlockResponse, ReviewBoardResponse, ReviewCreateRequest, ReviewListResponse, ReviewPhoneSummaryResponse, ReviewRecordResponse, ReviewStabilityDetailResponse, ReviewSummaryResponse, RuntimeConfigEntryResponse, RuntimeConfigListResponse, RuntimeConfigSchemaItemResponse, RuntimeConfigSchemaResponse, RuntimeConfigUpsertRequest, RuntimeModulesConfigResponse, RuntimePointsConfigResponse, RuntimeRechargeConfigResponse, UsageRecordDetailResponse, UsageRecordListResponse, UsageRecordResponse, UserIdentityUpdateRequest, UserPromoterParentUpdateRequest, UserProfileUpdateRequest, UserResponse, UserStatusUpdateRequest, WeChatLoginRequest
+from .runtime_config import get_runtime_agent_metaphysics_skill_enabled, get_runtime_available_recharge_packages, get_runtime_initial_points, get_runtime_phone_review_aspect_order, get_runtime_phone_review_aspect_unlock_points_cost, get_runtime_phone_review_base_points_cost, get_runtime_phone_review_free_aspect_keys, get_runtime_phone_review_unlock_enforcement_enabled, is_module_enabled, normalize_channel_key, normalize_config_key, normalize_scope_key, normalize_scope_type, resolve_public_runtime_config
+from .schemas import AdminReviewRequest, AgentReplyRequest, AgentReplyResponse, AlmanacResponse, AuthLoginResponse, AvatarUploadRequest, ComplianceConfigResponse, CurrentUserResponse, CustomerServiceConfigResponse, DashboardResponse, DashboardMetricResponse, DashboardSectionResponse, InternalUserAdminSummaryResponse, InternalUserListResponse, InternalUserResponse, LlmApiKeyListResponse, LlmApiKeyResponse, LlmApiKeyUpsertRequest, ManualPointsAdjustRequest, ManualPointsAdjustResponse, ModuleRuntimeConfigResponse, PasswordChangeRequest, PasswordChangeResponse, PaymentNotifyResponse, PaymentTransactionCreateRequest, PaymentTransactionResponse, PhonePasswordLoginRequest, PhonePasswordRegisterRequest, PhoneStatusRequest, PhoneStatusResponse, PointsAccountResponse, PointsLedgerEntryResponse, PointsLedgerListResponse, PublicRuntimeConfigResponse, PromotionApplicationListResponse, PromotionApplicationResponse, PromotionCommissionListResponse, PromotionCommissionResponse, PromotionRulesResponse, PromotionRulesUpdateRequest, PromotionWithdrawalListResponse, PromotionWithdrawalPayoutRequest, PromotionWithdrawalResponse, RebatePointsAdjustRequest, RebatePointsAdjustResponse, RebatePointsAccountResponse, RefundCreateRequest, RefundRequestResponse, RefundRetryRequest, RechargeOrderCreateRequest, RechargeOrderListResponse, RechargeOrderPaymentStatusResponse, RechargeOrderResponse, RechargeOrderReviewRequest, RechargeOrderReviewResponse, RechargeOrderSummaryResponse, RechargePackageListResponse, RechargePackageResponse, ReviewAspectResponse, ReviewAspectUnlockListResponse, ReviewAspectUnlockRequest, ReviewAspectUnlockResponse, ReviewBoardResponse, ReviewCreateRequest, ReviewListResponse, ReviewPhoneSummaryResponse, ReviewRecordResponse, ReviewStabilityDetailResponse, ReviewSummaryResponse, RuntimeConfigEntryResponse, RuntimeConfigListResponse, RuntimeConfigSchemaItemResponse, RuntimeConfigSchemaResponse, RuntimeConfigUpsertRequest, RuntimeModulesConfigResponse, RuntimePointsConfigResponse, RuntimeRechargeConfigResponse, UsageRecordDetailResponse, UsageRecordListResponse, UsageRecordResponse, UserIdentityUpdateRequest, UserPromoterParentUpdateRequest, UserProfileUpdateRequest, UserResponse, UserStatusUpdateRequest, WeChatLoginRequest
 from .wechat_h5 import STATE_COOKIE_NAME, build_oauth_state, build_wechat_oauth_authorize_url, exchange_h5_oauth_code, h5_oauth_is_configured, is_wechat_browser
 
 PHONE_PATTERN = re.compile(r"^\d{11}$")
+MAINLAND_MOBILE_PATTERN = re.compile(r"^1[3-9]\d{9}$")
 TESTER_PAGE_PATH = Path(__file__).resolve().parent / "static" / "tester.html"
+AVATAR_UPLOAD_DIR = Path(__file__).resolve().parent / "static" / "uploads" / "avatars"
+AVATAR_DATA_URL_PATTERN = re.compile(r"^data:image/(?P<kind>png|jpe?g|webp);base64,(?P<data>.+)$", re.DOTALL)
+MAX_AVATAR_UPLOAD_BYTES = 1_500_000
 load_env_file()
 RULES = load_rules()
 PHONE_REVIEW_BASE_SCENE = "phone_review_base"
@@ -37,8 +44,7 @@ PHONE_REVIEW_ASPECT_UNLOCK_SCENE = "phone_review_aspect_unlock"
 REVIEW_PREVIEW_ASPECT_THRESHOLD = 4
 _RUNTIME_CONFIG_SCHEMA_ITEMS: list[dict[str, object]] = [
     {"config_key": "recharge.packages", "label": "充值套餐", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": True, "description": "充值金额与积分套餐列表"},
-    {"config_key": "points.initial_grant", "label": "注册初始积分", "value_type": "int", "default_value": 100, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "注册用户默认发放积分"},
-    {"config_key": "points.guest_initial_grant", "label": "游客初始积分", "value_type": "int", "default_value": 100, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "游客会话初始积分"},
+    {"config_key": "points.initial_grant", "label": "注册初始积分", "value_type": "int", "default_value": 10000, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "注册用户默认发放积分"},
     {"config_key": "customer_service.contact_url", "label": "客服联系方式", "value_type": "string", "default_value": None, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "客服跳转链接"},
     {"config_key": "customer_service.qr_code_url", "label": "客服二维码", "value_type": "string", "default_value": None, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "客服二维码图片地址"},
     {"config_key": "customer_service.guidance_text", "label": "客服说明文案", "value_type": "string", "default_value": "联系客服获取充值与服务支持", "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "前台客服说明"},
@@ -149,54 +155,9 @@ def get_internal_dashboard(
     )
 
 
-def create_guest_session(payload: GuestSessionRequest, request: Request) -> GuestSessionResponse:
-    now_text = _utc_now()
-    try:
-        guest_session = upsert_guest_user(
-            channel=payload.channel,
-            guest_key=payload.guest_key,
-            appid=payload.appid,
-            openid=payload.openid,
-            unionid=payload.unionid,
-            initial_points=get_runtime_guest_initial_points(),
-            now_text=now_text,
-        )
-    except ValueError as exc:
-        detail = str(exc)
-        status_code = 409 if detail in {"guest_identity_conflict", "guest_identity_bound_to_registered_user"} else 422
-        raise HTTPException(status_code=status_code, detail=detail) from exc
-
-    access_token = issue_access_token()
-    expires_at = build_session_expiry(now_text)
-    create_session(
-        user_id=str(guest_session["user"]["user_id"]),
-        token_hash=hash_access_token(access_token),
-        device_type=request.headers.get("X-Client-Platform"),
-        client_version=request.headers.get("X-Client-Version"),
-        ip=request.client.host if request.client else None,
-        expires_at=expires_at,
-        now_text=now_text,
-    )
-    return GuestSessionResponse(
-        access_token=access_token,
-        expires_at=expires_at,
-        channel=str(guest_session["channel"]),
-        guest_key=str(guest_session["guest_key"]),
-        user=_build_user_response(guest_session["user"]),
-        points=_build_points_response_from_user(guest_session["user"]),
-    )
-
-
 def login_with_wechat(payload: WeChatLoginRequest, request: Request) -> AuthLoginResponse:
     exchange = exchange_wechat_code(payload.code)
     now_text = _utc_now()
-    guest_user: dict[str, object] | None = None
-    if payload.guest_access_token:
-        guest_user = get_session_user_by_token_hash(hash_access_token(payload.guest_access_token), now_text=now_text, ip=request.client.host if request.client else None)
-        if guest_user is None:
-            raise HTTPException(status_code=401, detail="invalid_guest_access_token")
-        if str(guest_user.get("status") or "") != "guest":
-            raise HTTPException(status_code=422, detail="guest_access_token_must_belong_to_guest_user")
 
     try:
         user = upsert_wechat_user(
@@ -206,24 +167,62 @@ def login_with_wechat(payload: WeChatLoginRequest, request: Request) -> AuthLogi
             session_key=exchange.session_key,
             nickname=payload.nickname,
             avatar_url=payload.avatar_url,
-            initial_points=0 if guest_user is not None else get_runtime_initial_points(),
+            initial_points=get_runtime_initial_points(),
             now_text=now_text,
         )
     except ValueError as exc:
         detail = str(exc)
         status_code = 409 if detail == "wechat_identity_conflict" else 422
         raise HTTPException(status_code=status_code, detail=detail) from exc
-    if guest_user is not None and str(guest_user["user_id"]) != str(user["user_id"]):
-        merge_guest_user_into_user(guest_user_id=str(guest_user["user_id"]), target_user_id=str(user["user_id"]), now_text=now_text)
-        refreshed_user = get_user(str(user["user_id"]))
-        if refreshed_user is None:
-            raise HTTPException(status_code=500, detail="guest_merge_refresh_failed")
-        user = refreshed_user
 
     access_token = issue_access_token()
     expires_at = build_session_expiry(now_text)
     create_session(user_id=str(user["user_id"]), token_hash=hash_access_token(access_token), device_type=request.headers.get("X-Client-Platform"), client_version=request.headers.get("X-Client-Version"), ip=request.client.host if request.client else None, expires_at=expires_at, now_text=now_text)
     return AuthLoginResponse(access_token=access_token, expires_at=expires_at, user=_build_user_response(user), points=_build_points_response_from_user(user))
+
+
+def get_phone_registration_status(payload: PhoneStatusRequest) -> PhoneStatusResponse:
+    normalized_phone = _normalize_mainland_mobile(payload.phone)
+    identity = get_phone_identity_by_normalized_phone(normalized_phone=normalized_phone)
+    registered = identity is not None and bool(identity.get("password_hash"))
+    return PhoneStatusResponse(
+        registered=registered,
+        normalized_phone=normalized_phone,
+        next_action="login" if registered else "register",
+    )
+
+
+def register_with_phone_password(payload: PhonePasswordRegisterRequest, request: Request) -> AuthLoginResponse:
+    normalized_phone = _normalize_mainland_mobile(payload.phone)
+    _validate_phone_password_pair(payload.password, payload.confirm_password)
+    now_text = _utc_now()
+    try:
+        user = create_phone_user(
+            normalized_phone=normalized_phone,
+            password_hash=hash_password(payload.password),
+            initial_points=get_runtime_initial_points(),
+            registered_channel=f"phone:{_resolve_request_channel(request) or 'h5'}",
+            now_text=now_text,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 409 if detail == "phone_already_registered" else 422
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+
+    return _issue_auth_login_response(user, request=request, now_text=now_text)
+
+
+def login_with_phone_password(payload: PhonePasswordLoginRequest, request: Request) -> AuthLoginResponse:
+    normalized_phone = _normalize_mainland_mobile(payload.phone)
+    identity = get_phone_identity_by_normalized_phone(normalized_phone=normalized_phone)
+    if identity is None or not verify_password(payload.password, str(identity.get("password_hash") or "")):
+        raise HTTPException(status_code=401, detail="invalid_phone_or_password")
+
+    now_text = _utc_now()
+    user = mark_phone_identity_login(identity_id=str(identity["identity_id"]), now_text=now_text)
+    if user is None:
+        raise HTTPException(status_code=404, detail="phone_not_registered")
+    return _issue_auth_login_response(user, request=request, now_text=now_text)
 
 
 def get_me(current_user: dict[str, object] = Depends(require_authenticated_user)) -> CurrentUserResponse:
@@ -237,6 +236,52 @@ def patch_me_profile(payload: UserProfileUpdateRequest, current_user: dict[str, 
     if updated is None:
         raise HTTPException(status_code=404, detail="user_not_found")
     return _build_user_response(updated)
+
+
+def upload_my_avatar(payload: AvatarUploadRequest, current_user: dict[str, object] = Depends(require_registered_user)) -> UserResponse:
+    image_bytes, extension = _decode_avatar_data_url(payload.image_data_url)
+    user_id = str(current_user["user_id"])
+    AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    file_name = f"{user_id}-{uuid4().hex}.{extension}"
+    file_path = AVATAR_UPLOAD_DIR / file_name
+    file_path.write_bytes(image_bytes)
+    avatar_url = f"/api/v1/static/uploads/avatars/{file_name}"
+    updated = update_user_profile(user_id=user_id, nickname=None, avatar_url=avatar_url, now_text=_utc_now())
+    if updated is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    return _build_user_response(updated)
+
+
+def change_my_password(payload: PasswordChangeRequest, current_user: dict[str, object] = Depends(require_registered_user)) -> PasswordChangeResponse:
+    if payload.new_password != payload.confirm_password:
+        raise HTTPException(status_code=422, detail="password_confirm_mismatch")
+
+    _validate_phone_password_pair(payload.new_password, payload.confirm_password)
+
+    identity = get_primary_phone_identity_by_user_id(str(current_user["user_id"]))
+    if identity is None or not identity.get("password_hash"):
+        raise HTTPException(status_code=422, detail="phone_password_identity_not_found")
+    if not verify_password(payload.current_password, str(identity.get("password_hash") or "")):
+        raise HTTPException(status_code=401, detail="invalid_current_password")
+    if payload.new_password == payload.current_password:
+        raise HTTPException(status_code=422, detail="new_password_same_as_old")
+
+    updated = update_phone_identity_password(
+        identity_id=str(identity["identity_id"]),
+        password_hash=hash_password(payload.new_password.strip()),
+        now_text=_utc_now(),
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="password_update_failed")
+    return PasswordChangeResponse(status="ok")
+
+
+def logout_user(auth_result: tuple[dict[str, object], str] = Depends(require_authenticated_user_with_token_hash)) -> dict[str, str]:
+    _, token_hash = auth_result
+    revoked = revoke_session_by_token_hash(token_hash, now_text=_utc_now())
+    if not revoked:
+        raise HTTPException(status_code=404, detail="session_not_found")
+    return {"status": "ok"}
 
 
 def get_my_points(current_user: dict[str, object] = Depends(require_authenticated_user)) -> PointsAccountResponse:
@@ -298,7 +343,83 @@ def get_my_recharge_orders(
 
 
 def get_my_recharge_order_detail(order_id: str, current_user: dict[str, object] = Depends(require_registered_user)) -> RechargeOrderResponse:
-    return _build_recharge_order_response(_require_owned_recharge_order(order_id, current_user_id=str(current_user["user_id"])))
+    order = _require_owned_recharge_order(order_id, current_user_id=str(current_user["user_id"]))
+    return _build_recharge_order_response_with_payments(order)
+
+
+def create_recharge_order_payment(order_id: str, payload: PaymentTransactionCreateRequest, current_user: dict[str, object] = Depends(require_registered_user)) -> PaymentTransactionResponse:
+    order = _require_owned_recharge_order(order_id, current_user_id=str(current_user["user_id"]))
+    if str(order.get("status") or "") != "unpaid":
+        raise HTTPException(status_code=409, detail="recharge_order_not_payable")
+
+    payment_result = create_payment_request(
+        provider=payload.provider,
+        payment_method=payload.payment_method,
+        order=order,
+        return_url=payload.return_url,
+        client_context=payload.client_context,
+    )
+    transaction = create_payment_transaction(
+        transaction_id=uuid4().hex,
+        order_id=order_id,
+        user_id=str(current_user["user_id"]),
+        provider=payment_result.provider,
+        payment_method=payment_result.payment_method,
+        amount_cents=int(order["amount_cents"]),
+        status=payment_result.status,
+        provider_transaction_id=payment_result.provider_transaction_id,
+        prepay_id=payment_result.prepay_id,
+        idempotency_key=payload.idempotency_key,
+        payment_params=payment_result.payment_params,
+        failure_reason=payment_result.failure_reason,
+        now_text=_utc_now(),
+    )
+    return _build_payment_transaction_response(transaction, client_message=payment_result.client_message)
+
+
+def get_recharge_order_payment_status(order_id: str, current_user: dict[str, object] = Depends(require_registered_user)) -> RechargeOrderPaymentStatusResponse:
+    order = _require_owned_recharge_order(order_id, current_user_id=str(current_user["user_id"]))
+    latest_payment = get_latest_payment_transaction_for_order(order_id)
+    return RechargeOrderPaymentStatusResponse(
+        order=_build_recharge_order_response_with_payments(order, payment_limit=5),
+        latest_payment=_build_payment_transaction_response(latest_payment) if latest_payment is not None else None,
+    )
+
+
+async def post_payment_notify(provider: str, request: Request) -> PaymentNotifyResponse:
+    normalized_provider = provider.strip().lower()
+    if normalized_provider != "mock":
+        return PaymentNotifyResponse(status="payment_notify_not_configured")
+    if not allow_mock_wechat_login():
+        raise HTTPException(status_code=403, detail="mock_payment_disabled")
+
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="invalid_payment_notify_payload")
+    transaction_id = str(payload.get("transaction_id") or "").strip()
+    if not transaction_id:
+        raise HTTPException(status_code=422, detail="transaction_id_required")
+
+    try:
+        transaction, order, ledger = settle_payment_transaction(
+            transaction_id=transaction_id,
+            provider_transaction_id=str(payload.get("provider_transaction_id") or "").strip() or None,
+            notify_payload=payload,
+            now_text=_utc_now(),
+        )
+    except RuntimeError as exc:
+        detail = str(exc)
+        status_code = 404 if detail in {"payment_transaction_not_found", "recharge_order_not_found"} else 500
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return PaymentNotifyResponse(
+        status="settled",
+        transaction=_build_payment_transaction_response(transaction),
+        order=_build_recharge_order_response(order),
+        ledger=_build_points_ledger_entry_response(ledger),
+    )
 
 
 def get_today_almanac(request: Request, current_user: dict[str, object] | None = Depends(resolve_authenticated_user)) -> AlmanacResponse:
@@ -642,7 +763,7 @@ def get_internal_recharge_order_detail(order_id: str, _: None = Depends(require_
     order = get_recharge_order(order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="recharge_order_not_found")
-    order_response = _build_recharge_order_response(order)
+    order_response = _build_recharge_order_response_with_payments(order)
     order_response.refund_requests = [RefundRequestResponse(**item) for item in list_refund_requests_for_order(order_id)]
     order_response.commission_records = [PromotionCommissionResponse(**item) for item in list_promotion_commissions(limit=20, order_id=order_id)]
     return order_response
@@ -973,14 +1094,14 @@ def create_agent_reply(request: Request, payload: AgentReplyRequest, current_use
     return AgentReplyResponse(**reply_payload)
 
 
-def create_review_record(request: Request, background_tasks: BackgroundTasks, payload: ReviewCreateRequest, current_user: dict[str, object] | None = Depends(resolve_authenticated_user)) -> ReviewRecordResponse:
+def create_review_record(request: Request, background_tasks: BackgroundTasks, payload: ReviewCreateRequest, current_user: dict[str, object] = Depends(require_registered_user)) -> ReviewRecordResponse:
     _ensure_module_available(module_key="phone_review", request=request)
     normalized_phone = _normalize_phone(payload.phone)
     review_id = uuid4().hex
     created_at = _utc_now()
-    user_id = str(current_user["user_id"]) if current_user else None
+    user_id = str(current_user["user_id"])
     channel_key = _resolve_request_channel(request)
-    points_cost = get_runtime_phone_review_base_points_cost(channel_key) if user_id else 0
+    points_cost = get_runtime_phone_review_base_points_cost(channel_key)
     try:
         create_review_with_charge(
             review_id=review_id,
@@ -993,7 +1114,7 @@ def create_review_record(request: Request, background_tasks: BackgroundTasks, pa
             progress_message="评测任务已创建，等待开始",
             points_cost=points_cost,
             usage_scene=PHONE_REVIEW_BASE_SCENE,
-            request_payload_summary={"phone": normalized_phone, "gender": payload.gender, "include_markdown": payload.include_markdown} if user_id and points_cost > 0 else None,
+            request_payload_summary={"phone": normalized_phone, "gender": payload.gender, "include_markdown": payload.include_markdown},
             channel=channel_key,
         )
     except InsufficientPointsError as exc:
@@ -1013,7 +1134,7 @@ def create_review_record(request: Request, background_tasks: BackgroundTasks, pa
     return _build_review_record_response(
         review,
         channel_key=channel_key,
-        current_user_id=str(current_user["user_id"]) if current_user else None,
+        current_user_id=str(current_user["user_id"]),
     )
 
 
@@ -1036,7 +1157,7 @@ def get_review_record(request: Request, review_id: str, current_user: dict[str, 
 def get_review_aspect_unlock_status(
     review_id: str,
     request: Request,
-    current_user: dict[str, object] = Depends(require_authenticated_user),
+    current_user: dict[str, object] = Depends(require_registered_user),
 ) -> ReviewAspectUnlockListResponse:
     _ensure_module_available(module_key="phone_review", request=request)
     channel_key = _resolve_request_channel(request)
@@ -1063,7 +1184,7 @@ def create_review_aspect_unlock_record(
     review_id: str,
     payload: ReviewAspectUnlockRequest,
     request: Request,
-    current_user: dict[str, object] = Depends(require_authenticated_user),
+    current_user: dict[str, object] = Depends(require_registered_user),
 ) -> ReviewAspectUnlockResponse:
     _ensure_module_available(module_key="phone_review", request=request)
     current_user_id = str(current_user["user_id"])
@@ -1159,7 +1280,7 @@ def _build_review_summary_response(review: dict[str, object]) -> ReviewSummaryRe
 
 
 def _build_user_response(user: dict[str, object]) -> UserResponse:
-    return UserResponse(user_id=str(user["user_id"]), status=str(user["status"]), nickname=user.get("nickname"), avatar_url=user.get("avatar_url"), profile_completed=bool(user["profile_completed"]), created_at=str(user["created_at"]), updated_at=str(user["updated_at"]), last_active_at=str(user["last_active_at"]))
+    return UserResponse(user_id=str(user["user_id"]), status=str(user["status"]), identity_level=str(user.get("identity_level") or "normal_user"), nickname=user.get("nickname"), avatar_url=user.get("avatar_url"), profile_completed=bool(user["profile_completed"]), created_at=str(user["created_at"]), updated_at=str(user["updated_at"]), last_active_at=str(user["last_active_at"]))
 
 
 
@@ -1168,7 +1289,7 @@ def _build_internal_user_response(user: dict[str, object]) -> InternalUserRespon
         user_id=str(user["user_id"]),
         status=str(user["status"]),
         identity_level=str(user.get("identity_level") or "normal_user"),
-        primary_identity_type=str(user.get("primary_identity_type") or "session"),
+        primary_identity_type=str(user.get("primary_identity_type") or "unknown"),
         registered_channel=str(user["registered_channel"]) if user.get("registered_channel") else None,
         promoter_parent_user_id=str(user["promoter_parent_user_id"]) if user.get("promoter_parent_user_id") else None,
         nickname=user.get("nickname"),
@@ -1191,11 +1312,6 @@ def _build_internal_user_response(user: dict[str, object]) -> InternalUserRespon
         last_active_at=str(user["last_active_at"]),
         openid=user.get("openid"),
         unionid=user.get("unionid"),
-        guest_channel=user.get("guest_channel"),
-        guest_key=user.get("guest_key"),
-        guest_appid=user.get("guest_appid"),
-        guest_openid=user.get("guest_openid"),
-        guest_unionid=user.get("guest_unionid"),
     )
 
 
@@ -1284,6 +1400,37 @@ def _build_recharge_order_response(item: dict[str, object]) -> RechargeOrderResp
         completed_at=str(item["completed_at"]) if item.get("completed_at") else None,
         closed_at=str(item["closed_at"]) if item.get("closed_at") else None,
         granted_ledger_id=str(item["granted_ledger_id"]) if item.get("granted_ledger_id") else None,
+        created_at=str(item["created_at"]),
+        updated_at=str(item["updated_at"]),
+    )
+
+
+def _build_recharge_order_response_with_payments(item: dict[str, object], *, payment_limit: int = 20) -> RechargeOrderResponse:
+    response = _build_recharge_order_response(item)
+    payments = list_payment_transactions_for_order(str(item["order_id"]), limit=payment_limit)
+    response.payment_transactions = [_build_payment_transaction_response(payment) for payment in payments]
+    response.latest_payment = response.payment_transactions[0] if response.payment_transactions else None
+    return response
+
+
+def _build_payment_transaction_response(item: dict[str, object] | None, *, client_message: str | None = None) -> PaymentTransactionResponse:
+    if item is None:
+        raise ValueError("payment_transaction_required")
+    return PaymentTransactionResponse(
+        transaction_id=str(item["transaction_id"]),
+        order_id=str(item["order_id"]),
+        user_id=str(item["user_id"]),
+        provider=str(item["provider"]),
+        payment_method=str(item["payment_method"]),
+        amount_cents=int(item["amount_cents"]),
+        status=str(item["status"]),
+        provider_transaction_id=str(item["provider_transaction_id"]) if item.get("provider_transaction_id") else None,
+        prepay_id=str(item["prepay_id"]) if item.get("prepay_id") else None,
+        idempotency_key=str(item["idempotency_key"]) if item.get("idempotency_key") else None,
+        payment_params=dict(item.get("payment_params") or {}),
+        client_message=client_message,
+        failure_reason=str(item["failure_reason"]) if item.get("failure_reason") else None,
+        paid_at=str(item["paid_at"]) if item.get("paid_at") else None,
         created_at=str(item["created_at"]),
         updated_at=str(item["updated_at"]),
     )
@@ -1816,11 +1963,93 @@ def _run_review_aspect_prefetch(*, review_id: str) -> None:
 
 
 
+def _decode_avatar_data_url(image_data_url: str) -> tuple[bytes, str]:
+    match = AVATAR_DATA_URL_PATTERN.match(image_data_url.strip())
+    if match is None:
+        raise HTTPException(status_code=422, detail="invalid_avatar_data")
+
+    kind = match.group("kind").lower()
+    extension = "jpg" if kind in {"jpg", "jpeg"} else kind
+    try:
+        image_bytes = base64.b64decode(match.group("data"), validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="invalid_avatar_data") from exc
+
+    if not image_bytes:
+        raise HTTPException(status_code=422, detail="empty_avatar_file")
+    if len(image_bytes) > MAX_AVATAR_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="avatar_file_too_large")
+    if not _avatar_file_signature_matches(extension, image_bytes):
+        raise HTTPException(status_code=422, detail="invalid_avatar_image")
+
+    return image_bytes, extension
+
+
+def _avatar_file_signature_matches(extension: str, image_bytes: bytes) -> bool:
+    if extension == "png":
+        return image_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    if extension == "jpg":
+        return image_bytes.startswith(b"\xff\xd8")
+    if extension == "webp":
+        return len(image_bytes) >= 12 and image_bytes[:4] == b"RIFF" and image_bytes[8:12] == b"WEBP"
+    return False
+
+
 def _normalize_phone(phone: str) -> str:
     normalized_phone = "".join(character for character in phone if character.isdigit())
     if not PHONE_PATTERN.fullmatch(normalized_phone):
         raise HTTPException(status_code=422, detail="phone_must_be_11_digits")
     return normalized_phone
+
+
+def _normalize_mainland_mobile(phone: str) -> str:
+    normalized_phone = "".join(character for character in phone if character.isdigit())
+    if len(normalized_phone) == 13 and normalized_phone.startswith("86"):
+        normalized_phone = normalized_phone[2:]
+    if not MAINLAND_MOBILE_PATTERN.fullmatch(normalized_phone):
+        raise HTTPException(status_code=422, detail="invalid_phone_number")
+    return normalized_phone
+
+
+def _issue_auth_login_response(user: dict[str, object], *, request: Request, now_text: str) -> AuthLoginResponse:
+    access_token = issue_access_token()
+    expires_at = build_session_expiry(now_text)
+    create_session(
+        user_id=str(user["user_id"]),
+        token_hash=hash_access_token(access_token),
+        device_type=request.headers.get("X-Client-Platform"),
+        client_version=request.headers.get("X-Client-Version"),
+        ip=request.client.host if request.client else None,
+        expires_at=expires_at,
+        now_text=now_text,
+    )
+    return AuthLoginResponse(
+        access_token=access_token,
+        expires_at=expires_at,
+        user=_build_user_response(user),
+        points=_build_points_response_from_user(user),
+    )
+
+
+def _validate_phone_password_pair(password: str, confirm_password: str) -> None:
+    if password != confirm_password:
+        raise HTTPException(status_code=422, detail="password_confirm_mismatch")
+    if password != password.strip():
+        raise HTTPException(status_code=422, detail="password_too_weak")
+    normalized_password = password.strip()
+    if len(normalized_password) < 8 or len(normalized_password) > 32:
+        raise HTTPException(status_code=422, detail="password_too_weak")
+    if len(set(normalized_password)) <= 1:
+        raise HTTPException(status_code=422, detail="password_too_weak")
+    category_count = sum(
+        [
+            any(character.isdigit() for character in normalized_password),
+            any(character.isalpha() for character in normalized_password),
+            any(not character.isalnum() for character in normalized_password),
+        ]
+    )
+    if category_count < 2:
+        raise HTTPException(status_code=422, detail="password_too_weak")
 
 
 

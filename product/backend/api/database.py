@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     status TEXT NOT NULL,
     identity_level TEXT NOT NULL DEFAULT 'normal_user',
-    primary_identity_type TEXT NOT NULL DEFAULT 'session',
+    primary_identity_type TEXT NOT NULL DEFAULT 'unknown',
     registered_channel TEXT,
     promoter_parent_user_id TEXT,
     created_at TEXT NOT NULL,
@@ -214,36 +214,6 @@ CREATE TABLE IF NOT EXISTS llm_api_keys (
 )
 """
 
-CREATE_GUEST_IDENTITIES_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS guest_identities (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    channel TEXT NOT NULL,
-    guest_key TEXT,
-    appid TEXT,
-    openid TEXT,
-    unionid TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    last_seen_at TEXT NOT NULL,
-    UNIQUE(channel, guest_key),
-    UNIQUE(appid, openid),
-    FOREIGN KEY(user_id) REFERENCES users(id)
-)
-"""
-
-CREATE_GUEST_USER_MERGES_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS guest_user_merges (
-    id TEXT PRIMARY KEY,
-    guest_user_id TEXT NOT NULL UNIQUE,
-    target_user_id TEXT NOT NULL,
-    transferred_points INTEGER NOT NULL DEFAULT 0,
-    merged_at TEXT NOT NULL,
-    FOREIGN KEY(guest_user_id) REFERENCES users(id),
-    FOREIGN KEY(target_user_id) REFERENCES users(id)
-)
-"""
-
 CREATE_RUNTIME_CONFIG_ENTRIES_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS runtime_config_entries (
     id TEXT PRIMARY KEY,
@@ -300,6 +270,30 @@ CREATE TABLE IF NOT EXISTS recharge_orders (
     UNIQUE(source, external_order_id),
     FOREIGN KEY(user_id) REFERENCES users(id),
     FOREIGN KEY(granted_ledger_id) REFERENCES points_ledgers(id)
+)
+"""
+
+CREATE_PAYMENT_TRANSACTIONS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS payment_transactions (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    payment_method TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    provider_transaction_id TEXT,
+    prepay_id TEXT,
+    idempotency_key TEXT,
+    payment_params_json TEXT,
+    notify_payload_json TEXT,
+    failure_reason TEXT,
+    paid_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(order_id, idempotency_key),
+    FOREIGN KEY(order_id) REFERENCES recharge_orders(id),
+    FOREIGN KEY(user_id) REFERENCES users(id)
 )
 """
 
@@ -408,9 +402,6 @@ CREATE_INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS idx_phone_identity_normalized_phone ON user_phone_identities(country_code, normalized_phone)",
     "CREATE INDEX IF NOT EXISTS idx_wechat_identity_user_id ON user_wechat_identities(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_wechat_identity_unionid ON user_wechat_identities(unionid)",
-    "CREATE INDEX IF NOT EXISTS idx_guest_identity_user_id ON guest_identities(user_id)",
-    "CREATE INDEX IF NOT EXISTS idx_guest_identity_guest_key ON guest_identities(channel, guest_key)",
-    "CREATE INDEX IF NOT EXISTS idx_guest_identity_openid ON guest_identities(appid, openid)",
     "CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON user_sessions(expires_at)",
     "CREATE INDEX IF NOT EXISTS idx_points_ledgers_user_created_at ON points_ledgers(user_id, created_at DESC)",
@@ -423,6 +414,8 @@ CREATE_INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS idx_recharge_orders_user_created_at ON recharge_orders(user_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_recharge_orders_status_created_at ON recharge_orders(status, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_recharge_orders_source_external_order_id ON recharge_orders(source, external_order_id)",
+    "CREATE INDEX IF NOT EXISTS idx_payment_transactions_order_created_at ON payment_transactions(order_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_payment_transactions_provider_status ON payment_transactions(provider, status, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_llm_api_keys_enabled_priority ON llm_api_keys(enabled, priority, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_refund_requests_order_created_at ON refund_requests(order_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_promotion_applications_status_created_at ON promotion_applications(status, created_at DESC)",
@@ -460,7 +453,7 @@ def _ensure_users_columns(connection: sqlite3.Connection) -> None:
     if "identity_level" not in columns:
         connection.execute("ALTER TABLE users ADD COLUMN identity_level TEXT NOT NULL DEFAULT 'normal_user'")
     if "primary_identity_type" not in columns:
-        connection.execute("ALTER TABLE users ADD COLUMN primary_identity_type TEXT NOT NULL DEFAULT 'session'")
+        connection.execute("ALTER TABLE users ADD COLUMN primary_identity_type TEXT NOT NULL DEFAULT 'unknown'")
     if "registered_channel" not in columns:
         connection.execute("ALTER TABLE users ADD COLUMN registered_channel TEXT")
     if "promoter_parent_user_id" not in columns:
@@ -515,8 +508,6 @@ def ensure_schema() -> None:
         connection.execute(CREATE_USER_PROFILES_TABLE_SQL)
         connection.execute(CREATE_USER_PHONE_IDENTITIES_TABLE_SQL)
         connection.execute(CREATE_USER_WECHAT_IDENTITIES_TABLE_SQL)
-        connection.execute(CREATE_GUEST_IDENTITIES_TABLE_SQL)
-        connection.execute(CREATE_GUEST_USER_MERGES_TABLE_SQL)
         connection.execute(CREATE_USER_SESSIONS_TABLE_SQL)
         connection.execute(CREATE_POINTS_ACCOUNTS_TABLE_SQL)
         connection.execute(CREATE_PROMOTION_REBATE_ACCOUNTS_TABLE_SQL)
@@ -531,6 +522,7 @@ def ensure_schema() -> None:
         connection.execute(CREATE_REVIEW_ASPECT_UNLOCKS_TABLE_SQL)
         connection.execute(CREATE_RECHARGE_ORDERS_TABLE_SQL)
         _ensure_recharge_orders_columns(connection)
+        connection.execute(CREATE_PAYMENT_TRANSACTIONS_TABLE_SQL)
         connection.execute(CREATE_REFUND_REQUESTS_TABLE_SQL)
         connection.execute(CREATE_PROMOTION_APPLICATIONS_TABLE_SQL)
         connection.execute(CREATE_PROMOTION_RELATIONSHIPS_TABLE_SQL)
@@ -838,122 +830,172 @@ def upsert_wechat_user(*, appid: str, openid: str, unionid: str | None, session_
     return _deserialize_user_row(row)
 
 
-
-def upsert_guest_user(*, channel: str, guest_key: str | None, appid: str | None, openid: str | None, unionid: str | None, initial_points: int, now_text: str) -> dict[str, Any]:
-    normalized_channel = _normalize_optional_text(channel) or "h5"
-    normalized_guest_key = _normalize_optional_text(guest_key) or uuid4().hex
-    normalized_appid = _normalize_optional_text(appid)
-    normalized_openid = _normalize_optional_text(openid)
-    normalized_unionid = _normalize_optional_text(unionid)
-
+def get_phone_identity_by_normalized_phone(*, normalized_phone: str, country_code: str = "86") -> dict[str, Any] | None:
+    normalized_country_code = _normalize_optional_text(country_code) or "86"
+    normalized_phone_value = _normalize_optional_text(normalized_phone)
+    if not normalized_phone_value:
+        return None
     with open_connection() as connection:
-        matched_by_guest_key = _get_guest_identity_by_guest_key_in_connection(connection, channel=normalized_channel, guest_key=normalized_guest_key)
-        matched_by_openid = _get_guest_identity_by_openid_in_connection(connection, appid=normalized_appid, openid=normalized_openid)
+        row = connection.execute(
+            """
+            SELECT id, user_id, country_code, phone_number, normalized_phone, is_primary,
+                   verified_at, password_hash, password_updated_at, created_at, updated_at, last_login_at
+            FROM user_phone_identities
+            WHERE country_code = ? AND normalized_phone = ?
+            LIMIT 1
+            """,
+            (normalized_country_code, normalized_phone_value),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "identity_id": row["id"],
+        "user_id": row["user_id"],
+        "country_code": row["country_code"],
+        "phone_number": row["phone_number"],
+        "normalized_phone": row["normalized_phone"],
+        "is_primary": bool(row["is_primary"]),
+        "verified_at": row["verified_at"],
+        "password_hash": row["password_hash"],
+        "password_updated_at": row["password_updated_at"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "last_login_at": row["last_login_at"],
+    }
 
-        if matched_by_guest_key is not None and matched_by_openid is not None and str(matched_by_guest_key["user_id"]) != str(matched_by_openid["user_id"]):
-            raise ValueError("guest_identity_conflict")
 
-        matched_identity = matched_by_openid or matched_by_guest_key
-        if matched_identity is None:
-            user_id = uuid4().hex
+def get_primary_phone_identity_by_user_id(user_id: str) -> dict[str, Any] | None:
+    normalized_user_id = _normalize_optional_text(user_id)
+    if not normalized_user_id:
+        return None
+    with open_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT id, user_id, country_code, phone_number, normalized_phone, is_primary,
+                   verified_at, password_hash, password_updated_at, created_at, updated_at, last_login_at
+            FROM user_phone_identities
+            WHERE user_id = ? AND is_primary = 1
+            LIMIT 1
+            """,
+            (normalized_user_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "identity_id": row["id"],
+        "user_id": row["user_id"],
+        "country_code": row["country_code"],
+        "phone_number": row["phone_number"],
+        "normalized_phone": row["normalized_phone"],
+        "is_primary": bool(row["is_primary"]),
+        "verified_at": row["verified_at"],
+        "password_hash": row["password_hash"],
+        "password_updated_at": row["password_updated_at"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "last_login_at": row["last_login_at"],
+    }
+
+
+def create_phone_user(*, normalized_phone: str, password_hash: str, initial_points: int, registered_channel: str | None, now_text: str) -> dict[str, Any]:
+    normalized_phone_value = _normalize_optional_text(normalized_phone)
+    normalized_password_hash = _normalize_optional_text(password_hash)
+    if not normalized_phone_value:
+        raise ValueError("invalid_phone_number")
+    if not normalized_password_hash:
+        raise ValueError("password_hash_required")
+
+    user_id = uuid4().hex
+    with open_connection() as connection:
+        existing = connection.execute(
+            "SELECT id FROM user_phone_identities WHERE country_code = ? AND normalized_phone = ?",
+            ("86", normalized_phone_value),
+        ).fetchone()
+        if existing is not None:
+            raise ValueError("phone_already_registered")
+        try:
             connection.execute(
                 "INSERT INTO users (id, status, primary_identity_type, registered_channel, created_at, updated_at, last_active_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (user_id, "guest", "session", normalized_channel, now_text, now_text, now_text),
+                (user_id, "active", "phone", registered_channel or "phone:h5", now_text, now_text, now_text),
             )
             connection.execute(
                 "INSERT INTO user_profiles (user_id, nickname, avatar_url, profile_completed, created_at, updated_at) VALUES (?, NULL, NULL, 0, ?, ?)",
                 (user_id, now_text, now_text),
             )
-            _create_points_account_with_initial_grant_in_connection(connection, user_id=user_id, initial_points=initial_points, grant_biz_type="guest_bonus", grant_idempotency_key=f"guest-signup:{normalized_channel}:{normalized_guest_key}", remark="guest initial points", now_text=now_text)
-            guest_identity_id = uuid4().hex
             connection.execute(
-                "INSERT INTO guest_identities (id, user_id, channel, guest_key, appid, openid, unionid, created_at, updated_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (guest_identity_id, user_id, normalized_channel, normalized_guest_key, normalized_appid, normalized_openid, normalized_unionid, now_text, now_text, now_text),
+                """
+                INSERT INTO user_phone_identities (
+                    id, user_id, country_code, phone_number, normalized_phone, is_primary,
+                    verified_at, password_hash, password_updated_at, created_at, updated_at, last_login_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    uuid4().hex,
+                    user_id,
+                    "86",
+                    normalized_phone_value,
+                    normalized_phone_value,
+                    1,
+                    now_text,
+                    normalized_password_hash,
+                    now_text,
+                    now_text,
+                    now_text,
+                    now_text,
+                ),
             )
-        else:
-            if str(matched_identity["status"]) != "guest":
-                raise ValueError("guest_identity_bound_to_registered_user")
-            user_id = str(matched_identity["user_id"])
-            final_guest_key = _normalize_optional_text(matched_identity.get("guest_key")) or normalized_guest_key
-            final_appid = normalized_appid or _normalize_optional_text(matched_identity.get("guest_appid"))
-            final_openid = normalized_openid or _normalize_optional_text(matched_identity.get("guest_openid"))
-            final_unionid = normalized_unionid or _normalize_optional_text(matched_identity.get("guest_unionid"))
-            connection.execute(
-                "UPDATE users SET registered_channel = COALESCE(registered_channel, ?), updated_at = ?, last_active_at = ? WHERE id = ?",
-                (normalized_channel, now_text, now_text, user_id),
+            _create_points_account_with_initial_grant_in_connection(
+                connection,
+                user_id=user_id,
+                initial_points=initial_points,
+                grant_biz_type="signup_bonus",
+                grant_idempotency_key=f"signup:phone:86:{normalized_phone_value}",
+                remark="initial test points",
+                now_text=now_text,
             )
-            connection.execute(
-                "UPDATE guest_identities SET channel = ?, guest_key = ?, appid = ?, openid = ?, unionid = ?, updated_at = ?, last_seen_at = ? WHERE id = ?",
-                (normalized_channel, final_guest_key, final_appid, final_openid, final_unionid, now_text, now_text, str(matched_identity["guest_identity_id"])),
-            )
-            connection.execute(
-                "INSERT OR IGNORE INTO points_accounts (user_id, balance, frozen_balance, version, created_at, updated_at) VALUES (?, 0, 0, 0, ?, ?)",
-                (user_id, now_text, now_text),
-            )
-            normalized_guest_key = final_guest_key
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("phone_already_registered") from exc
 
         row = connection.execute(_USER_SELECT_SQL + " WHERE u.id = ?", (user_id,)).fetchone()
     if row is None:
-        raise RuntimeError("guest_user_upsert_failed")
-    return {"user": _deserialize_user_row(row), "channel": normalized_channel, "guest_key": normalized_guest_key}
+        raise RuntimeError("phone_user_create_failed")
+    return _deserialize_user_row(row)
 
 
-
-def merge_guest_user_into_user(*, guest_user_id: str, target_user_id: str, now_text: str) -> dict[str, Any]:
-    if guest_user_id == target_user_id:
-        return {"guest_user_id": guest_user_id, "target_user_id": target_user_id, "transferred_points": 0}
-
+def mark_phone_identity_login(*, identity_id: str, now_text: str) -> dict[str, Any] | None:
+    normalized_identity_id = _normalize_optional_text(identity_id)
+    if not normalized_identity_id:
+        return None
     with open_connection() as connection:
-        guest_user = connection.execute(_USER_SELECT_SQL + " WHERE u.id = ?", (guest_user_id,)).fetchone()
-        target_user = connection.execute(_USER_SELECT_SQL + " WHERE u.id = ?", (target_user_id,)).fetchone()
-        if guest_user is None or target_user is None:
-            raise RuntimeError("guest_merge_user_not_found")
-        if str(guest_user["status"]) != "guest":
-            raise ValueError("guest_user_required")
-
-        already_merged = connection.execute("SELECT id FROM guest_user_merges WHERE guest_user_id = ?", (guest_user_id,)).fetchone()
-        if already_merged is not None:
-            return {"guest_user_id": guest_user_id, "target_user_id": target_user_id, "transferred_points": 0}
-
-        account_row = connection.execute("SELECT balance FROM points_accounts WHERE user_id = ?", (guest_user_id,)).fetchone()
-        transferred_points = int(account_row["balance"]) if account_row is not None else 0
-        if transferred_points > 0:
-            _spend_points_in_connection(
-                connection,
-                user_id=guest_user_id,
-                points_cost=transferred_points,
-                biz_type="guest_merge_transfer_out",
-                biz_id=target_user_id,
-                idempotency_key=f"guest-merge:out:{guest_user_id}:{target_user_id}",
-                remark="guest_points_merged_out",
-                now_text=now_text,
-            )
-            _credit_points_in_connection(
-                connection,
-                user_id=target_user_id,
-                points_amount=transferred_points,
-                change_type="merge_transfer",
-                biz_type="guest_merge_transfer_in",
-                biz_id=guest_user_id,
-                idempotency_key=f"guest-merge:in:{guest_user_id}:{target_user_id}",
-                remark="guest_points_merged_in",
-                now_text=now_text,
-            )
-
-        connection.execute("UPDATE reviews SET user_id = ? WHERE user_id = ?", (target_user_id, guest_user_id))
-        connection.execute("UPDATE usage_records SET user_id = ? WHERE user_id = ?", (target_user_id, guest_user_id))
-        connection.execute("UPDATE review_aspect_unlocks SET user_id = ? WHERE user_id = ?", (target_user_id, guest_user_id))
-        connection.execute("UPDATE user_sessions SET status = ? WHERE user_id = ? AND status = ?", ("merged", guest_user_id, "active"))
-        connection.execute("DELETE FROM guest_identities WHERE user_id = ?", (guest_user_id,))
+        identity = connection.execute("SELECT user_id FROM user_phone_identities WHERE id = ?", (normalized_identity_id,)).fetchone()
+        if identity is None:
+            return None
+        user_id = str(identity["user_id"])
         connection.execute(
-            "INSERT INTO guest_user_merges (id, guest_user_id, target_user_id, transferred_points, merged_at) VALUES (?, ?, ?, ?, ?)",
-            (uuid4().hex, guest_user_id, target_user_id, transferred_points, now_text),
+            "UPDATE user_phone_identities SET last_login_at = ?, updated_at = ? WHERE id = ?",
+            (now_text, now_text, normalized_identity_id),
         )
-        connection.execute("UPDATE users SET status = ?, updated_at = ?, last_active_at = ? WHERE id = ?", ("merged", now_text, now_text, guest_user_id))
-        connection.execute("UPDATE users SET updated_at = ?, last_active_at = ? WHERE id = ?", (now_text, now_text, target_user_id))
+        connection.execute(
+            "UPDATE users SET primary_identity_type = ?, updated_at = ?, last_active_at = ? WHERE id = ?",
+            ("phone", now_text, now_text, user_id),
+        )
+        row = connection.execute(_USER_SELECT_SQL + " WHERE u.id = ?", (user_id,)).fetchone()
+    return _deserialize_user_row(row) if row is not None else None
 
-    return {"guest_user_id": guest_user_id, "target_user_id": target_user_id, "transferred_points": transferred_points}
 
+
+def update_phone_identity_password(*, identity_id: str, password_hash: str, now_text: str) -> bool:
+    normalized_identity_id = _normalize_optional_text(identity_id)
+    normalized_password_hash = _normalize_optional_text(password_hash)
+    if not normalized_identity_id or not normalized_password_hash:
+        return False
+    with open_connection() as connection:
+        cursor = connection.execute(
+            "UPDATE user_phone_identities SET password_hash = ?, password_updated_at = ?, updated_at = ? WHERE id = ?",
+            (normalized_password_hash, now_text, now_text, normalized_identity_id),
+        )
+    return cursor.rowcount > 0
 
 
 def create_session(*, user_id: str, token_hash: str, device_type: str | None, client_version: str | None, ip: str | None, expires_at: str, now_text: str) -> dict[str, Any]:
@@ -964,6 +1006,18 @@ def create_session(*, user_id: str, token_hash: str, device_type: str | None, cl
             (session_id, user_id, token_hash, device_type, client_version, ip, "active", expires_at, now_text, now_text),
         )
     return {"session_id": session_id, "expires_at": expires_at}
+
+
+def revoke_session_by_token_hash(token_hash: str, *, now_text: str) -> bool:
+    normalized_token_hash = _normalize_optional_text(token_hash)
+    if not normalized_token_hash:
+        return False
+    with open_connection() as connection:
+        cursor = connection.execute(
+            "UPDATE user_sessions SET status = ?, last_seen_at = ? WHERE token_hash = ? AND status = ?",
+            ("revoked", now_text, normalized_token_hash, "active"),
+        )
+    return cursor.rowcount > 0
 
 
 
@@ -994,10 +1048,9 @@ def get_internal_user(user_id: str) -> dict[str, Any] | None:
         "SELECT u.id AS user_id, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, "
         "COALESCE(pwa.withdrawable_balance_cents, pra.balance, 0) AS withdrawable_balance_cents, COALESCE(pwa.frozen_commission_cents, pra.frozen_balance, 0) AS frozen_commission_cents, COALESCE(pwa.withdrawn_amount_cents, 0) AS withdrawn_amount_cents, "
         "pra.balance AS rebate_points_balance, pra.frozen_balance AS rebate_frozen_balance, "
-        "MAX(pi.normalized_phone) AS primary_phone, MAX(pi.verified_at) AS phone_verified_at, COALESCE(MAX(w.unionid), MAX(g.unionid)) AS primary_unionid, "
+        "MAX(pi.normalized_phone) AS primary_phone, MAX(pi.verified_at) AS phone_verified_at, MAX(w.unionid) AS primary_unionid, "
         "MIN(pi.verified_at) AS phone_registered_at, MIN(CASE WHEN w.unionid IS NOT NULL THEN COALESCE(w.updated_at, w.created_at) END) AS unionid_registered_at, "
-        "MAX(w.openid) AS openid, MAX(w.unionid) AS unionid, "
-        "MAX(g.channel) AS guest_channel, MAX(g.guest_key) AS guest_key, MAX(g.appid) AS guest_appid, MAX(g.openid) AS guest_openid, MAX(g.unionid) AS guest_unionid "
+        "MAX(w.openid) AS openid, MAX(w.unionid) AS unionid "
         "FROM users u "
         "LEFT JOIN user_profiles p ON p.user_id = u.id "
         "LEFT JOIN points_accounts pa ON pa.user_id = u.id "
@@ -1005,7 +1058,6 @@ def get_internal_user(user_id: str) -> dict[str, Any] | None:
         "LEFT JOIN promotion_rebate_accounts pra ON pra.user_id = u.id "
         "LEFT JOIN promotion_wallet_accounts pwa ON pwa.user_id = u.id "
         "LEFT JOIN user_wechat_identities w ON w.user_id = u.id "
-        "LEFT JOIN guest_identities g ON g.user_id = u.id "
         "WHERE u.id = ? "
         "GROUP BY u.id, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, pra.balance, pra.frozen_balance, pwa.withdrawable_balance_cents, pwa.frozen_commission_cents, pwa.withdrawn_amount_cents"
     )
@@ -1072,34 +1124,39 @@ def list_users(
         "SELECT u.id AS user_id, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, "
         "COALESCE(pwa.withdrawable_balance_cents, pra.balance, 0) AS withdrawable_balance_cents, COALESCE(pwa.frozen_commission_cents, pra.frozen_balance, 0) AS frozen_commission_cents, COALESCE(pwa.withdrawn_amount_cents, 0) AS withdrawn_amount_cents, "
         "pra.balance AS rebate_points_balance, pra.frozen_balance AS rebate_frozen_balance, "
-        "MAX(pi.normalized_phone) AS primary_phone, MAX(pi.verified_at) AS phone_verified_at, COALESCE(MAX(w.unionid), MAX(g.unionid)) AS primary_unionid, "
+        "MAX(pi.normalized_phone) AS primary_phone, MAX(pi.verified_at) AS phone_verified_at, MAX(w.unionid) AS primary_unionid, "
         "MIN(pi.verified_at) AS phone_registered_at, MIN(CASE WHEN w.unionid IS NOT NULL THEN COALESCE(w.updated_at, w.created_at) END) AS unionid_registered_at, "
-        "MAX(w.openid) AS openid, MAX(w.unionid) AS unionid, "
-        "MAX(g.channel) AS guest_channel, MAX(g.guest_key) AS guest_key, MAX(g.appid) AS guest_appid, MAX(g.openid) AS guest_openid, MAX(g.unionid) AS guest_unionid "
+        "MAX(w.openid) AS openid, MAX(w.unionid) AS unionid "
         "FROM users u "
         "LEFT JOIN user_profiles p ON p.user_id = u.id "
         "LEFT JOIN points_accounts pa ON pa.user_id = u.id "
         "LEFT JOIN user_phone_identities pi ON pi.user_id = u.id AND pi.is_primary = 1 "
         "LEFT JOIN promotion_rebate_accounts pra ON pra.user_id = u.id "
         "LEFT JOIN promotion_wallet_accounts pwa ON pwa.user_id = u.id "
-        "LEFT JOIN user_wechat_identities w ON w.user_id = u.id "
-        "LEFT JOIN guest_identities g ON g.user_id = u.id"
+        "LEFT JOIN user_wechat_identities w ON w.user_id = u.id"
     )
     conditions: list[str] = []
     parameters: list[Any] = []
     if normalized_query:
-        conditions.append("(u.id LIKE ? OR IFNULL(p.nickname, '') LIKE ? OR IFNULL(pi.normalized_phone, '') LIKE ? OR IFNULL(w.unionid, '') LIKE ? OR IFNULL(g.unionid, '') LIKE ? OR IFNULL(g.guest_key, '') LIKE ? OR IFNULL(w.openid, '') LIKE ? OR IFNULL(g.openid, '') LIKE ?)")
+        conditions.append("(u.id LIKE ? OR IFNULL(p.nickname, '') LIKE ? OR IFNULL(pi.normalized_phone, '') LIKE ? OR IFNULL(w.unionid, '') LIKE ? OR IFNULL(w.openid, '') LIKE ?)")
         like_value = f"%{normalized_query}%"
-        parameters.extend([like_value, like_value, like_value, like_value, like_value, like_value, like_value, like_value])
+        parameters.extend([like_value, like_value, like_value, like_value, like_value])
     if _normalize_optional_text(status):
-        conditions.append("u.status = ?")
-        parameters.append(str(status))
+        try:
+            normalized_filter_status = _normalize_user_status(status)
+        except ValueError:
+            normalized_filter_status = str(status)
+        if normalized_filter_status == "disabled":
+            conditions.append("u.status != 'active'")
+        else:
+            conditions.append("u.status = ?")
+            parameters.append(normalized_filter_status)
     if _normalize_optional_text(identity_level):
         conditions.append("u.identity_level = ?")
         parameters.append(str(identity_level))
     if _normalize_optional_text(channel):
-        conditions.append("(u.registered_channel = ? OR g.channel = ?)")
-        parameters.extend([str(channel), str(channel)])
+        conditions.append("u.registered_channel = ?")
+        parameters.append(str(channel))
     if _normalize_optional_text(date_from):
         conditions.append("u.created_at >= ?")
         parameters.append(str(date_from))
@@ -1163,9 +1220,7 @@ def adjust_rebate_points(*, user_id: str, delta: int, reason: str | None, operat
 
 
 def update_user_status(*, user_id: str, status: str, reason: str | None, operator_note: str | None, operator: str | None, now_text: str) -> dict[str, Any] | None:
-    normalized_status = _normalize_optional_text(status)
-    if not normalized_status:
-        raise ValueError("status_required")
+    normalized_status = _normalize_user_status(status)
     with open_connection() as connection:
         before = connection.execute("SELECT id, status FROM users WHERE id = ?", (user_id,)).fetchone()
         if before is None:
@@ -1469,6 +1524,183 @@ def list_recharge_orders(
     with open_connection() as connection:
         rows = connection.execute(sql, parameters).fetchall()
     return [_deserialize_recharge_order_row(row) for row in rows]
+
+
+def create_payment_transaction(
+    *,
+    transaction_id: str,
+    order_id: str,
+    user_id: str,
+    provider: str,
+    payment_method: str,
+    amount_cents: int,
+    status: str,
+    provider_transaction_id: str | None,
+    prepay_id: str | None,
+    idempotency_key: str | None,
+    payment_params: dict[str, Any] | None,
+    failure_reason: str | None,
+    now_text: str,
+) -> dict[str, Any]:
+    normalized_provider = (_normalize_optional_text(provider) or "wechat_h5").lower()
+    normalized_payment_method = (_normalize_optional_text(payment_method) or normalized_provider).lower()
+    normalized_status = (_normalize_optional_text(status) or "pending").lower()
+    normalized_idempotency_key = _normalize_optional_text(idempotency_key)
+
+    with open_connection() as connection:
+        if normalized_idempotency_key:
+            existing = _get_payment_transaction_by_order_idempotency_key_in_connection(
+                connection,
+                order_id=order_id,
+                idempotency_key=normalized_idempotency_key,
+            )
+            if existing is not None:
+                return existing
+        try:
+            connection.execute(
+                """
+                INSERT INTO payment_transactions (
+                    id, order_id, user_id, provider, payment_method, amount_cents, status,
+                    provider_transaction_id, prepay_id, idempotency_key, payment_params_json,
+                    failure_reason, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    transaction_id,
+                    order_id,
+                    user_id,
+                    normalized_provider,
+                    normalized_payment_method,
+                    max(0, int(amount_cents)),
+                    normalized_status,
+                    _normalize_optional_text(provider_transaction_id),
+                    _normalize_optional_text(prepay_id),
+                    normalized_idempotency_key,
+                    _serialize_json_value(payment_params or {}),
+                    _normalize_optional_text(failure_reason),
+                    now_text,
+                    now_text,
+                ),
+            )
+        except sqlite3.IntegrityError:
+            if normalized_idempotency_key:
+                existing = _get_payment_transaction_by_order_idempotency_key_in_connection(
+                    connection,
+                    order_id=order_id,
+                    idempotency_key=normalized_idempotency_key,
+                )
+                if existing is not None:
+                    return existing
+            raise
+
+        transaction = _get_payment_transaction_in_connection(connection, transaction_id=transaction_id)
+    if transaction is None:
+        raise RuntimeError("payment_transaction_create_failed")
+    return transaction
+
+
+def get_payment_transaction(transaction_id: str) -> dict[str, Any] | None:
+    with open_connection() as connection:
+        return _get_payment_transaction_in_connection(connection, transaction_id=transaction_id)
+
+
+def get_latest_payment_transaction_for_order(order_id: str) -> dict[str, Any] | None:
+    with open_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT id, order_id, user_id, provider, payment_method, amount_cents, status,
+                   provider_transaction_id, prepay_id, idempotency_key, payment_params_json,
+                   notify_payload_json, failure_reason, paid_at, created_at, updated_at
+            FROM payment_transactions
+            WHERE order_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (order_id,),
+        ).fetchone()
+    return _deserialize_payment_transaction_row(row) if row is not None else None
+
+
+def list_payment_transactions_for_order(order_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
+    normalized_limit = max(1, min(int(limit), 100))
+    with open_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT id, order_id, user_id, provider, payment_method, amount_cents, status,
+                   provider_transaction_id, prepay_id, idempotency_key, payment_params_json,
+                   notify_payload_json, failure_reason, paid_at, created_at, updated_at
+            FROM payment_transactions
+            WHERE order_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (order_id, normalized_limit),
+        ).fetchall()
+    return [_deserialize_payment_transaction_row(row) for row in rows]
+
+
+def settle_payment_transaction(*, transaction_id: str, provider_transaction_id: str | None, notify_payload: dict[str, Any] | None, now_text: str) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    with open_connection() as connection:
+        transaction = _get_payment_transaction_in_connection(connection, transaction_id=transaction_id)
+        if transaction is None:
+            raise RuntimeError("payment_transaction_not_found")
+        order = _get_recharge_order_in_connection(connection, order_id=str(transaction["order_id"]))
+        if order is None:
+            raise RuntimeError("recharge_order_not_found")
+
+        raw_order_status = str(order.get("raw_status") or order.get("status") or "").lower()
+        if raw_order_status in {"approved", "rejected", "refunded", "refund_pending", "closed"}:
+            raise ValueError("recharge_order_not_payable")
+        existing_payment_ledger = _get_points_ledger_by_idempotency_key(
+            connection,
+            user_id=str(order["user_id"]),
+            idempotency_key=f"recharge:payment:{order['order_id']}",
+        )
+        if raw_order_status in {"paid", "completed"} and existing_payment_ledger is None and order.get("granted_ledger_id"):
+            raise ValueError("recharge_order_already_paid")
+
+        ledger = existing_payment_ledger or _credit_points_in_connection(
+            connection,
+            user_id=str(order["user_id"]),
+            points_amount=int(order["points_amount"]) + int(order["bonus_points"]),
+            change_type="recharge",
+            biz_type="recharge_order",
+            biz_id=str(order["order_id"]),
+            idempotency_key=f"recharge:payment:{order['order_id']}",
+            remark=f"recharge_order:{order['package_key']}",
+            now_text=now_text,
+        )
+        connection.execute(
+            """
+            UPDATE payment_transactions
+            SET status = ?, provider_transaction_id = COALESCE(?, provider_transaction_id),
+                notify_payload_json = ?, paid_at = COALESCE(paid_at, ?), updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                "paid",
+                _normalize_optional_text(provider_transaction_id),
+                _serialize_json_value(notify_payload or {}),
+                now_text,
+                now_text,
+                transaction_id,
+            ),
+        )
+        if raw_order_status not in {"completed"}:
+            connection.execute(
+                """
+                UPDATE recharge_orders
+                SET status = ?, paid_at = COALESCE(paid_at, ?), granted_ledger_id = COALESCE(granted_ledger_id, ?), updated_at = ?
+                WHERE id = ?
+                """,
+                ("paid", now_text, ledger["ledger_id"], now_text, str(order["order_id"])),
+            )
+        refreshed_transaction = _get_payment_transaction_in_connection(connection, transaction_id=transaction_id)
+        refreshed_order = _get_recharge_order_in_connection(connection, order_id=str(order["order_id"]))
+    if refreshed_transaction is None or refreshed_order is None:
+        raise RuntimeError("payment_transaction_settle_failed")
+    return refreshed_transaction, refreshed_order, ledger
 
 
 def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None = None, channel: str | None = None) -> dict[str, Any]:
@@ -2466,6 +2698,15 @@ def _serialize_json_value(value: Any) -> str | None:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _deserialize_json_value(value: Any, *, default: Any = None) -> Any:
+    if value is None:
+        return default
+    try:
+        return json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return default
+
+
 def _deserialize_runtime_config_entry_row(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "entry_id": row["id"],
@@ -2611,7 +2852,7 @@ def _deserialize_review_summary_row(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def _deserialize_user_row(row: sqlite3.Row) -> dict[str, Any]:
-    return {"user_id": row["user_id"], "status": row["status"], "nickname": row["nickname"], "avatar_url": row["avatar_url"], "profile_completed": bool(row["profile_completed"]), "points_balance": int(row["balance"] or 0), "frozen_balance": int(row["frozen_balance"] or 0), "created_at": row["created_at"], "updated_at": row["updated_at"], "last_active_at": row["last_active_at"]}
+    return {"user_id": row["user_id"], "status": _normalize_user_status_for_output(row["status"]), "identity_level": row["identity_level"] if "identity_level" in row.keys() else "normal_user", "nickname": row["nickname"], "avatar_url": row["avatar_url"], "profile_completed": bool(row["profile_completed"]), "points_balance": int(row["balance"] or 0), "frozen_balance": int(row["frozen_balance"] or 0), "created_at": row["created_at"], "updated_at": row["updated_at"], "last_active_at": row["last_active_at"]}
 
 
 def _deserialize_internal_user_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -2626,9 +2867,9 @@ def _deserialize_internal_user_row(row: sqlite3.Row) -> dict[str, Any]:
     registered_at = min(identity_registered_candidates) if identity_registered_candidates else row["created_at"]
     return {
         "user_id": row["user_id"],
-        "status": row["status"],
+        "status": _normalize_user_status_for_output(row["status"]),
         "identity_level": row["identity_level"] if "identity_level" in row.keys() else "normal_user",
-        "primary_identity_type": row["primary_identity_type"] if "primary_identity_type" in row.keys() else "session",
+        "primary_identity_type": row["primary_identity_type"] if "primary_identity_type" in row.keys() else "unknown",
         "registered_channel": row["registered_channel"] if "registered_channel" in row.keys() else None,
         "promoter_parent_user_id": row["promoter_parent_user_id"] if "promoter_parent_user_id" in row.keys() else None,
         "nickname": row["nickname"],
@@ -2651,11 +2892,6 @@ def _deserialize_internal_user_row(row: sqlite3.Row) -> dict[str, Any]:
         "last_active_at": row["last_active_at"],
         "openid": row["openid"],
         "unionid": row["unionid"],
-        "guest_channel": row["guest_channel"],
-        "guest_key": row["guest_key"],
-        "guest_appid": row["guest_appid"],
-        "guest_openid": row["guest_openid"],
-        "guest_unionid": row["guest_unionid"],
     }
 
 
@@ -2692,6 +2928,27 @@ def _deserialize_recharge_order_row(row: sqlite3.Row) -> dict[str, Any]:
         "completed_at": completed_at,
         "closed_at": closed_at,
         "granted_ledger_id": row["granted_ledger_id"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _deserialize_payment_transaction_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "transaction_id": row["id"],
+        "order_id": row["order_id"],
+        "user_id": row["user_id"],
+        "provider": row["provider"],
+        "payment_method": row["payment_method"],
+        "amount_cents": int(row["amount_cents"] or 0),
+        "status": row["status"],
+        "provider_transaction_id": row["provider_transaction_id"],
+        "prepay_id": row["prepay_id"],
+        "idempotency_key": row["idempotency_key"],
+        "payment_params": _deserialize_json_value(row["payment_params_json"], default={}),
+        "notify_payload": _deserialize_json_value(row["notify_payload_json"], default={}),
+        "failure_reason": row["failure_reason"],
+        "paid_at": row["paid_at"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -2843,6 +3100,37 @@ def _get_recharge_order_by_source_external_order_id_in_connection(connection: sq
     return _deserialize_recharge_order_row(row) if row is not None else None
 
 
+def _get_payment_transaction_in_connection(connection: sqlite3.Connection, *, transaction_id: str) -> dict[str, Any] | None:
+    row = connection.execute(
+        """
+        SELECT id, order_id, user_id, provider, payment_method, amount_cents, status,
+               provider_transaction_id, prepay_id, idempotency_key, payment_params_json,
+               notify_payload_json, failure_reason, paid_at, created_at, updated_at
+        FROM payment_transactions
+        WHERE id = ?
+        """,
+        (transaction_id,),
+    ).fetchone()
+    return _deserialize_payment_transaction_row(row) if row is not None else None
+
+
+def _get_payment_transaction_by_order_idempotency_key_in_connection(connection: sqlite3.Connection, *, order_id: str, idempotency_key: str | None) -> dict[str, Any] | None:
+    normalized_idempotency_key = _normalize_optional_text(idempotency_key)
+    if not normalized_idempotency_key:
+        return None
+    row = connection.execute(
+        """
+        SELECT id, order_id, user_id, provider, payment_method, amount_cents, status,
+               provider_transaction_id, prepay_id, idempotency_key, payment_params_json,
+               notify_payload_json, failure_reason, paid_at, created_at, updated_at
+        FROM payment_transactions
+        WHERE order_id = ? AND idempotency_key = ?
+        """,
+        (order_id, normalized_idempotency_key),
+    ).fetchone()
+    return _deserialize_payment_transaction_row(row) if row is not None else None
+
+
 def _profile_completed(nickname: str | None, avatar_url: str | None) -> int:
     return int(bool(_normalize_optional_text(nickname)) and bool(_normalize_optional_text(avatar_url)))
 
@@ -2853,6 +3141,24 @@ def _normalize_optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _normalize_user_status(status: str | None) -> str:
+    normalized_status = (_normalize_optional_text(status) or "").lower()
+    if normalized_status == "active":
+        return "active"
+    if normalized_status in {"disabled", "blocked", "inactive"}:
+        return "disabled"
+    if not normalized_status:
+        raise ValueError("status_required")
+    raise ValueError("invalid_user_status")
+
+
+def _normalize_user_status_for_output(status: Any) -> str:
+    try:
+        return _normalize_user_status(str(status))
+    except ValueError:
+        return "disabled"
 
 
 def _utc_now_text() -> str:
@@ -2885,55 +3191,8 @@ def _get_review_aspect_unlock_in_connection(connection: sqlite3.Connection, *, r
     return _deserialize_review_aspect_unlock_row(row) if row is not None else None
 
 
-def _get_guest_identity_by_guest_key_in_connection(connection: sqlite3.Connection, *, channel: str, guest_key: str | None) -> dict[str, Any] | None:
-    normalized_channel = _normalize_optional_text(channel)
-    normalized_guest_key = _normalize_optional_text(guest_key)
-    if not normalized_channel or not normalized_guest_key:
-        return None
-    row = connection.execute(
-        """
-        SELECT g.id AS guest_identity_id, g.user_id, g.channel, g.guest_key, g.appid AS guest_appid, g.openid AS guest_openid, g.unionid AS guest_unionid, u.status
-        FROM guest_identities g
-        JOIN users u ON u.id = g.user_id
-        WHERE g.channel = ? AND g.guest_key = ?
-        """,
-        (normalized_channel, normalized_guest_key),
-    ).fetchone()
-    return _deserialize_guest_identity_row(row) if row is not None else None
-
-
-def _get_guest_identity_by_openid_in_connection(connection: sqlite3.Connection, *, appid: str | None, openid: str | None) -> dict[str, Any] | None:
-    normalized_appid = _normalize_optional_text(appid)
-    normalized_openid = _normalize_optional_text(openid)
-    if not normalized_appid or not normalized_openid:
-        return None
-    row = connection.execute(
-        """
-        SELECT g.id AS guest_identity_id, g.user_id, g.channel, g.guest_key, g.appid AS guest_appid, g.openid AS guest_openid, g.unionid AS guest_unionid, u.status
-        FROM guest_identities g
-        JOIN users u ON u.id = g.user_id
-        WHERE g.appid = ? AND g.openid = ?
-        """,
-        (normalized_appid, normalized_openid),
-    ).fetchone()
-    return _deserialize_guest_identity_row(row) if row is not None else None
-
-
-def _deserialize_guest_identity_row(row: sqlite3.Row) -> dict[str, Any]:
-    return {
-        "guest_identity_id": row["guest_identity_id"],
-        "user_id": row["user_id"],
-        "status": row["status"],
-        "channel": row["channel"],
-        "guest_key": row["guest_key"],
-        "guest_appid": row["guest_appid"],
-        "guest_openid": row["guest_openid"],
-        "guest_unionid": row["guest_unionid"],
-    }
-
-
 _USER_SELECT_SQL = """
-SELECT u.id AS user_id, u.status, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance
+SELECT u.id AS user_id, u.status, u.identity_level, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance
 FROM users u
 LEFT JOIN user_profiles p ON p.user_id = u.id
 LEFT JOIN points_accounts pa ON pa.user_id = u.id

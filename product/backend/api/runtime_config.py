@@ -10,7 +10,6 @@ from .config import (
     get_customer_service_contact_url,
     get_customer_service_guidance_text,
     get_customer_service_qr_code_url,
-    get_guest_initial_points,
     get_initial_points,
     get_phone_review_base_points_cost,
     get_recharge_packages,
@@ -38,7 +37,6 @@ DEFAULT_PHONE_REVIEW_ASPECT_ORDER = [
 ]
 
 CONFIG_KEY_POINTS_INITIAL_GRANT = "points.initial_grant"
-CONFIG_KEY_POINTS_GUEST_INITIAL_GRANT = "points.guest_initial_grant"
 CONFIG_KEY_RECHARGE_PACKAGES = "recharge.packages"
 CONFIG_KEY_PHONE_REVIEW_BASE_POINTS_COST = "phone_review.base_points_cost"
 CONFIG_KEY_PHONE_REVIEW_ASPECT_UNLOCK_POINTS_COST = "phone_review.aspect_unlock_points_cost"
@@ -109,11 +107,6 @@ def resolve_runtime_config_bundle(channel_key: str | None = None) -> dict[str, A
 def get_runtime_initial_points() -> int:
     config_bundle = resolve_runtime_config_bundle()
     return _coerce_int(config_bundle.get(CONFIG_KEY_POINTS_INITIAL_GRANT), fallback=get_initial_points(), minimum=0)
-
-
-def get_runtime_guest_initial_points() -> int:
-    config_bundle = resolve_runtime_config_bundle()
-    return _coerce_int(config_bundle.get(CONFIG_KEY_POINTS_GUEST_INITIAL_GRANT), fallback=get_guest_initial_points(), minimum=0)
 
 
 def get_runtime_recharge_packages(channel_key: str | None = None) -> list[dict[str, Any]]:
@@ -207,7 +200,6 @@ def resolve_public_runtime_config(channel_key: str | None = None) -> dict[str, A
         "channel": normalized_channel_key,
         "points": {
             "initial_grant": get_runtime_initial_points(),
-            "guest_initial_grant": get_runtime_guest_initial_points(),
         },
         "recharge": {
             "packages": get_runtime_available_recharge_packages(normalized_channel_key),
