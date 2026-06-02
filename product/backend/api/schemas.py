@@ -415,18 +415,6 @@ class PaymentTransactionCreateRequest(BaseModel):
     client_context: dict[str, Any] | None = None
 
 
-class PaymentNotifyResponse(BaseModel):
-    status: str
-    transaction: PaymentTransactionResponse | None = None
-    order: 'RechargeOrderResponse' | None = None
-    ledger: PointsLedgerEntryResponse | None = None
-
-
-class RechargeOrderPaymentStatusResponse(BaseModel):
-    order: 'RechargeOrderResponse'
-    latest_payment: PaymentTransactionResponse | None = None
-
-
 class RechargeOrderResponse(BaseModel):
     order_id: str
     user_id: str
@@ -458,6 +446,18 @@ class RechargeOrderResponse(BaseModel):
     granted_ledger_id: str | None = None
     created_at: str
     updated_at: str
+
+
+class PaymentNotifyResponse(BaseModel):
+    status: str
+    transaction: PaymentTransactionResponse | None = None
+    order: RechargeOrderResponse | None = None
+    ledger: PointsLedgerEntryResponse | None = None
+
+
+class RechargeOrderPaymentStatusResponse(BaseModel):
+    order: RechargeOrderResponse
+    latest_payment: PaymentTransactionResponse | None = None
 
 
 class RechargeOrderListResponse(BaseModel):
