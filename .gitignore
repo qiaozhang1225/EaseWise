@@ -30,3 +30,7 @@ product/deploy/targets/*.server.env
 background/
 *主档*.md
 archive/*/local-test-output/
+
+# Local generated artifacts
+.aistudio-sync/
+product/backend/api/static/uploads/
