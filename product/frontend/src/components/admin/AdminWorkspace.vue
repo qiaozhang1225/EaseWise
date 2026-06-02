@@ -159,15 +159,12 @@ const orderStatusSelectOptions = [
 const userStatusSelectOptions = [
   {value: '', label: '全状态', dotClass: 'bg-indigo-500'},
   {value: 'active', label: '正常', dotClass: 'bg-emerald-500'},
-  {value: 'guest', label: '游客', dotClass: 'bg-amber-500'},
   {value: 'disabled', label: '禁用', dotClass: 'bg-red-500'},
 ];
 
 const userEditStatusSelectOptions = [
-  {value: 'guest', label: '游客', dotClass: 'bg-amber-500'},
   {value: 'active', label: '正常', dotClass: 'bg-emerald-500'},
   {value: 'disabled', label: '禁用', dotClass: 'bg-red-500'},
-  {value: 'blocked', label: '封禁', dotClass: 'bg-slate-500'},
 ];
 
 const userIdentitySelectOptions = [
@@ -320,7 +317,7 @@ const selectedUserInfoCards = computed<SelectedUserInfoCard[]>(() => {
     {key: 'channel', label: '注册渠道', value: user.registered_channel || '--', sub: '来源渠道'},
     {key: 'registered_at', label: '注册时间', value: registeredAt, sub: `首次 ${firstLoginAt}`},
     {key: 'phone', label: '手机号', value: user.primary_phone || '--', sub: user.phone_verified_at ? `验证 ${formatTime(user.phone_verified_at)}` : '待绑定'},
-    {key: 'unionid', label: 'UnionID / Guest', value: identityValue, sub: identityValue === '--' ? '待绑定' : '点击查看全文'},
+    {key: 'unionid', label: 'UnionID', value: identityValue, sub: identityValue === '--' ? '待绑定' : '点击查看全文'},
   ];
 });
 const expandedUserInfoCard = computed(() => selectedUserInfoCards.value.find((item) => item.key === expandedUserInfoKey.value) || null);
@@ -500,8 +497,6 @@ const visibleUsers = computed(() => {
     user.primary_phone || '',
     user.primary_unionid || '',
     user.unionid || '',
-    user.guest_key || '',
-    user.guest_unionid || '',
   ].some((value) => value.toLowerCase().includes(keyword)));
 });
 
@@ -1572,10 +1567,7 @@ function usageStatusClass(status: string) {
 function userStatusLabel(status: string) {
   const map: Record<string, string> = {
     active: '正常活动中',
-    guest: '游客',
     disabled: '已禁用',
-    blocked: '已封禁',
-    inactive: '未激活',
   };
   return map[status] || status;
 }
@@ -1596,19 +1588,20 @@ function identitySourceLabel(identityType: string | null | undefined) {
     phone: '手机号',
     wechat_unionid: '微信 UnionID',
     wechat_pending_unionid: '微信待补 UnionID',
-    session: 'Session 临时态',
+    session: '待绑定',
+    unknown: '待绑定',
   };
-  return map[identityType || 'session'] || identityType || 'Session 临时态';
+  return map[identityType || 'unknown'] || identityType || '待绑定';
 }
 
 function userPrimaryIdentityLine(user: InternalUserResponse) {
-  return user.primary_phone || user.primary_unionid || user.guest_key || user.user_id;
+  return user.primary_phone || user.primary_unionid || user.user_id;
 }
 
 function selectedUserIdentityValue() {
   const user = selectedUser.value?.user;
   if (!user) return '--';
-  return user.primary_unionid || user.guest_key || user.guest_unionid || user.guest_openid || '--';
+  return user.primary_unionid || '--';
 }
 
 function toggleUserInfoCard(key: string) {
@@ -2227,7 +2220,7 @@ onBeforeUnmount(() => {
                     <Search class="absolute left-3 top-2.5 text-brand-secondary" :size="14" />
                     <input
                       v-model="userQuery"
-                      placeholder="按用户ID、昵称、手机号、UnionID 或 guest key 检索..."
+                      placeholder="按用户ID、昵称、手机号或 UnionID 检索..."
                       @keyup.enter="loadUsers"
                       class="w-full bg-gray-50 border border-gray-100 p-2.5 pl-9 rounded-xl text-xs text-brand-ink-strong placeholder-brand-secondary focus:border-brand-primary focus:bg-white outline-none"
                     />
@@ -2279,9 +2272,15 @@ onBeforeUnmount(() => {
                     <tr v-for="user in visibleUsers" :key="user.user_id" class="hover:bg-brand-paper/50 transition-colors">
                       <td class="p-3">
                         <div class="flex items-center gap-2 min-w-0">
-                          <span class="w-7 h-7 shrink-0 bg-brand-primary/10 text-brand-primary font-serif font-bold flex items-center justify-center rounded-lg text-xs">
-                            {{ (user.nickname || user.user_id).substring(0, 1) }}
-                          </span>
+                          <div class="w-7 h-7 shrink-0 bg-brand-primary/10 text-brand-primary font-serif font-bold flex items-center justify-center rounded-lg text-xs overflow-hidden">
+                            <img
+                              v-if="user.avatar_url"
+                              :src="user.avatar_url"
+                              alt="用户头像"
+                              class="w-full h-full object-cover"
+                            />
+                            <span v-else>{{ (user.nickname || user.user_id).substring(0, 1) }}</span>
+                          </div>
                           <div class="min-w-0">
                             <div class="font-bold text-brand-ink-strong truncate">{{ user.nickname || '未命名用户' }}</div>
                             <div class="text-[10px] text-brand-secondary font-mono truncate">{{ user.registered_channel || '--' }}</div>
@@ -2819,10 +2818,21 @@ onBeforeUnmount(() => {
       <div v-if="selectedUser" class="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-sm px-4 py-6 flex items-center justify-center">
         <div class="w-full max-w-6xl max-h-[92vh] bg-white border border-gray-100 rounded-3xl shadow-2xl overflow-hidden flex flex-col text-left">
           <div class="px-6 py-5 border-b border-gray-100 flex flex-wrap items-start justify-between gap-5 bg-white">
-            <div class="min-w-0 shrink-0 lg:w-[34%]">
-              <p class="text-[10px] font-mono text-brand-secondary uppercase font-bold">User Operation File</p>
-              <h2 class="font-serif text-xl font-bold text-brand-ink-strong truncate">{{ selectedUser.user.nickname || '未命名用户' }}</h2>
-              <p class="font-mono text-[11px] text-brand-secondary select-all break-all">{{ selectedUser.user.user_id }}</p>
+            <div class="min-w-0 shrink-0 lg:w-[34%] flex items-center gap-3">
+              <div class="w-12 h-12 rounded-2xl bg-brand-primary/10 text-brand-primary font-serif font-black flex items-center justify-center text-lg overflow-hidden border border-brand-primary/10 shrink-0">
+                <img
+                  v-if="selectedUser.user.avatar_url"
+                  :src="selectedUser.user.avatar_url"
+                  alt="用户头像"
+                  class="w-full h-full object-cover"
+                />
+                <span v-else>{{ (selectedUser.user.nickname || selectedUser.user.user_id).substring(0, 1) }}</span>
+              </div>
+              <div class="min-w-0">
+                <p class="text-[10px] font-mono text-brand-secondary uppercase font-bold">User Operation File</p>
+                <h2 class="font-serif text-xl font-bold text-brand-ink-strong truncate">{{ selectedUser.user.nickname || '未命名用户' }}</h2>
+                <p class="font-mono text-[11px] text-brand-secondary select-all break-all">{{ selectedUser.user.user_id }}</p>
+              </div>
             </div>
             <div class="hidden lg:grid flex-1 grid-cols-5 gap-2 text-[10.5px]">
               <button
