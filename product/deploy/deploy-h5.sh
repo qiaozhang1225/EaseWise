@@ -86,11 +86,12 @@ from pathlib import Path
 
 release_id = "$release_id"
 path = Path("$REMOTE_BACKUP_DIR") / f"release-{release_id}.json"
-payload = {"release_id": release_id, "api_backup_dir": None, "h5_backup_dir": str(Path("$REMOTE_BACKUP_DIR") / f"h5-{release_id}")}
 if path.exists():
-    current = json.loads(path.read_text(encoding="utf-8"))
-    current.update(payload)
-    payload = current
+    payload = json.loads(path.read_text(encoding="utf-8"))
+else:
+    payload = {"release_id": release_id, "api_backup_dir": None}
+payload["release_id"] = release_id
+payload["h5_backup_dir"] = str(Path("$REMOTE_BACKUP_DIR") / f"h5-{release_id}")
 path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 print(path)
 PY
