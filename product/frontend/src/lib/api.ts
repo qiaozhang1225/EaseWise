@@ -1,8 +1,10 @@
 import type {
   AlmanacResponse,
+  AvatarUploadRequest,
+  AuthLoginResponse,
+  CurrentUserResponse,
   DashboardResponse,
   Gender,
-  GuestSessionResponse,
   PointsAccountResponse,
   PointsLedgerListResponse,
   PromotionApplicationListResponse,
@@ -18,11 +20,20 @@ import type {
   LlmApiKeyListResponse,
   LlmApiKeyResponse,
   ManualPointsAdjustResponse,
+  PaymentTransactionResponse,
+  PhonePasswordLoginRequest,
+  PhonePasswordRegisterRequest,
+  PhoneStatusRequest,
+  PhoneStatusResponse,
+  PasswordChangeRequest,
+  PasswordChangeResponse,
   RebatePointsAdjustResponse,
   RefundRequestResponse,
   RechargeOrderListResponse,
+  RechargeOrderPaymentStatusResponse,
   RechargeOrderResponse,
   RechargeOrderReviewResponse,
+  RechargePackageListResponse,
   ReviewAspectUnlockResponse,
   ReviewListResponse,
   ReviewRecord,
@@ -32,6 +43,7 @@ import type {
   UsageRecordDetailResponse,
   UsageRecordListResponse,
   InternalUserResponse,
+  UserProfileUpdateRequest,
 } from '../types/api';
 
 const API_BASE_URL = resolveApiBaseUrl();
@@ -122,29 +134,37 @@ function resolveApiBaseUrl(): string {
   }
 
   if (typeof window !== 'undefined') {
-    const {hostname, origin, port, protocol} = window.location;
-    const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
-    const isPrivateLan = /^(10|127|172\.(1[6-9]|2\d|3[01])|192\.168)\./.test(hostname);
-    const isDevPort = port === '3000' || port === '5173';
-
-    if (isDevPort || isLocalHost || isPrivateLan) {
-      const resolvedProtocol = protocol === 'https:' ? 'https:' : 'http:';
-      return `${resolvedProtocol}//${hostname}:8000`;
-    }
-
-    return origin.replace(/\/+$/, '');
+    return window.location.origin.replace(/\/+$/, '');
   }
 
   return 'http://127.0.0.1:8000';
 }
 
-export function createGuestSession(guestKey?: string | null): Promise<GuestSessionResponse> {
-  return requestJson<GuestSessionResponse>('/api/v1/auth/guest-session', {
+export function getPhoneAuthStatus(payload: PhoneStatusRequest): Promise<PhoneStatusResponse> {
+  return requestJson<PhoneStatusResponse>('/api/v1/auth/phone/status', {
     method: 'POST',
-    body: {
-      channel: 'h5',
-      guest_key: guestKey || undefined,
-    },
+    body: payload,
+  });
+}
+
+export function registerPhoneWithPassword(payload: PhonePasswordRegisterRequest): Promise<AuthLoginResponse> {
+  return requestJson<AuthLoginResponse>('/api/v1/auth/phone/register', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export function loginPhoneWithPassword(payload: PhonePasswordLoginRequest): Promise<AuthLoginResponse> {
+  return requestJson<AuthLoginResponse>('/api/v1/auth/phone/login', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export function logoutCurrentUser(accessToken: string): Promise<{status: string}> {
+  return requestJson<{status: string}>('/api/v1/auth/logout', {
+    method: 'POST',
+    accessToken,
   });
 }
 
@@ -162,8 +182,87 @@ export function getMyPoints(accessToken: string): Promise<PointsAccountResponse>
   });
 }
 
+export function getCurrentUser(accessToken: string): Promise<CurrentUserResponse> {
+  return requestJson<CurrentUserResponse>('/api/v1/account/me', {
+    accessToken,
+  });
+}
+
+export function updateMyProfile(accessToken: string, payload: UserProfileUpdateRequest): Promise<CurrentUserResponse['user']> {
+  return requestJson<CurrentUserResponse['user']>('/api/v1/account/profile', {
+    method: 'PATCH',
+    accessToken,
+    body: payload,
+  });
+}
+
+export function uploadMyAvatar(accessToken: string, payload: AvatarUploadRequest): Promise<CurrentUserResponse['user']> {
+  return requestJson<CurrentUserResponse['user']>('/api/v1/account/avatar', {
+    method: 'POST',
+    accessToken,
+    body: payload,
+  });
+}
+
+export function changeMyPassword(accessToken: string, payload: PasswordChangeRequest): Promise<PasswordChangeResponse> {
+  return requestJson<PasswordChangeResponse>('/api/v1/account/password/change', {
+    method: 'POST',
+    accessToken,
+    body: payload,
+  });
+}
+
 export function listMyPointsLedger(accessToken: string, limit = 20): Promise<PointsLedgerListResponse> {
   return requestJson<PointsLedgerListResponse>(`/api/v1/account/points/ledger?limit=${limit}`, {
+    accessToken,
+  });
+}
+
+export function listRechargePackages(accessToken: string): Promise<RechargePackageListResponse> {
+  return requestJson<RechargePackageListResponse>('/api/v1/billing/recharge-packages', {
+    accessToken,
+  });
+}
+
+export type RechargeOrderCreatePayload = {
+  package_key: string;
+  source?: string;
+  external_order_id?: string | null;
+  idempotency_key?: string | null;
+  proof_url?: string | null;
+  remark?: string | null;
+};
+
+export function createRechargeOrder(accessToken: string, payload: RechargeOrderCreatePayload): Promise<RechargeOrderResponse> {
+  return requestJson<RechargeOrderResponse>('/api/v1/billing/recharge-orders', {
+    method: 'POST',
+    accessToken,
+    body: {
+      source: 'h5_recharge_page',
+      ...payload,
+    },
+  });
+}
+
+export function getRechargeOrder(accessToken: string, orderId: string): Promise<RechargeOrderResponse> {
+  return requestJson<RechargeOrderResponse>(`/api/v1/billing/recharge-orders/${encodeURIComponent(orderId)}`, {
+    accessToken,
+  });
+}
+
+export function createRechargePayment(accessToken: string, orderId: string, payload: {provider?: string; payment_method?: string | null; idempotency_key?: string | null; return_url?: string | null; client_context?: Record<string, unknown> | null} = {}): Promise<PaymentTransactionResponse> {
+  return requestJson<PaymentTransactionResponse>(`/api/v1/billing/recharge-orders/${encodeURIComponent(orderId)}/payments`, {
+    method: 'POST',
+    accessToken,
+    body: {
+      provider: 'wechat_h5',
+      ...payload,
+    },
+  });
+}
+
+export function getRechargePaymentStatus(accessToken: string, orderId: string): Promise<RechargeOrderPaymentStatusResponse> {
+  return requestJson<RechargeOrderPaymentStatusResponse>(`/api/v1/billing/recharge-orders/${encodeURIComponent(orderId)}/payment-status`, {
     accessToken,
   });
 }

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick } from 'vue';
+import { computed, ref, onMounted, watch, nextTick } from 'vue';
 import { 
   Send, Mic, Bot, User, Trash2, Smartphone, AlertCircle, Sparkle 
 } from 'lucide-vue-next';
-import { EASEWISE_MOCK_ACCESS_TOKEN, EASEWISE_STORAGE_KEYS } from '../../constants/storage';
+import { EASEWISE_STORAGE_KEYS } from '../../constants/storage';
+import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 
 interface Message {
   id: string;
@@ -14,7 +15,8 @@ interface Message {
   chips?: string[];
 }
 
-const isLoggedIn = ref(!!localStorage.getItem(EASEWISE_STORAGE_KEYS.accessToken));
+const { bootstrapApp, isRegisteredUser, requestRegisteredUser } = useEaseWiseApp();
+const isLoggedIn = computed(() => isRegisteredUser.value);
 const input = ref('');
 const messages = ref<Message[]>([]);
 const chatScrollContainerRef = ref<HTMLDivElement | null>(null);
@@ -72,6 +74,7 @@ watch(messages, (newVal) => {
 }, { deep: true });
 
 onMounted(() => {
+  void bootstrapApp();
   syncChat();
   scrollToBottom();
 });
@@ -122,14 +125,8 @@ const handleSend = (textToSend?: string) => {
   }, 1200);
 };
 
-const handleLogin = () => {
-  localStorage.setItem(EASEWISE_STORAGE_KEYS.accessToken, EASEWISE_MOCK_ACCESS_TOKEN);
-  localStorage.setItem(EASEWISE_STORAGE_KEYS.userSnapshot, JSON.stringify({
-    nickname: '玄远居士',
-    avatar: '玄',
-    created_at: '2026-05-22'
-  }));
-  isLoggedIn.value = true;
+const handleLogin = async () => {
+  await requestRegisteredUser('智能体对话');
 };
 
 const handleClearChat = () => {
@@ -162,7 +159,7 @@ const quickQueries = [
         <div class="space-y-2 max-w-[90%]">
           <h2 class="font-serif text-[20px] font-bold text-brand-ink-strong leading-tight">易如反掌 · 智能体决策助手</h2>
           <p class="font-sans text-[13px] text-brand-secondary leading-relaxed">
-            为提供定制的奇门排盘和黄历沟通服务，智能体需要关联您的手机测算历史与资产。游客无法免费启用连续对话功能。
+            为提供定制的奇门排盘和黄历沟通服务，智能体需要关联您的手机测算历史与资产。未登录状态无法启用连续对话功能。
           </p>
         </div>
 
@@ -179,7 +176,7 @@ const quickQueries = [
           class="w-full py-3.5 bg-brand-primary text-white rounded-xl font-sans text-[13px] font-bold shadow-sm hover:bg-brand-primary-strong active:scale-[0.98] transition-all cursor-pointer outline-none flex items-center justify-center gap-2"
         >
           <Smartphone :size="16" />
-          <span>微信/手机号一键快捷登录体验</span>
+          <span>登录后开启智能体对话</span>
         </button>
       </div>
 

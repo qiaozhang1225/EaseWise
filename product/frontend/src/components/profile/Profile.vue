@@ -1,62 +1,130 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import {
+  Camera,
   ChevronRight,
   Receipt,
   History,
   MessageSquare,
-  Wallet,
-  ShieldCheck,
   Share2,
-  Clipboard,
-  Check,
   X,
   AlertTriangle,
   RefreshCw,
+  LogOut,
+  LogIn,
+  PencilLine,
+  LockKeyhole,
 } from 'lucide-vue-next';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 import type { PointsLedgerEntryResponse, ReviewSummary } from '../../types/api';
 import SystemIntro from './SystemIntro.vue';
 
 const emit = defineEmits<{
-  (e: 'navigate-to-tab', tab: string): void;
+  (e: 'navigate-to-tab', tab: string, params?: Record<string, string | number | undefined>): void;
 }>();
 
 const {
   state,
   bootstrapApp,
-  refreshAppData,
   refreshPointsLedger,
   refreshReviewHistory,
   refreshCurrentReview,
+  logout,
+  updateProfile,
+  uploadAvatar,
+  changePassword,
   displayNickname,
   displayAvatarText,
-  accountLabel,
   isGuestUser,
-  customerServiceContact,
-  customerServiceGuidance,
+  isRegisteredUser,
+  requestRegisteredUser,
   humanizeError,
 } = useEaseWiseApp();
 
 const activeModal = ref<string | null>(null);
-const copied = ref(false);
 const feedbackText = ref('');
 const ambassadorStatus = ref<'regular' | 'ambassador'>('regular');
 const showSystemIntro = ref(false);
 const openingReviewId = ref<string | null>(null);
 const historyActionError = ref('');
+const profileEditorVisible = ref(false);
+const profileNicknameDraft = ref('');
+const profileSaveError = ref('');
+const profileSaving = ref(false);
+const avatarInputRef = ref<HTMLInputElement | null>(null);
+const avatarUploading = ref(false);
+const avatarUploadError = ref('');
+const passwordEditorVisible = ref(false);
+const currentPasswordDraft = ref('');
+const newPasswordDraft = ref('');
+const confirmPasswordDraft = ref('');
+const passwordSaveError = ref('');
+const passwordSaveSuccess = ref('');
+const passwordSaving = ref(false);
+const logoutSaving = ref(false);
+const logoutError = ref('');
 
 const currentPoints = computed(() => state.points?.balance ?? 0);
 const reportHistory = computed(() => state.reviewHistory);
 const ledgerRecords = computed(() => state.pointsLedger);
 const userReady = computed(() => Boolean(state.user));
-const statusBadgeText = computed(() => isGuestUser.value ? '游客体验' : '已登录');
-const statusBadgeClass = computed(() => isGuestUser.value ? 'bg-amber-500/10 text-amber-600' : 'bg-green-500/10 text-green-600');
+const primaryAccountActionLabel = computed(() => (isRegisteredUser.value ? '退出登录' : '登录 / 注册'));
+const profileIdentityLabel = computed(() => {
+  if (!isRegisteredUser.value) {
+    return '游客';
+  }
+  const identityLevel = state.user?.identity_level || 'normal_user';
+  const identityMap: Record<string, string> = {
+    normal_user: '普通用户',
+    promoter: '推广大使',
+    promotion_ambassador: '推广大使',
+    vip_promoter: 'VIP 推广大使',
+    vip_promotion_ambassador: 'VIP 推广大使',
+    senior_promoter: 'VIP 推广大使',
+    senior_promotion_ambassador: 'VIP 推广大使',
+    svip_promoter: 'SVIP 推广大使',
+    svip_promotion_ambassador: 'SVIP 推广大使',
+  };
+  return identityMap[identityLevel] || '普通用户';
+});
+const profileIdentityClass = computed(() => {
+  if (profileIdentityLabel.value.startsWith('SVIP')) {
+    return 'bg-amber-500/15 text-amber-700 border-amber-500/20';
+  }
+  if (profileIdentityLabel.value.startsWith('VIP')) {
+    return 'bg-purple-500/10 text-purple-700 border-purple-500/15';
+  }
+  if (profileIdentityLabel.value === '推广大使') {
+    return 'bg-brand-primary/10 text-brand-primary border-brand-primary/15';
+  }
+  if (profileIdentityLabel.value === '普通用户') {
+    return 'bg-green-500/10 text-green-700 border-green-500/15';
+  }
+  return 'bg-amber-500/10 text-amber-700 border-amber-500/15';
+});
 const connectionHint = computed(() => {
   if (state.connectionError) {
     return `本地 API 暂未连通：${state.connectionError}`;
   }
-  return '本地测试已自动创建游客会话，可直接查看实时积分与评测记录。';
+  return '';
+});
+const profileFallbackTitle = computed(() => {
+  if (state.booting) {
+    return '正在同步账户状态';
+  }
+  if (state.connectionError) {
+    return '数据连接暂时不可用';
+  }
+  return '游客状态无法使用评测类功能及智能体';
+});
+const profileFallbackActionLabel = computed(() => {
+  if (state.booting) {
+    return '同步中';
+  }
+  if (state.connectionError) {
+    return '重新连接';
+  }
+  return '登录 / 注册';
 });
 
 onMounted(() => {
@@ -76,19 +144,225 @@ watch(activeModal, async (value) => {
   }
 });
 
-async function handleRefreshData(): Promise<void> {
-  await refreshAppData();
+async function handleProfileFallbackAction(): Promise<void> {
+  if (state.booting) {
+    return;
+  }
+  if (state.connectionError) {
+    await bootstrapApp();
+    return;
+  }
+  await requestRegisteredUser('个人中心');
 }
 
-async function handleCopyContact(): Promise<void> {
+async function handleAccountAction(): Promise<void> {
+  if (!isRegisteredUser.value) {
+    await requestRegisteredUser('个人中心');
+    return;
+  }
+  logoutError.value = '';
+  activeModal.value = 'logout_confirm';
+}
+
+async function confirmLogout(): Promise<void> {
+  if (logoutSaving.value) {
+    return;
+  }
+  logoutSaving.value = true;
+  logoutError.value = '';
   try {
-    await navigator.clipboard.writeText(customerServiceContact.value);
-    copied.value = true;
-    window.setTimeout(() => {
-      copied.value = false;
-    }, 2000);
-  } catch {
-    copied.value = false;
+    await logout();
+    activeModal.value = null;
+  } catch (error) {
+    logoutError.value = humanizeError(error);
+  } finally {
+    logoutSaving.value = false;
+  }
+}
+
+async function openAvatarUploader(): Promise<void> {
+  const authenticated = await requestRegisteredUser('个人中心');
+  if (!authenticated) {
+    return;
+  }
+  avatarUploadError.value = '';
+  avatarInputRef.value?.click();
+}
+
+async function handleAvatarFileChange(event: Event): Promise<void> {
+  if (avatarUploading.value) {
+    return;
+  }
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) {
+    return;
+  }
+  if (!/^image\/(jpeg|png|webp)$/u.test(file.type)) {
+    avatarUploadError.value = '请上传 JPG、PNG 或 WebP 格式的头像。';
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    avatarUploadError.value = '头像文件请控制在 5MB 以内。';
+    return;
+  }
+
+  avatarUploading.value = true;
+  avatarUploadError.value = '';
+  try {
+    const imageDataUrl = await buildAvatarDataUrl(file);
+    await uploadAvatar(imageDataUrl);
+  } catch (error) {
+    avatarUploadError.value = humanizeError(error);
+  } finally {
+    avatarUploading.value = false;
+  }
+}
+
+function buildAvatarDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('头像读取失败，请重新选择图片。'));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error('头像图片无法识别，请换一张图片。'));
+      image.onload = () => {
+        const size = 320;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const context = canvas.getContext('2d');
+        if (!context) {
+          reject(new Error('当前浏览器暂不支持头像压缩。'));
+          return;
+        }
+        const scale = Math.max(size / image.width, size / image.height);
+        const width = image.width * scale;
+        const height = image.height * scale;
+        context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.86));
+      };
+      image.src = String(reader.result || '');
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function openProtectedModal(modal: 'ledger' | 'history'): Promise<void> {
+  const authenticated = await requestRegisteredUser(modal === 'ledger' ? '积分记录' : '评测记录');
+  if (authenticated) {
+    activeModal.value = modal;
+  }
+}
+
+async function openProfileEditor(): Promise<void> {
+  const authenticated = await requestRegisteredUser('修改用户名');
+  if (!authenticated) {
+    return;
+  }
+  profileNicknameDraft.value = state.user?.nickname?.trim() || '';
+  profileSaveError.value = '';
+  profileEditorVisible.value = true;
+}
+
+async function submitProfileEditor(): Promise<void> {
+  if (profileSaving.value) {
+    return;
+  }
+  const nickname = profileNicknameDraft.value.trim();
+  if (!nickname) {
+    profileSaveError.value = '请输入用户名/昵称。';
+    return;
+  }
+  profileSaving.value = true;
+  profileSaveError.value = '';
+  try {
+    await updateProfile({ nickname });
+    profileEditorVisible.value = false;
+  } catch (error) {
+    profileSaveError.value = humanizeError(error);
+  } finally {
+    profileSaving.value = false;
+  }
+}
+
+function resetPasswordEditor(): void {
+  currentPasswordDraft.value = '';
+  newPasswordDraft.value = '';
+  confirmPasswordDraft.value = '';
+  passwordSaveError.value = '';
+  passwordSaveSuccess.value = '';
+  passwordSaving.value = false;
+}
+
+function closePasswordEditor(): void {
+  passwordEditorVisible.value = false;
+  resetPasswordEditor();
+}
+
+function validatePasswordStrength(value: string): boolean {
+  if (value.trim() !== value) {
+    return false;
+  }
+  if (value.length < 8 || value.length > 32) {
+    return false;
+  }
+  if (new Set(value).size <= 1) {
+    return false;
+  }
+  const categoryCount = [
+    /\d/.test(value),
+    /[a-zA-Z]/.test(value),
+    /[^a-zA-Z0-9]/.test(value),
+  ].filter(Boolean).length;
+  return categoryCount >= 2;
+}
+
+async function openPasswordEditor(): Promise<void> {
+  const authenticated = await requestRegisteredUser('修改密码');
+  if (!authenticated) {
+    return;
+  }
+  resetPasswordEditor();
+  passwordEditorVisible.value = true;
+}
+
+async function submitPasswordEditor(): Promise<void> {
+  if (passwordSaving.value) {
+    return;
+  }
+  passwordSaveError.value = '';
+  passwordSaveSuccess.value = '';
+
+  if (!currentPasswordDraft.value.trim()) {
+    passwordSaveError.value = '请输入当前密码。';
+    return;
+  }
+  if (!validatePasswordStrength(newPasswordDraft.value)) {
+    passwordSaveError.value = '新密码强度不足，请使用 8-32 位且至少包含两类字符。';
+    return;
+  }
+  if (newPasswordDraft.value !== confirmPasswordDraft.value) {
+    passwordSaveError.value = '两次输入的新密码不一致。';
+    return;
+  }
+  if (newPasswordDraft.value === currentPasswordDraft.value) {
+    passwordSaveError.value = '新密码不能与当前密码相同。';
+    return;
+  }
+
+  passwordSaving.value = true;
+  try {
+    await changePassword(currentPasswordDraft.value, newPasswordDraft.value, confirmPasswordDraft.value);
+    passwordSaveSuccess.value = '密码已更新成功，建议你立即妥善保存。';
+    currentPasswordDraft.value = '';
+    newPasswordDraft.value = '';
+    confirmPasswordDraft.value = '';
+  } catch (error) {
+    passwordSaveError.value = humanizeError(error);
+  } finally {
+    passwordSaving.value = false;
   }
 }
 
@@ -115,8 +389,6 @@ function formatDateTime(value: string): string {
 }
 
 const ledgerBizTypeTitleMap: Record<string, string> = {
-  guest_bonus: '游客初始积分发放',
-  guest_initial_grant: '游客初始积分发放',
   signup_bonus: '注册赠送积分',
   wechat_initial_grant: '注册初始积分发放',
   phone_review_base: '手机号评测扣减',
@@ -125,21 +397,15 @@ const ledgerBizTypeTitleMap: Record<string, string> = {
   phone_review_aspect_unlock: '手机号评测维度解锁',
   phone_review_aspect_unlock_charge: '手机号评测维度解锁',
   recharge_order: '积分充值到账',
-  guest_merge_transfer_out: '游客积分合并转出',
-  guest_merge_transfer_in: '游客积分合并转入',
   manual_adjust: '后台积分调整',
 };
 
 const ledgerRemarkTitleMap: Record<string, string> = {
-  'guest initial points': '游客初始积分发放',
   'initial test points': '注册赠送积分',
-  guest_initial_grant: '游客初始积分发放',
   wechat_initial_grant: '注册初始积分发放',
   phone_review_base_charge: '手机号评测扣减',
   phone_review_base_refund: '手机号评测失败返还',
   phone_review_aspect_unlock_charge: '手机号评测维度解锁',
-  guest_points_merged_out: '游客积分合并转出',
-  guest_points_merged_in: '游客积分合并转入',
   manual_adjust: '后台积分调整',
 };
 
@@ -236,25 +502,72 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
 </script>
 
 <template>
-  <div class="pb-32 max-w-md mx-auto px-margin-mobile relative text-left">
+  <div class="pt-4 pb-32 max-w-md mx-auto px-margin-mobile relative text-left">
     <section class="mb-5 mt-4">
       <div
         v-if="userReady"
-        class="bg-white rounded-2xl p-5 border border-gray-100 flex items-center justify-between shadow-sm"
+        class="bg-white rounded-2xl p-5 border border-gray-100 flex items-center justify-between shadow-sm relative overflow-hidden"
       >
-        <div class="flex items-center gap-3.5">
-          <div class="w-14 h-14 rounded-full overflow-hidden border-2 border-brand-primary/10 bg-brand-primary/5 flex items-center justify-center font-serif font-bold text-brand-primary text-[20px] shrink-0">
-            {{ displayAvatarText }}
-          </div>
-          <div class="text-left">
-            <div class="flex items-center gap-1.5">
-              <h3 class="font-sans text-[17px] font-bold text-brand-ink-strong">{{ displayNickname }}</h3>
-              <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold" :class="statusBadgeClass">
-                {{ statusBadgeText }}
-              </span>
+        <div class="absolute right-0 bottom-0 text-slate-100/40 font-serif text-[42px] select-none translate-y-3 translate-x-1">
+          ☯
+        </div>
+        <div class="flex items-center gap-3.5 z-10 min-w-0">
+          <div class="relative group shrink-0">
+            <div class="w-14 h-14 rounded-full overflow-hidden border-2 border-brand-primary/10 bg-brand-primary/5 flex items-center justify-center font-serif font-bold text-brand-primary text-[20px] shadow-inner select-none">
+              <img
+                v-if="state.user?.avatar_url"
+                :src="state.user.avatar_url"
+                alt="用户头像"
+                class="w-full h-full object-cover"
+              />
+              <span v-else>{{ displayAvatarText }}</span>
             </div>
-            <p class="font-sans text-[11px] text-brand-secondary mt-1">
-              {{ accountLabel }}
+            <input
+              ref="avatarInputRef"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              class="hidden"
+              @change="handleAvatarFileChange"
+            />
+            <button
+              type="button"
+              class="absolute -bottom-1 -right-1 bg-white border border-gray-100 hover:border-brand-primary/20 text-brand-secondary hover:text-brand-primary w-5 h-5 rounded-full flex items-center justify-center shadow-sm select-none cursor-pointer outline-none"
+              title="上传头像"
+              aria-label="上传头像"
+              @click="openAvatarUploader"
+            >
+              <RefreshCw v-if="avatarUploading" :size="10" class="animate-spin" />
+              <Camera v-else :size="10" />
+            </button>
+          </div>
+
+          <div class="text-left min-w-0">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <h3 class="font-serif text-[17px] font-black text-brand-ink-strong truncate max-w-[12rem]">{{ displayNickname }}</h3>
+              <button
+                type="button"
+                class="text-gray-400 hover:text-brand-primary cursor-pointer select-none outline-none inline-flex items-center"
+                @click="openProfileEditor"
+              >
+                <PencilLine :size="12" />
+              </button>
+            </div>
+
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+              <span class="inline-flex items-center px-2.5 py-1 rounded-lg border font-sans text-[10.5px] font-black select-none" :class="profileIdentityClass">
+                {{ profileIdentityLabel }}
+              </span>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 px-2.5 py-1 font-sans text-[10.5px] font-semibold bg-brand-paper hover:bg-brand-primary/10 rounded-lg text-brand-secondary hover:text-brand-primary transition-colors cursor-pointer outline-none"
+                @click="openPasswordEditor"
+              >
+                <LockKeyhole :size="12" />
+                修改密码
+              </button>
+            </div>
+            <p v-if="avatarUploadError" class="mt-1.5 text-[10px] text-red-500 leading-relaxed">
+              {{ avatarUploadError }}
             </p>
           </div>
         </div>
@@ -276,43 +589,46 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
           <AlertTriangle :size="20" />
         </div>
         <div class="space-y-1">
-          <p class="font-sans text-[13px] font-bold text-brand-ink-strong">{{ state.booting ? '正在连接本地数据' : '本地体验数据暂不可用' }}</p>
-          <p class="font-sans text-[11px] text-brand-secondary px-4 leading-relaxed">
+          <p class="font-sans text-[13px] font-bold text-brand-ink-strong">{{ profileFallbackTitle }}</p>
+          <p v-if="connectionHint" class="font-sans text-[11px] text-brand-secondary px-4 leading-relaxed">
             {{ connectionHint }}
           </p>
         </div>
         <button
-          @click="handleRefreshData"
+          @click="handleProfileFallbackAction"
           class="px-6 py-2 bg-brand-primary hover:bg-brand-primary-strong text-white rounded-full font-sans text-[13px] font-bold inline-flex items-center gap-1 cursor-pointer outline-none shadow-sm transition-all"
+          :disabled="state.booting"
         >
-          <RefreshCw :size="13" />
-          <span>重新连接本地 API</span>
+          <RefreshCw v-if="state.booting || state.connectionError" :size="13" :class="state.booting ? 'animate-spin' : ''" />
+          <LogIn v-else :size="13" />
+          <span>{{ profileFallbackActionLabel }}</span>
         </button>
       </div>
     </section>
 
     <section class="mb-5">
-      <div class="bg-brand-ink-strong text-white rounded-2xl p-5 relative overflow-hidden shadow-md">
-        <div class="absolute top-[-10%] right-[-5%] opacity-5 text-white">
-          <Wallet :size="120" />
+      <div class="bg-[#151210] border border-stone-800 text-white rounded-2xl p-5 flex flex-col justify-between relative overflow-hidden shadow-lg">
+        <div class="absolute right-[-10%] bottom-[-15%] opacity-[0.03] text-brand-accent font-serif font-black text-[120px] pointer-events-none select-none">
+          ☯
         </div>
 
-        <div class="relative z-10">
-          <div>
-            <p class="font-sans text-[11px] font-bold text-gray-300 tracking-widest mb-1">当前账户剩余积分</p>
-            <div class="mt-3 flex items-end justify-between gap-3">
-              <div class="flex items-end gap-2">
-                <span class="font-serif text-[30px] leading-none font-bold text-brand-accent">{{ currentPoints }}</span>
-                <span class="pb-1 font-sans text-[13px] font-bold text-brand-accent/90">分</span>
+        <div class="relative z-10 flex items-center justify-between gap-5">
+          <div class="min-w-0">
+            <div>
+              <p class="text-[10px] font-semibold text-stone-400 gap-1 uppercase tracking-widest mb-1 select-none">我的积分结存</p>
+              <div class="flex items-baseline gap-1">
+                <span class="font-serif text-[32px] font-black text-[#E8C895] leading-none">{{ currentPoints }}</span>
+                <span class="text-[9.5px] text-stone-400 font-mono scale-90">Points</span>
               </div>
-              <button
-                @click="activeModal = 'recharge'"
-                class="min-w-[104px] px-5 py-2.5 rounded-xl bg-brand-accent text-brand-ink-strong font-sans text-[13px] font-bold hover:brightness-105 active:scale-[0.98] transition-all shrink-0 cursor-pointer outline-none shadow-md"
-              >
-                去充值
-              </button>
             </div>
           </div>
+
+          <button
+            @click="emit('navigate-to-tab', 'recharge', { source: 'profile', return_to: 'profile' })"
+            class="h-10 bg-[#DEC299] hover:bg-[#EBD3B1] text-brand-ink-strong px-5 rounded-xl text-[12px] font-black active:scale-95 transition-all shrink-0 cursor-pointer outline-none shadow-sm border border-stone-600/30 inline-flex items-center justify-center"
+          >
+            去充值
+          </button>
         </div>
       </div>
     </section>
@@ -357,7 +673,7 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         </div>
 
         <div
-          @click="activeModal = 'ledger'"
+          @click="openProtectedModal('ledger')"
           class="flex items-center justify-between p-4 bg-white hover:bg-gray-50/50 transition-colors cursor-pointer select-none"
         >
           <div class="flex items-center gap-3">
@@ -373,7 +689,7 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         </div>
 
         <div
-          @click="activeModal = 'history'"
+          @click="openProtectedModal('history')"
           class="flex items-center justify-between p-4 bg-white hover:bg-gray-50/50 transition-colors cursor-pointer select-none"
         >
           <div class="flex items-center gap-3">
@@ -403,13 +719,58 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
 
     <div class="text-center px-1">
       <button
-        @click="handleRefreshData"
+        @click="handleAccountAction"
         class="w-full py-3.5 rounded-xl bg-brand-primary text-white font-sans text-[13px] font-bold hover:bg-brand-primary-strong transition-colors active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer outline-none shadow-md"
       >
-        <RefreshCw :size="16" />
-        <span>{{ state.booting ? '正在刷新本地数据...' : '刷新本地数据' }}</span>
+        <LogOut v-if="!isGuestUser" :size="16" />
+        <LogIn v-else :size="16" />
+        <span>{{ primaryAccountActionLabel }}</span>
       </button>
     </div>
+
+    <transition name="fade">
+      <div v-if="activeModal === 'logout_confirm'" class="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-[100] backdrop-blur-sm">
+        <div class="bg-white border border-brand-primary/15 rounded-2xl p-5 w-full max-w-xs space-y-4 shadow-2xl relative text-left">
+          <div class="space-y-2 text-center pb-1">
+            <div class="w-11 h-11 rounded-full bg-rose-50/50 border border-rose-100 text-rose-500 flex items-center justify-center mx-auto text-center select-none scale-105">
+              <AlertTriangle :size="20" />
+            </div>
+            <h3 class="text-sm font-serif font-black text-brand-ink-strong tracking-wide">正在登出账号</h3>
+            <p class="text-[11px] text-brand-secondary leading-relaxed px-1">
+              您确定要退出当前账号吗？
+            </p>
+            <p class="text-[11px] text-brand-secondary leading-relaxed px-1">
+              评测和智能体功能必须要登录才能使用
+            </p>
+            <p
+              v-if="logoutError"
+              class="rounded-xl border border-red-100 bg-red-50 px-3 py-2 font-sans text-[11px] text-red-600 leading-relaxed text-left"
+            >
+              {{ logoutError }}
+            </p>
+          </div>
+
+          <div class="flex gap-2.5 pt-1">
+            <button
+              type="button"
+              @click="activeModal = null"
+              class="flex-1 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold rounded-lg outline-none cursor-pointer"
+              :disabled="logoutSaving"
+            >
+              取消登出
+            </button>
+            <button
+              type="button"
+              @click="confirmLogout"
+              class="flex-1 py-1.5 bg-rose-500 hover:bg-rose-600 text-white hover:brightness-110 text-xs font-bold rounded-lg outline-none cursor-pointer shadow-sm border border-transparent disabled:opacity-60"
+              :disabled="logoutSaving"
+            >
+              {{ logoutSaving ? '正在登出...' : '确认登出' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
 
     <footer class="mt-14 text-center pb-8 shrink-0">
       <p class="font-sans text-[11px] font-bold text-brand-secondary/50 tracking-widest">
@@ -419,44 +780,6 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         易如反掌 / EaseWise
       </p>
     </footer>
-
-    <transition name="fade">
-      <div v-if="activeModal === 'recharge'" class="fixed inset-0 bg-brand-ink-strong/60 flex items-center justify-center p-4 z-[100] backdrop-blur-sm">
-        <div class="bg-white rounded-2xl p-6 w-full max-w-sm space-y-6 text-center hairline-border shadow-2xl relative">
-          <button @click="activeModal = null" class="absolute top-4 right-4 p-1 rounded-full text-brand-secondary hover:bg-gray-100 outline-none cursor-pointer">
-            <X :size="18" />
-          </button>
-
-          <div class="w-12 h-12 rounded-full bg-brand-primary/10 flex items-center justify-center text-brand-primary mx-auto animate-bounce">
-            <Wallet :size="24" />
-          </div>
-
-          <div class="space-y-2">
-            <h3 class="font-serif text-[17px] font-bold text-brand-ink-strong leading-tight">积分充值说明</h3>
-            <p class="font-sans text-[13px] text-brand-secondary leading-relaxed">
-              {{ customerServiceGuidance }}
-            </p>
-          </div>
-
-          <div class="bg-brand-paper p-3 rounded-xl flex items-center justify-between border border-gray-100">
-            <div class="text-left font-mono">
-              <p class="text-[10px] text-brand-secondary">客服联系方式：</p>
-              <p class="text-[15px] font-bold text-brand-ink-strong">{{ customerServiceContact }}</p>
-            </div>
-            <button @click="handleCopyContact" class="px-3.5 py-1.5 bg-brand-primary text-white hover:bg-brand-primary-strong font-sans text-[11px] font-bold rounded-lg cursor-pointer outline-none flex items-center gap-1 shrink-0 transition-all">
-              <Check v-if="copied" :size="11" />
-              <Clipboard v-else :size="11" />
-              <span>{{ copied ? '已复制' : '复制' }}</span>
-            </button>
-          </div>
-
-          <div class="font-sans text-[11px] text-brand-secondary/80 flex items-center gap-1.5 justify-center bg-green-50 p-2.5 rounded-lg border border-green-100">
-            <ShieldCheck :size="13" class="text-green-600 shrink-0" />
-            <span>充值与积分到账说明以后端规则和客服通知为准</span>
-          </div>
-        </div>
-      </div>
-    </transition>
 
     <transition name="fade">
       <div v-if="activeModal === 'ledger'" class="fixed inset-0 bg-brand-ink-strong/60 flex items-center justify-center p-4 z-[100] backdrop-blur-sm">
@@ -588,6 +911,117 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
               :disabled="!feedbackText.trim()"
             >
               提交反馈
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <transition name="fade">
+      <div v-if="profileEditorVisible" class="fixed inset-0 bg-brand-ink-strong/60 flex items-center justify-center p-4 z-[110] backdrop-blur-sm">
+        <div class="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4 hairline-border shadow-2xl relative">
+          <div class="flex justify-between items-center pb-2 border-b border-gray-100 w-full">
+            <div class="text-left">
+              <h3 class="font-sans text-[17px] font-bold text-brand-ink-strong">修改用户名</h3>
+              <p class="font-sans text-[11px] text-brand-secondary">当前名称将同步到个人中心与后台可见昵称</p>
+            </div>
+            <button @click="profileEditorVisible = false" class="p-1 rounded-full text-brand-secondary hover:bg-gray-100 outline-none cursor-pointer">
+              <X :size="18" />
+            </button>
+          </div>
+
+          <div class="space-y-3 text-left">
+            <label class="font-sans text-[11px] font-bold text-brand-secondary tracking-wide">用户名 / 昵称</label>
+            <input
+              v-model="profileNicknameDraft"
+              class="w-full bg-brand-paper font-sans text-[13px] text-brand-ink-strong p-3 rounded-xl border border-gray-100 focus:border-brand-primary outline-none transition-all"
+              placeholder="请输入用户名或昵称"
+              maxlength="64"
+            />
+            <p v-if="profileSaveError" class="rounded-xl border border-red-100 bg-red-50 px-3 py-2 font-sans text-[11px] text-red-600 leading-relaxed">
+              {{ profileSaveError }}
+            </p>
+          </div>
+
+          <div class="pt-2 flex gap-2">
+            <button @click="profileEditorVisible = false" class="flex-1 py-2.5 bg-gray-50 hover:bg-gray-100 text-brand-ink font-sans text-[13px] font-semibold rounded-lg outline-none cursor-pointer">
+              取消
+            </button>
+            <button
+              @click="submitProfileEditor"
+              class="flex-1 py-2.5 bg-brand-primary text-white hover:bg-brand-primary-strong font-sans text-[13px] font-bold rounded-lg outline-none cursor-pointer disabled:opacity-55"
+              :disabled="profileSaving"
+            >
+              {{ profileSaving ? '保存中...' : '保存' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <transition name="fade">
+      <div v-if="passwordEditorVisible" class="fixed inset-0 bg-brand-ink-strong/60 flex items-center justify-center p-4 z-[120] backdrop-blur-sm">
+        <div class="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4 hairline-border shadow-2xl relative">
+          <div class="flex justify-between items-center pb-2 border-b border-gray-100 w-full">
+            <div class="text-left">
+              <h3 class="font-sans text-[17px] font-bold text-brand-ink-strong">修改登录密码</h3>
+              <p class="font-sans text-[11px] text-brand-secondary">请输入当前密码，并设置一个新的登录密码</p>
+            </div>
+            <button @click="closePasswordEditor" class="p-1 rounded-full text-brand-secondary hover:bg-gray-100 outline-none cursor-pointer">
+              <X :size="18" />
+            </button>
+          </div>
+
+          <div class="space-y-3 text-left">
+            <label class="font-sans text-[11px] font-bold text-brand-secondary tracking-wide">当前密码</label>
+            <input
+              v-model="currentPasswordDraft"
+              type="password"
+              autocomplete="current-password"
+              class="w-full bg-brand-paper font-sans text-[13px] text-brand-ink-strong p-3 rounded-xl border border-gray-100 focus:border-brand-primary outline-none transition-all"
+              placeholder="请输入当前登录密码"
+            />
+
+            <label class="font-sans text-[11px] font-bold text-brand-secondary tracking-wide">新密码</label>
+            <input
+              v-model="newPasswordDraft"
+              type="password"
+              autocomplete="new-password"
+              class="w-full bg-brand-paper font-sans text-[13px] text-brand-ink-strong p-3 rounded-xl border border-gray-100 focus:border-brand-primary outline-none transition-all"
+              placeholder="8-32位，至少包含两类字符"
+            />
+
+            <label class="font-sans text-[11px] font-bold text-brand-secondary tracking-wide">确认新密码</label>
+            <input
+              v-model="confirmPasswordDraft"
+              type="password"
+              autocomplete="new-password"
+              class="w-full bg-brand-paper font-sans text-[13px] text-brand-ink-strong p-3 rounded-xl border border-gray-100 focus:border-brand-primary outline-none transition-all"
+              placeholder="请再次输入新密码"
+            />
+
+            <p class="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 font-sans text-[11px] text-amber-700 leading-relaxed">
+              如果忘记当前密码，当前版本暂未接入短信验证自助找回。请先联系客服人工核验，或等待验证能力接入后再重置。
+            </p>
+
+            <p v-if="passwordSaveError" class="rounded-xl border border-red-100 bg-red-50 px-3 py-2 font-sans text-[11px] text-red-600 leading-relaxed">
+              {{ passwordSaveError }}
+            </p>
+            <p v-if="passwordSaveSuccess" class="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 font-sans text-[11px] text-emerald-700 leading-relaxed">
+              {{ passwordSaveSuccess }}
+            </p>
+          </div>
+
+          <div class="pt-2 flex gap-2">
+            <button @click="closePasswordEditor" class="flex-1 py-2.5 bg-gray-50 hover:bg-gray-100 text-brand-ink font-sans text-[13px] font-semibold rounded-lg outline-none cursor-pointer">
+              取消
+            </button>
+            <button
+              @click="submitPasswordEditor"
+              class="flex-1 py-2.5 bg-brand-primary text-white hover:bg-brand-primary-strong font-sans text-[13px] font-bold rounded-lg outline-none cursor-pointer disabled:opacity-55"
+              :disabled="passwordSaving"
+            >
+              {{ passwordSaving ? '保存中...' : '保存密码' }}
             </button>
           </div>
         </div>

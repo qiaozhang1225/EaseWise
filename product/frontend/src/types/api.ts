@@ -181,6 +181,7 @@ export interface DashboardResponse {
 export interface UserResponse {
   user_id: string;
   status: string;
+  identity_level: string;
   nickname: string | null;
   avatar_url: string | null;
   profile_completed: boolean;
@@ -224,6 +225,10 @@ export interface RechargePackageResponse {
   sort_order: number;
 }
 
+export interface RechargePackageListResponse {
+  items: RechargePackageResponse[];
+}
+
 export interface ModuleRuntimeConfigResponse {
   enabled: boolean;
   base_points_cost: number | null;
@@ -238,7 +243,6 @@ export interface PublicRuntimeConfigResponse {
   channel: string | null;
   points: {
     initial_grant: number;
-    guest_initial_grant: number;
   };
   recharge: {
     packages: RechargePackageResponse[];
@@ -261,12 +265,55 @@ export interface PublicRuntimeConfigResponse {
   };
 }
 
-export interface GuestSessionResponse {
+export interface PhoneStatusRequest {
+  phone: string;
+}
+
+export interface PhoneStatusResponse {
+  registered: boolean;
+  normalized_phone: string;
+  next_action: 'login' | 'register';
+}
+
+export interface PhonePasswordRegisterRequest {
+  phone: string;
+  password: string;
+  confirm_password: string;
+}
+
+export interface PhonePasswordLoginRequest {
+  phone: string;
+  password: string;
+}
+
+export interface UserProfileUpdateRequest {
+  nickname?: string | null;
+  avatar_url?: string | null;
+}
+
+export interface AvatarUploadRequest {
+  image_data_url: string;
+}
+
+export interface PasswordChangeRequest {
+  current_password: string;
+  new_password: string;
+  confirm_password: string;
+}
+
+export interface PasswordChangeResponse {
+  status: string;
+}
+
+export interface AuthLoginResponse {
   access_token: string;
   token_type: string;
   expires_at: string;
-  channel: string;
-  guest_key: string;
+  user: UserResponse;
+  points: PointsAccountResponse;
+}
+
+export interface CurrentUserResponse {
   user: UserResponse;
   points: PointsAccountResponse;
 }
@@ -310,11 +357,6 @@ export interface InternalUserResponse {
   last_active_at: string;
   openid: string | null;
   unionid: string | null;
-  guest_channel: string | null;
-  guest_key: string | null;
-  guest_appid: string | null;
-  guest_openid: string | null;
-  guest_unionid: string | null;
 }
 
 export interface InternalUserListResponse {
@@ -386,9 +428,35 @@ export interface RechargeOrderResponse {
   closed_at: string | null;
   refund_requests: RefundRequestResponse[];
   commission_records: PromotionCommissionResponse[];
+  payment_transactions: PaymentTransactionResponse[];
+  latest_payment: PaymentTransactionResponse | null;
   granted_ledger_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PaymentTransactionResponse {
+  transaction_id: string;
+  order_id: string;
+  user_id: string;
+  provider: string;
+  payment_method: string;
+  amount_cents: number;
+  status: string;
+  provider_transaction_id: string | null;
+  prepay_id: string | null;
+  idempotency_key: string | null;
+  payment_params: Record<string, unknown>;
+  client_message: string | null;
+  failure_reason: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RechargeOrderPaymentStatusResponse {
+  order: RechargeOrderResponse;
+  latest_payment: PaymentTransactionResponse | null;
 }
 
 export interface RechargeOrderListResponse {

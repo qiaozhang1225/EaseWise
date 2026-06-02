@@ -30,7 +30,7 @@ import type { Gender, ReviewAspect, ReviewProgressStage, ReviewRecord } from '..
 
 const emit = defineEmits<{
   (e: 'back-to-home'): void;
-  (e: 'navigate-to-tab', tab: string): void;
+  (e: 'navigate-to-tab', tab: string, params?: Record<string, string | number | undefined>): void;
 }>();
 
 type AppViewState = 'input' | 'waiting' | 'result' | 'error_state';
@@ -81,9 +81,11 @@ type BoardHarmBadge = {
 const {
   state,
   bootstrapApp,
+  isGuestUser,
   submitPhoneReview,
   refreshCurrentReview,
   unlockAspect,
+  requestRegisteredUser,
   reviewBasePointsCost,
   aspectUnlockPointsCost,
   customerServiceContact,
@@ -259,6 +261,13 @@ const phoneSummaryRisk = computed(() => cleanDisplayText(phoneSummary.value?.ris
 const phoneSummaryUsageGuidance = computed(
   () => cleanDisplayText(phoneSummary.value?.usage_guidance) || '系统会根据盘面结果生成使用建议。',
 );
+
+async function ensureRegisteredForAction(reason: string): Promise<boolean> {
+  if (state.user && !isGuestUser.value) {
+    return true;
+  }
+  return requestRegisteredUser(reason);
+}
 const stabilityLabel = computed(
   () => cleanDisplayText(stabilityDetail.value?.verdict) || resolveFallbackStabilityLabel(),
 );
@@ -642,6 +651,11 @@ function handleReviewSyncError(error: unknown): void {
       setError('insufficient_points');
       return;
     }
+    if (error.status === 403 && error.detail === 'registered_user_required') {
+      appState.value = 'input';
+      void requestRegisteredUser('手机号评测');
+      return;
+    }
     if (error.status === 422 && (error.detail === 'phone_must_be_11_digits' || error.detail === 'phone')) {
       setError('phone_format');
       return;
@@ -801,6 +815,10 @@ async function handleReviewSubmitIntent(): Promise<void> {
   if (!cleanPhone) {
     return;
   }
+  const authenticated = await ensureRegisteredForAction('手机号评测');
+  if (!authenticated) {
+    return;
+  }
 
   const shouldSkipConfirm = readStoredFlag(
     EASEWISE_STORAGE_KEYS.reviewConfirmSkipPrompt,
@@ -837,6 +855,10 @@ async function handleConfirmReview(): Promise<void> {
 async function handleEvaluate(preparedPhone?: string): Promise<void> {
   const cleanPhone = preparedPhone ?? validatePhoneBeforeReview();
   if (!cleanPhone) {
+    return;
+  }
+  const authenticated = await ensureRegisteredForAction('手机号评测');
+  if (!authenticated) {
     return;
   }
   const selectedGender = gender.value;
@@ -906,6 +928,10 @@ async function handleUnlockAspect(index: number): Promise<void> {
   if (aspect.is_unlocked) {
     return;
   }
+  const authenticated = await ensureRegisteredForAction('专项解锁');
+  if (!authenticated) {
+    return;
+  }
 
   try {
     await tryUnlockAspectWithWait(review.id, aspect.aspect_key, aspect.title);
@@ -919,6 +945,10 @@ async function handleUnlockAspect(index: number): Promise<void> {
     }
     if (error instanceof ApiError && error.status === 402) {
       setError('unlock_points_insufficient');
+      return;
+    }
+    if (error instanceof ApiError && error.status === 403 && error.detail === 'registered_user_required') {
+      void requestRegisteredUser('专项解锁');
       return;
     }
     setError('request_failed', humanizeError(error));
@@ -1013,7 +1043,7 @@ function handleSelectNextLockedAspect(): void {
 }
 
 function resolveHeaderOffset(): number {
-  return 14;
+  return 0;
 }
 
 function resolveScrollBehavior(): ScrollBehavior {
@@ -1481,7 +1511,7 @@ function sleep(ms: number): Promise<void> {
 </script>
 
 <template>
-  <div class="pb-32 max-w-md mx-auto w-full relative min-h-screen">
+  <div class="pt-4 pb-32 max-w-md mx-auto w-full relative min-h-screen">
     <transition name="fade">
       <div
         v-if="toast"
@@ -2192,10 +2222,14 @@ function sleep(ms: number): Promise<void> {
 
           <button
             v-if="errorType === 'insufficient_points' || errorType === 'unlock_points_insufficient'"
-            @click="emit('navigate-to-tab', 'profile')"
+            @click="emit('navigate-to-tab', 'recharge', {
+              source: errorType === 'unlock_points_insufficient' ? 'unlock_points_insufficient' : 'insufficient_points',
+              return_to: 'phone',
+              required_points: errorType === 'unlock_points_insufficient' ? effectiveAspectUnlockPoints : effectiveBaseReviewPoints,
+            })"
             class="w-full py-3 bg-white border border-brand-primary/20 text-brand-primary rounded-xl font-bold text-[13px] hover:bg-brand-primary/5 active:scale-[0.98] transition-all cursor-pointer outline-none"
           >
-            <span>前往个人中心查看积分</span>
+            <span>前往充值</span>
           </button>
         </div>
       </div>

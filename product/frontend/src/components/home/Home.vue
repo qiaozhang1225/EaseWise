@@ -15,7 +15,7 @@ const toast = ref<string | null>(null);
 const yiExpanded = ref(false);
 const jiExpanded = ref(false);
 
-const points = computed(() => state.points?.balance ?? state.runtimeConfig?.points.guest_initial_grant ?? 0);
+const points = computed(() => state.points?.balance ?? 0);
 const displayDate = computed(() => {
   const rawText = state.almanac?.display_date || '';
   if (!rawText) {
@@ -70,7 +70,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="pb-32 max-w-md mx-auto px-margin-mobile relative">
+  <div class="pt-4 pb-32 max-w-md mx-auto px-margin-mobile relative">
     <!-- Toast Notification -->
     <transition name="fade-slide">
       <div 
