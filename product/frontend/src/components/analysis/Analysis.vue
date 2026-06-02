@@ -21,11 +21,13 @@ import {
   Plus,
   Lock,
   Download,
+  Volume2,
 } from 'lucide-vue-next';
 import { DEFAULT_ASPECT_UNLOCK_POINTS, DEFAULT_BASE_REVIEW_POINTS } from '../../config/pricing';
 import { EASEWISE_STORAGE_KEYS } from '../../constants/storage';
 import { ApiError } from '../../lib/api';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
+import { useVoicePlayback } from '../../composables/useVoicePlayback';
 import type { Gender, ReviewAspect, ReviewProgressStage, ReviewRecord } from '../../types/api';
 
 const emit = defineEmits<{
@@ -92,6 +94,12 @@ const {
   customerServiceGuidance,
   humanizeError,
 } = useEaseWiseApp();
+
+const voicePlayback = useVoicePlayback({
+  getAccessToken: () => state.accessToken,
+  getVoiceConfig: () => state.runtimeConfig?.modules.voice,
+  showToast,
+});
 
 const appState = ref<AppViewState>('input');
 const phoneNumber = ref('');
@@ -191,6 +199,21 @@ const aspectUiMap: Record<string, { icon: Component; tint: string; textTint: str
   fengshui: { icon: Compass, tint: 'bg-amber-50 text-amber-600', textTint: 'text-amber-600' },
 };
 
+const aspectVoiceNameMap: Record<string, string> = {
+  career: '事业',
+  wealth: '财运',
+  love: '感情',
+  health: '健康',
+  acad: '学业',
+  fortune: '运势',
+  investment: '投资',
+  travel: '出行',
+  social: '人际',
+  family: '家庭',
+  personality: '性格',
+  fengshui: '风水',
+};
+
 const currentReview = computed(() => state.currentReview);
 const userPoints = computed(() => state.points?.balance ?? 0);
 const effectiveBaseReviewPoints = computed(() => reviewBasePointsCost.value ?? DEFAULT_BASE_REVIEW_POINTS);
@@ -230,6 +253,27 @@ const selectedAspectUnlockPending = computed(() => selectedAspect.value ? isAspe
 const selectedAspectWaitingForGeneration = computed(
   () => Boolean(selectedAspect.value && unlockWaitingAspectKey.value === selectedAspect.value.aspect_key),
 );
+const voiceEnabled = computed(() => voicePlayback.enabled.value);
+const voiceAutoplayEnabled = computed(() => voicePlayback.autoplayEnabled.value);
+const phoneSummaryVoiceKey = computed(() => currentReview.value ? `phone_summary:${currentReview.value.id}:${currentReview.value.updated_at || ''}` : null);
+const stabilityVoiceKey = computed(() => currentReview.value ? `phone_stability:${currentReview.value.id}:${currentReview.value.updated_at || ''}` : null);
+const selectedAspectVoiceKey = computed(
+  () => currentReview.value && selectedAspect.value ? `phone_aspect:${currentReview.value.id}:${selectedAspect.value.aspect_key}` : null,
+);
+const phoneSummaryVoicePlaying = computed(() => Boolean(phoneSummaryVoiceKey.value && voicePlayback.currentKey.value === phoneSummaryVoiceKey.value && voicePlayback.status.value === 'playing'));
+const phoneSummaryVoiceLoading = computed(() => Boolean(phoneSummaryVoiceKey.value && voicePlayback.currentKey.value === phoneSummaryVoiceKey.value && voicePlayback.status.value === 'loading'));
+const stabilityVoicePlaying = computed(() => Boolean(stabilityVoiceKey.value && voicePlayback.currentKey.value === stabilityVoiceKey.value && voicePlayback.status.value === 'playing'));
+const stabilityVoiceLoading = computed(() => Boolean(stabilityVoiceKey.value && voicePlayback.currentKey.value === stabilityVoiceKey.value && voicePlayback.status.value === 'loading'));
+const selectedAspectVoicePlaying = computed(() => Boolean(selectedAspectVoiceKey.value && voicePlayback.currentKey.value === selectedAspectVoiceKey.value && voicePlayback.status.value === 'playing'));
+const selectedAspectVoiceLoading = computed(() => Boolean(selectedAspectVoiceKey.value && voicePlayback.currentKey.value === selectedAspectVoiceKey.value && voicePlayback.status.value === 'loading'));
+const selectedAspectVoiceLabel = computed(() => {
+  const aspect = selectedAspect.value;
+  if (!aspect) {
+    return '听专项';
+  }
+  const label = aspectVoiceNameMap[aspect.aspect_key] || aspect.short_title || aspect.title || '专项';
+  return `听${label}`;
+});
 const unlockWaitingAspect = computed(() =>
   reviewAspects.value.find((aspect) => aspect.aspect_key === unlockWaitingAspectKey.value) || null,
 );
@@ -374,6 +418,72 @@ function showToast(message: string): void {
   window.setTimeout(() => {
     toast.value = null;
   }, 2200);
+}
+
+async function handlePhoneSummaryVoiceClick(): Promise<void> {
+  voicePlayback.primeAudioSession();
+  if (phoneSummaryVoicePlaying.value || phoneSummaryVoiceLoading.value) {
+    stopVoiceAndDisableAutoplay();
+    return;
+  }
+  const review = currentReview.value;
+  const result = await speakPhoneSummaryWithAutoFollow(review, false);
+  if (!result.started) {
+    showToast('当前综合评述暂时无法播报。');
+  }
+}
+
+async function handleStabilityVoiceClick(): Promise<void> {
+  voicePlayback.primeAudioSession();
+  if (stabilityVoicePlaying.value || stabilityVoiceLoading.value) {
+    stopVoiceAndDisableAutoplay();
+    return;
+  }
+  const result = await voicePlayback.speakStability(currentReview.value);
+  if (!result.started) {
+    showToast('当前长期建议暂时无法播报。');
+  }
+}
+
+async function handleSelectedAspectVoiceClick(): Promise<void> {
+  voicePlayback.primeAudioSession();
+  if (selectedAspectVoicePlaying.value || selectedAspectVoiceLoading.value) {
+    stopVoiceAndDisableAutoplay();
+    return;
+  }
+  const result = await voicePlayback.speakAspect(currentReview.value, selectedAspect.value);
+  if (!result.started) {
+    showToast('当前专项暂时无法播报。');
+  }
+}
+
+function stopVoiceAndDisableAutoplay(): void {
+  voicePlayback.setAutoplayEnabled(false);
+  showToast('已关闭自动语音播报，可手动播放。');
+}
+
+function autoSpeakPhoneSummary(review: ReviewRecord): void {
+  void nextTick().then(async () => {
+    await speakPhoneSummaryWithAutoFollow(review, true);
+  });
+}
+
+async function speakPhoneSummaryWithAutoFollow(review: ReviewRecord | null | undefined, auto: boolean) {
+  const result = await voicePlayback.speakPhoneSummary(review, { auto });
+  if (result.completed && voiceAutoplayEnabled.value) {
+    await voicePlayback.speakStability(review, { auto: true });
+  }
+  return result;
+}
+
+function autoSpeakUnlockedAspect(review: ReviewRecord, aspectKey: string): void {
+  const aspect = review.aspects.find((item) => item.aspect_key === aspectKey);
+  if (!aspect?.is_unlocked) {
+    return;
+  }
+  void nextTick().then(() => {
+    void voicePlayback.speakAspect(review, aspect, { auto: true });
+  });
 }
 
 function isAspectUnlockPending(aspect: DisplayAspect): boolean {
@@ -524,6 +634,7 @@ function setError(nextType: ErrorType, detail = ''): void {
 
 function resetToInput(): void {
   closeReviewConfirmDialog();
+  voicePlayback.stop();
   appState.value = 'input';
   errorType.value = 'none';
   errorDetail.value = '';
@@ -598,6 +709,7 @@ function applyOrDeferCompletedReviewState(review: ReviewRecord, options: { showT
 }
 
 function applyCompletedReviewState(review: ReviewRecord, options: { showToastOnComplete?: boolean } = {}): void {
+  const shouldAutoSpeakOnDisplay = lastCompletedReviewId !== review.id;
   clearWaitingTimers();
   phoneNumber.value = sanitizePhone(review.phone_number || review.phone || '');
   gender.value = review.gender;
@@ -620,6 +732,9 @@ function applyCompletedReviewState(review: ReviewRecord, options: { showToastOnC
 
   if (options.showToastOnComplete) {
     showToast('评测完成，可查看整体结果与专项分析。');
+  }
+  if (shouldAutoSpeakOnDisplay || options.showToastOnComplete) {
+    autoSpeakPhoneSummary(review);
   }
 }
 
@@ -776,6 +891,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   disposed = true;
+  voicePlayback.stop();
   clearUnlockState();
   clearWaitingTimers();
 });
@@ -811,6 +927,7 @@ async function handleReviewSubmitIntent(): Promise<void> {
     return;
   }
 
+  voicePlayback.primeAudioSession();
   const cleanPhone = validatePhoneBeforeReview();
   if (!cleanPhone) {
     return;
@@ -836,6 +953,7 @@ async function handleReviewSubmitIntent(): Promise<void> {
 }
 
 async function handleConfirmReview(): Promise<void> {
+  voicePlayback.primeAudioSession();
   const cleanPhone = validatePhoneBeforeReview();
   if (!cleanPhone) {
     closeReviewConfirmDialog();
@@ -853,6 +971,8 @@ async function handleConfirmReview(): Promise<void> {
 }
 
 async function handleEvaluate(preparedPhone?: string): Promise<void> {
+  voicePlayback.stop();
+  voicePlayback.primeAudioSession();
   const cleanPhone = preparedPhone ?? validatePhoneBeforeReview();
   if (!cleanPhone) {
     return;
@@ -916,6 +1036,7 @@ async function handleEvaluate(preparedPhone?: string): Promise<void> {
 }
 
 async function handleUnlockAspect(index: number): Promise<void> {
+  voicePlayback.primeAudioSession();
   const aspect = reviewAspects.value[index];
   const review = currentReview.value;
 
@@ -969,6 +1090,7 @@ async function tryUnlockAspectWithWait(reviewId: string, aspectKey: string, titl
     persistCompletedReviewState(refreshedReview);
     clearUnlockState();
     showToast(`已解锁「${title}」详细分析。`);
+    autoSpeakUnlockedAspect(refreshedReview, aspectKey);
     return;
   } catch (error) {
     if (!isAspectNotReadyError(error)) {
@@ -993,6 +1115,7 @@ async function tryUnlockAspectWithWait(reviewId: string, aspectKey: string, titl
     if (latestAspect?.is_unlocked && latestAspect.content && latestAspect.risk) {
       clearUnlockState();
       showToast(`已解锁「${title}」详细分析。`);
+      autoSpeakUnlockedAspect(latestReview, aspectKey);
       return;
     }
 
@@ -1003,6 +1126,7 @@ async function tryUnlockAspectWithWait(reviewId: string, aspectKey: string, titl
       if (unlockedAspect?.is_unlocked) {
         clearUnlockState();
         showToast(`已解锁「${title}」详细分析。`);
+        autoSpeakUnlockedAspect(refreshedReview, aspectKey);
         return;
       }
     } catch (error) {
@@ -1898,10 +2022,44 @@ function sleep(ms: number): Promise<void> {
         </section>
 
         <section class="space-y-2 text-left">
-          <h4 class="font-serif text-[13px] font-bold text-brand-secondary tracking-wide flex items-center gap-1.5">
-            <Compass :size="13" class="text-brand-primary shrink-0" />
-            <span>奇门盘面解析</span>
-          </h4>
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="font-serif text-[13px] font-bold text-brand-secondary tracking-wide flex items-center gap-1.5">
+              <Compass :size="13" class="text-brand-primary shrink-0" />
+              <span>奇门盘面解析</span>
+            </h4>
+            <div v-if="voiceEnabled" class="flex items-center gap-1">
+              <button
+                type="button"
+                @click="handlePhoneSummaryVoiceClick"
+                class="h-[26px] px-2.5 rounded-full border text-[10.5px] font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer outline-none select-none active:scale-95 shadow-[0_1px_4px_rgba(0,0,0,0.03)] disabled:cursor-wait disabled:opacity-85"
+                :class="[
+                  phoneSummaryVoicePlaying
+                    ? 'bg-emerald-500/10 border-emerald-300 text-emerald-700 hover:bg-emerald-500/15'
+                    : phoneSummaryVoiceLoading
+                      ? 'bg-amber-500/10 border-amber-300 text-amber-700 animate-pulse'
+                      : 'bg-neutral-50 hover:bg-neutral-100 border-neutral-200 text-neutral-500 hover:text-neutral-700',
+                ]"
+                title="播放综合评述"
+              >
+                <template v-if="phoneSummaryVoiceLoading">
+                  <span class="w-2.5 h-2.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></span>
+                  <span class="tracking-tight font-black scale-90 origin-left">载入中...</span>
+                </template>
+                <template v-else-if="phoneSummaryVoicePlaying">
+                  <span class="voice-wave" aria-hidden="true">
+                    <span class="voice-wave-bar"></span>
+                    <span class="voice-wave-bar" style="animation-delay: 0.16s;"></span>
+                    <span class="voice-wave-bar" style="animation-delay: 0.32s;"></span>
+                  </span>
+                  <span class="tracking-tight text-emerald-600 font-extrabold scale-90 origin-left animate-pulse">播报中</span>
+                </template>
+                <template v-else>
+                  <Volume2 :size="11" />
+                  <span class="tracking-tight scale-90 origin-left">听综评</span>
+                </template>
+              </button>
+            </div>
+          </div>
 
           <div class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-4 font-sans">
             <div class="flex items-start gap-1.5">
@@ -1930,10 +2088,43 @@ function sleep(ms: number): Promise<void> {
         </section>
 
         <section class="space-y-2 text-left">
-          <h4 class="font-serif text-[13px] font-bold text-brand-secondary tracking-wide flex items-center gap-1.5">
-            <Lightbulb :size="13" class="text-brand-primary shrink-0" />
-            <span>长期使用建议</span>
-          </h4>
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="font-serif text-[13px] font-bold text-brand-secondary tracking-wide flex items-center gap-1.5">
+              <Lightbulb :size="13" class="text-brand-primary shrink-0" />
+              <span>长期使用建议</span>
+            </h4>
+            <button
+              v-if="voiceEnabled"
+              type="button"
+              @click="handleStabilityVoiceClick"
+              class="h-[26px] px-2.5 rounded-full border text-[10.5px] font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer outline-none select-none active:scale-95 shadow-[0_1px_4px_rgba(0,0,0,0.03)] disabled:cursor-wait disabled:opacity-85"
+              :class="[
+                stabilityVoicePlaying
+                  ? 'bg-emerald-500/10 border-emerald-300 text-emerald-700 hover:bg-emerald-500/15'
+                  : stabilityVoiceLoading
+                    ? 'bg-amber-500/10 border-amber-300 text-amber-700 animate-pulse'
+                    : 'bg-neutral-50 hover:bg-neutral-100 border-neutral-200 text-neutral-500 hover:text-neutral-700',
+              ]"
+              title="播放长期使用建议"
+            >
+              <template v-if="stabilityVoiceLoading">
+                <span class="w-2.5 h-2.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></span>
+                <span class="tracking-tight font-black scale-90 origin-left">载入中...</span>
+              </template>
+              <template v-else-if="stabilityVoicePlaying">
+                <span class="voice-wave" aria-hidden="true">
+                  <span class="voice-wave-bar"></span>
+                  <span class="voice-wave-bar" style="animation-delay: 0.16s;"></span>
+                  <span class="voice-wave-bar" style="animation-delay: 0.32s;"></span>
+                </span>
+                <span class="tracking-tight text-emerald-600 font-extrabold scale-90 origin-left animate-pulse">播报中</span>
+              </template>
+              <template v-else>
+                <Volume2 :size="11" />
+                <span class="tracking-tight scale-90 origin-left">听建议</span>
+              </template>
+            </button>
+          </div>
 
           <div class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm font-sans space-y-3">
             <div class="flex items-center gap-3">
@@ -2037,19 +2228,52 @@ function sleep(ms: number): Promise<void> {
               </div>
 
               <div v-else-if="selectedAspect.is_unlocked" class="space-y-4">
-                <div class="flex justify-between items-center pb-3 border-b border-gray-50">
+                <div class="flex justify-between items-center pb-3 border-b border-gray-50 gap-2">
                   <div class="flex items-center gap-2">
                     <component :is="selectedAspect.icon" :size="16" class="text-brand-primary shrink-0" />
                     <span class="font-serif text-[15px] font-extrabold text-brand-ink-strong leading-tight">
                       {{ selectedAspect.short_title || selectedAspect.title }} · 详细结果
                     </span>
                   </div>
-                  <span
-                    class="px-2.5 py-1 rounded-full font-sans text-[11px] font-bold border"
-                    :class="resolveScoreBadgeClass(selectedAspect.score, false)"
-                  >
-                    专项评分：{{ selectedAspect.score != null ? `${selectedAspect.score}分` : '已解锁' }}
-                  </span>
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    <button
+                      v-if="voiceEnabled"
+                      type="button"
+                      @click="handleSelectedAspectVoiceClick"
+                      class="h-[26px] px-2.5 rounded-full border text-[10.5px] font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer outline-none select-none active:scale-95 shadow-[0_1px_4px_rgba(0,0,0,0.03)] disabled:cursor-wait disabled:opacity-85"
+                      :class="[
+                        selectedAspectVoicePlaying
+                          ? 'bg-emerald-500/10 border-emerald-300 text-emerald-700 hover:bg-emerald-500/15'
+                          : selectedAspectVoiceLoading
+                            ? 'bg-amber-500/10 border-amber-300 text-amber-700 animate-pulse'
+                            : 'bg-neutral-50 hover:bg-neutral-100 border-neutral-200 text-neutral-500 hover:text-neutral-700',
+                      ]"
+                      :title="`播放${selectedAspectVoiceLabel}`"
+                    >
+                      <template v-if="selectedAspectVoiceLoading">
+                        <span class="w-2.5 h-2.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></span>
+                        <span class="tracking-tight font-black scale-90 origin-left">载入中...</span>
+                      </template>
+                      <template v-else-if="selectedAspectVoicePlaying">
+                        <span class="voice-wave" aria-hidden="true">
+                          <span class="voice-wave-bar"></span>
+                          <span class="voice-wave-bar" style="animation-delay: 0.16s;"></span>
+                          <span class="voice-wave-bar" style="animation-delay: 0.32s;"></span>
+                        </span>
+                        <span class="tracking-tight text-emerald-600 font-extrabold scale-90 origin-left animate-pulse">播报中</span>
+                      </template>
+                      <template v-else>
+                        <Volume2 :size="11" />
+                        <span class="tracking-tight scale-90 origin-left">{{ selectedAspectVoiceLabel }}</span>
+                      </template>
+                    </button>
+                    <span
+                      class="px-2.5 py-1 rounded-full font-sans text-[11px] font-bold border"
+                      :class="resolveScoreBadgeClass(selectedAspect.score, false)"
+                    >
+                      专项评分：{{ selectedAspect.score != null ? `${selectedAspect.score}分` : '已解锁' }}
+                    </span>
+                  </div>
                 </div>
 
                 <div class="space-y-3 font-sans text-[13px] text-brand-secondary">
@@ -2341,6 +2565,35 @@ function sleep(ms: number): Promise<void> {
 
 .aspect-score-short {
   display: none;
+}
+
+.voice-wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.5px;
+  height: 0.625rem;
+  flex-shrink: 0;
+}
+
+.voice-wave-bar {
+  width: 1.5px;
+  height: 0.625rem;
+  border-radius: 9999px;
+  background: #059669;
+  transform-origin: center;
+  animation: voice-wave 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes voice-wave {
+  from {
+    transform: scaleY(0.35);
+    opacity: 0.65;
+  }
+
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
 }
 
 @media (max-width: 390px) {

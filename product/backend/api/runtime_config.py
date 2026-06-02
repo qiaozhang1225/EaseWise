@@ -13,6 +13,12 @@ from .config import (
     get_initial_points,
     get_phone_review_base_points_cost,
     get_recharge_packages,
+    get_voice_autoplay_default_enabled,
+    get_voice_cache_enabled,
+    get_voice_default_voice_key,
+    get_voice_max_chars_per_request,
+    get_voice_mode,
+    get_voice_provider,
 )
 from .database import list_runtime_config_entries
 from .phone_review_view import PUBLIC_ASPECT_ORDER
@@ -52,6 +58,12 @@ CONFIG_KEY_COMPLIANCE_HIDDEN_MODULES = "compliance.hidden_modules"
 CONFIG_KEY_COMPLIANCE_HIDDEN_PAGES = "compliance.hidden_pages"
 CONFIG_KEY_PLATFORM_RECHARGE_ENABLED = "platform.recharge_enabled"
 CONFIG_KEY_AGENT_METAPHYSICS_SKILL_ENABLED = "agent.metaphysics_skill_enabled"
+CONFIG_KEY_VOICE_MODE = "voice.mode"
+CONFIG_KEY_VOICE_AUTOPLAY_DEFAULT_ENABLED = "voice.autoplay_default_enabled"
+CONFIG_KEY_VOICE_PROVIDER = "voice.provider"
+CONFIG_KEY_VOICE_DEFAULT_VOICE_KEY = "voice.default_voice_key"
+CONFIG_KEY_VOICE_CACHE_ENABLED = "voice.cache_enabled"
+CONFIG_KEY_VOICE_MAX_CHARS_PER_REQUEST = "voice.max_chars_per_request"
 CONFIG_KEY_PROMOTION_NORMAL_THRESHOLD_CENTS = "promotion.normal_threshold_cents"
 CONFIG_KEY_PROMOTION_SENIOR_THRESHOLD_CENTS = "promotion.senior_threshold_cents"
 CONFIG_KEY_PROMOTION_NORMAL_COMMISSION_RATE = "promotion.normal_commission_rate"
@@ -159,6 +171,37 @@ def get_runtime_phone_review_unlock_enforcement_enabled(channel_key: str | None 
     return _coerce_bool(config_bundle.get(CONFIG_KEY_PHONE_REVIEW_UNLOCK_ENFORCEMENT_ENABLED), fallback=True)
 
 
+def get_runtime_voice_mode(channel_key: str | None = None) -> str:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    value = _coerce_text(config_bundle.get(CONFIG_KEY_VOICE_MODE), fallback=get_voice_mode()).lower()
+    return value if value in {"hybrid", "browser", "cloud"} else "hybrid"
+
+
+def get_runtime_voice_autoplay_default_enabled(channel_key: str | None = None) -> bool:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    return _coerce_bool(config_bundle.get(CONFIG_KEY_VOICE_AUTOPLAY_DEFAULT_ENABLED), fallback=get_voice_autoplay_default_enabled())
+
+
+def get_runtime_voice_provider(channel_key: str | None = None) -> str:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    return _coerce_text(config_bundle.get(CONFIG_KEY_VOICE_PROVIDER), fallback=get_voice_provider()).lower()
+
+
+def get_runtime_voice_default_voice_key(channel_key: str | None = None) -> str:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    return _coerce_text(config_bundle.get(CONFIG_KEY_VOICE_DEFAULT_VOICE_KEY), fallback=get_voice_default_voice_key())
+
+
+def get_runtime_voice_cache_enabled(channel_key: str | None = None) -> bool:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    return _coerce_bool(config_bundle.get(CONFIG_KEY_VOICE_CACHE_ENABLED), fallback=get_voice_cache_enabled())
+
+
+def get_runtime_voice_max_chars_per_request(channel_key: str | None = None) -> int:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    return _coerce_int(config_bundle.get(CONFIG_KEY_VOICE_MAX_CHARS_PER_REQUEST), fallback=get_voice_max_chars_per_request(), minimum=120)
+
+
 def get_runtime_customer_service_config(channel_key: str | None = None) -> dict[str, Any]:
     config_bundle = resolve_runtime_config_bundle(channel_key)
     return {
@@ -223,6 +266,15 @@ def resolve_public_runtime_config(channel_key: str | None = None) -> dict[str, A
             "almanac": {
                 "enabled": is_module_enabled("almanac", channel_key=normalized_channel_key),
                 "base_points_cost": None,
+            },
+            "voice": {
+                "enabled": is_module_enabled("voice", channel_key=normalized_channel_key),
+                "mode": get_runtime_voice_mode(normalized_channel_key),
+                "autoplay_default_enabled": get_runtime_voice_autoplay_default_enabled(normalized_channel_key),
+                "provider": get_runtime_voice_provider(normalized_channel_key),
+                "default_voice_key": get_runtime_voice_default_voice_key(normalized_channel_key),
+                "cache_enabled": get_runtime_voice_cache_enabled(normalized_channel_key),
+                "max_chars_per_request": get_runtime_voice_max_chars_per_request(normalized_channel_key),
             },
         },
     }

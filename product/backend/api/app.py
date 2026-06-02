@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import handlers
-from .routers import account, agent, almanac, auth, billing, phone_qimen, public, runtime_config
+from .config import get_voice_cache_dir
+from .routers import account, agent, almanac, auth, billing, phone_qimen, public, runtime_config, voice
 from .routers.internal import (
     almanac as internal_almanac,
     billing as internal_billing,
@@ -22,7 +23,9 @@ from .routers.internal import (
 
 app = FastAPI(title=handlers.APP_TITLE, version=handlers.APP_VERSION)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+VOICE_STATIC_DIR = get_voice_cache_dir()
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
+VOICE_STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=handlers.get_cors_origins(),
@@ -45,6 +48,7 @@ app.include_router(runtime_config.router)
 app.include_router(agent.router)
 app.include_router(almanac.router)
 app.include_router(phone_qimen.router)
+app.include_router(voice.router)
 app.include_router(internal_dashboard.router)
 app.include_router(internal_users.router)
 app.include_router(internal_phone_qimen.router)
@@ -54,4 +58,5 @@ app.include_router(internal_runtime_config.router)
 app.include_router(internal_billing.router)
 app.include_router(internal_llm.router)
 app.include_router(internal_promotion.router)
+app.mount("/api/v1/static/voice", StaticFiles(directory=str(VOICE_STATIC_DIR)), name="api_voice_static")
 app.mount("/api/v1/static", StaticFiles(directory=str(STATIC_DIR)), name="api_static")

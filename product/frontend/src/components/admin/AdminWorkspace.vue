@@ -78,7 +78,7 @@ type UserLinkedDestination = 'orders' | 'usage';
 type UserPointOperation = 'increase' | 'decrease' | 'set';
 type FeatureUsageWindowKey = 'today' | 'yesterday' | 'week' | 'month';
 type SelectedUserInfoCard = {
-  key: 'identity' | 'channel' | 'registered_at' | 'phone' | 'unionid';
+  key: 'uid' | 'identity' | 'channel' | 'registered_at' | 'phone' | 'unionid';
   label: string;
   value: string;
   sub: string;
@@ -87,6 +87,12 @@ type FeatureUsageRankItem = {
   name: string;
   count: number;
   percentage: number;
+};
+type ServiceKeyPreset = {
+  value: string;
+  label: string;
+  dotClass: string;
+  defaultName: string;
 };
 type FeatureUsageWindowCard = {
   key: FeatureUsageWindowKey;
@@ -171,7 +177,8 @@ const userIdentitySelectOptions = [
   {value: '', label: '全身份', dotClass: 'bg-indigo-500'},
   {value: 'normal_user', label: '普通会员', dotClass: 'bg-gray-400'},
   {value: 'promoter', label: '推广大使', dotClass: 'bg-emerald-500'},
-  {value: 'senior_promoter', label: '高级推广大使', dotClass: 'bg-purple-500'},
+  {value: 'vip_promoter', label: 'VIP 推广大使', dotClass: 'bg-amber-500'},
+  {value: 'svip_promoter', label: 'SVIP 推广大使', dotClass: 'bg-purple-500'},
 ];
 
 const userEditIdentitySelectOptions = userIdentitySelectOptions.filter((option) => option.value !== '');
@@ -189,6 +196,28 @@ const booleanToggleSelectOptions = [
   {value: true, label: '开启', dotClass: 'bg-emerald-500'},
   {value: false, label: '关闭', dotClass: 'bg-gray-400'},
 ];
+
+const serviceKeyProviderSelectOptions = [
+  {value: 'deepseek', label: 'DeepSeek', dotClass: 'bg-indigo-500'},
+  {value: 'aliyun', label: '阿里云', dotClass: 'bg-orange-500'},
+];
+
+const serviceKeyPresetMap: Record<string, ServiceKeyPreset[]> = {
+  deepseek: [
+    {value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', dotClass: 'bg-indigo-500', defaultName: 'DeepSeek 主模型 Key'},
+    {value: 'deepseek-chat', label: 'DeepSeek Chat', dotClass: 'bg-blue-500', defaultName: 'DeepSeek Chat Key'},
+    {value: 'deepseek-reasoner', label: 'DeepSeek Reasoner', dotClass: 'bg-purple-500', defaultName: 'DeepSeek Reasoner Key'},
+  ],
+  aliyun: [
+    {value: 'bailian_api_key', label: '百炼 API Key（推荐）', dotClass: 'bg-orange-500', defaultName: '阿里云百炼 API Key'},
+    {value: 'tts_app_key', label: 'NLS TTS AppKey（旧）', dotClass: 'bg-amber-500', defaultName: '阿里云 NLS TTS AppKey'},
+    {value: 'nls_access_key_id', label: 'NLS AccessKey ID（自动取 Token）', dotClass: 'bg-cyan-500', defaultName: '阿里云 NLS AccessKey ID'},
+    {value: 'nls_access_key_secret', label: 'NLS AccessKey Secret（自动取 Token）', dotClass: 'bg-red-500', defaultName: '阿里云 NLS AccessKey Secret'},
+    {value: 'tts_token', label: 'NLS TTS Token（手动兜底）', dotClass: 'bg-yellow-500', defaultName: '阿里云 NLS TTS Token'},
+    {value: 'sms_access_key_id', label: '短信 AccessKey ID（预留）', dotClass: 'bg-cyan-500', defaultName: '阿里云短信 AccessKey ID'},
+    {value: 'sms_access_key_secret', label: '短信 AccessKey Secret（预留）', dotClass: 'bg-red-500', defaultName: '阿里云短信 AccessKey Secret'},
+  ],
+};
 
 const userPointOperationOptions: Array<{value: UserPointOperation; label: string; desc: string}> = [
   {value: 'increase', label: '增加', desc: '在当前余额上增加'},
@@ -218,10 +247,9 @@ const llmKeyFormMode = ref<'create' | 'edit' | null>(null);
 const llmEditingKeyId = ref('');
 const llmKeyForm = ref<InternalLlmApiKeyPayload>({
   provider: 'deepseek',
-  model: 'deepseek-chat',
+  model: 'deepseek-v4-pro',
   display_name: '',
-  masked_key: '',
-  secret_ref: '',
+  secret_value: '',
   enabled: true,
   priority: 100,
   remark: '',
@@ -313,6 +341,7 @@ const selectedUserInfoCards = computed<SelectedUserInfoCard[]>(() => {
   const registeredAt = formatTime(user.registered_at || user.created_at);
   const firstLoginAt = formatTime(user.first_login_at || user.created_at);
   return [
+    {key: 'uid', label: 'UID', value: user.uid || '--', sub: '客服检索编号'},
     {key: 'identity', label: '主身份', value: identitySourceLabel(user.primary_identity_type), sub: '身份来源'},
     {key: 'channel', label: '注册渠道', value: user.registered_channel || '--', sub: '来源渠道'},
     {key: 'registered_at', label: '注册时间', value: registeredAt, sub: `首次 ${firstLoginAt}`},
@@ -425,8 +454,9 @@ const orderCards = computed(() => [
 ]);
 
 const promoCards = computed(() => [
-  {label: '普通推广大使人数', value: metricText('推广合作', ['推广用户', '普通大使'], '0'), sub: '返佣比例可配置'},
-  {label: '高级推广大使人数', value: metricText('推广合作', ['高级推广', '高级大使'], '0'), sub: '高级返佣比例可配置'},
+  {label: '推广大使人数', value: metricText('推广合作', ['推广用户', '推广大使'], '0'), sub: '返佣比例可配置'},
+  {label: 'VIP 推广大使人数', value: metricText('推广合作', ['VIP 推广大使', 'VIP 推广'], '0'), sub: 'VIP 返佣比例可配置'},
+  {label: 'SVIP 推广大使人数', value: metricText('推广合作', ['SVIP 推广大使', 'SVIP 推广'], '0'), sub: 'SVIP 返佣比例可配置'},
 ]);
 
 const promotionApplicationLoading = ref(false);
@@ -466,6 +496,7 @@ const runtimeConfigDirty = ref(false);
 
 const featureConfigItems = computed(() => runtimeConfigSchema.value.filter((item) => item.group === '功能管理'));
 const systemConfigItems = computed(() => runtimeConfigSchema.value.filter((item) => item.group === '系统配置'));
+const activeServiceKeyPresetOptions = computed(() => serviceKeyPresetMap[llmKeyForm.value.provider] || serviceKeyPresetMap.deepseek);
 
 const visibleOrders = computed(() => {
   const keyword = orderSearchText.value.trim().toLowerCase();
@@ -492,6 +523,7 @@ const visibleUsers = computed(() => {
     return users.value;
   }
   return users.value.filter((user) => [
+    user.uid || '',
     user.user_id,
     user.nickname || '',
     user.primary_phone || '',
@@ -514,10 +546,10 @@ function isPromotionNavKey(value: string | null): value is PromotionNavKey {
 
 function userDisplayLabel(userId: string) {
   if (selectedUser.value?.user.user_id === userId) {
-    return selectedUser.value.user.nickname || selectedUser.value.user.primary_phone || shortText(userId, 8, 4);
+    return selectedUser.value.user.nickname || selectedUser.value.user.primary_phone || selectedUser.value.user.uid || shortText(userId, 8, 4);
   }
   const user = users.value.find((item) => item.user_id === userId);
-  return user?.nickname || user?.primary_phone || shortText(userId, 8, 4);
+  return user?.nickname || user?.primary_phone || user?.uid || shortText(userId, 8, 4);
 }
 
 function setUserReturnContext(userId: string, destination: UserLinkedDestination) {
@@ -1278,10 +1310,9 @@ function beginCreateLlmKey() {
   llmEditingKeyId.value = '';
   llmKeyForm.value = {
     provider: 'deepseek',
-    model: 'deepseek-chat',
-    display_name: '',
-    masked_key: '',
-    secret_ref: '',
+    model: 'deepseek-v4-pro',
+    display_name: 'DeepSeek 主模型 Key',
+    secret_value: '',
     enabled: true,
     priority: 100,
     remark: '',
@@ -1298,6 +1329,7 @@ function beginEditLlmKey(item: LlmApiKeyResponse) {
     display_name: item.display_name,
     masked_key: item.masked_key,
     secret_ref: item.secret_ref,
+    secret_value: '',
     enabled: item.enabled,
     priority: item.priority,
     remark: item.remark || '',
@@ -1305,7 +1337,37 @@ function beginEditLlmKey(item: LlmApiKeyResponse) {
   };
 }
 
+function handleServiceKeyProviderChange(value: string | number | boolean | null) {
+  const provider = String(value || 'deepseek');
+  const presets = serviceKeyPresetMap[provider] || serviceKeyPresetMap.deepseek;
+  const firstPreset = presets[0];
+  llmKeyForm.value.provider = provider;
+  llmKeyForm.value.model = firstPreset.value;
+  llmKeyForm.value.display_name = firstPreset.defaultName;
+}
+
+function handleServiceKeyModelChange(value: string | number | boolean | null) {
+  const model = String(value || '');
+  const preset = activeServiceKeyPresetOptions.value.find((item) => item.value === model);
+  llmKeyForm.value.model = model;
+  if (preset && (!llmKeyForm.value.display_name || llmKeyFormMode.value === 'create')) {
+    llmKeyForm.value.display_name = preset.defaultName;
+  }
+}
+
+function serviceKeyProviderLabel(provider: string) {
+  return serviceKeyProviderSelectOptions.find((item) => item.value === provider)?.label || provider;
+}
+
+function serviceKeyModelLabel(provider: string, model: string) {
+  return (serviceKeyPresetMap[provider] || []).find((item) => item.value === model)?.label || model;
+}
+
 async function submitLlmKeyForm() {
+  if (llmKeyFormMode.value === 'create' && !String(llmKeyForm.value.secret_value || '').trim()) {
+    globalMessage.value = '请填写真实 Key，保存后系统只展示脱敏值';
+    return;
+  }
   llmLoading.value = true;
   try {
     if (llmKeyFormMode.value === 'edit' && llmEditingKeyId.value) {
@@ -1324,7 +1386,7 @@ async function submitLlmKeyForm() {
 }
 
 async function removeLlmKey(keyId: string) {
-  if (typeof window !== 'undefined' && !window.confirm('确认删除该密钥占位配置？')) return;
+  if (typeof window !== 'undefined' && !window.confirm('确认删除该服务密钥配置？')) return;
   try {
     await deleteInternalLlmApiKey(adminToken.value, keyId);
     await loadLlmKeys();
@@ -1577,8 +1639,12 @@ function identityLabel(identity: string | null | undefined) {
     normal_user: '普通会员',
     promoter: '推广大使',
     promotion_ambassador: '推广大使',
-    senior_promoter: '高级推广大使',
-    senior_promotion_ambassador: '高级推广大使',
+    vip_promoter: 'VIP 推广大使',
+    vip_promotion_ambassador: 'VIP 推广大使',
+    senior_promoter: 'VIP 推广大使',
+    senior_promotion_ambassador: 'VIP 推广大使',
+    svip_promoter: 'SVIP 推广大使',
+    svip_promotion_ambassador: 'SVIP 推广大使',
   };
   return map[identity || ''] || identity || '--';
 }
@@ -1595,7 +1661,7 @@ function identitySourceLabel(identityType: string | null | undefined) {
 }
 
 function userPrimaryIdentityLine(user: InternalUserResponse) {
-  return user.primary_phone || user.primary_unionid || user.user_id;
+  return user.primary_phone || user.primary_unionid || (user.uid ? `UID ${user.uid}` : user.user_id);
 }
 
 function selectedUserIdentityValue() {
@@ -2220,7 +2286,7 @@ onBeforeUnmount(() => {
                     <Search class="absolute left-3 top-2.5 text-brand-secondary" :size="14" />
                     <input
                       v-model="userQuery"
-                      placeholder="按用户ID、昵称、手机号或 UnionID 检索..."
+                      placeholder="按 UID、昵称、手机号或 UnionID 检索..."
                       @keyup.enter="loadUsers"
                       class="w-full bg-gray-50 border border-gray-100 p-2.5 pl-9 rounded-xl text-xs text-brand-ink-strong placeholder-brand-secondary focus:border-brand-primary focus:bg-white outline-none"
                     />
@@ -2257,7 +2323,7 @@ onBeforeUnmount(() => {
                   <thead>
                     <tr class="text-brand-secondary border-b border-gray-100 uppercase font-mono text-[10.5px]">
                       <th class="p-3 w-[14%]">用户昵称</th>
-                      <th class="p-3 w-[15%] font-mono">用户ID / 状态</th>
+                      <th class="p-3 w-[15%] font-mono">UID / 状态</th>
                       <th class="p-3 w-[7%]">积分</th>
                       <th class="p-3 w-[10%]">可提现余额</th>
                       <th class="p-3 w-[10%]">冻结返佣</th>
@@ -2279,7 +2345,7 @@ onBeforeUnmount(() => {
                               alt="用户头像"
                               class="w-full h-full object-cover"
                             />
-                            <span v-else>{{ (user.nickname || user.user_id).substring(0, 1) }}</span>
+                            <span v-else>{{ (user.nickname || user.uid || user.user_id).substring(0, 1) }}</span>
                           </div>
                           <div class="min-w-0">
                             <div class="font-bold text-brand-ink-strong truncate">{{ user.nickname || '未命名用户' }}</div>
@@ -2288,7 +2354,7 @@ onBeforeUnmount(() => {
                         </div>
                       </td>
                       <td class="p-3 font-mono min-w-0">
-                        <span class="text-brand-secondary block truncate" :title="user.user_id">{{ shortText(user.user_id, 10, 6) }}</span>
+                        <span class="text-brand-ink-strong block truncate" :title="user.user_id">{{ user.uid ? `UID ${user.uid}` : shortText(user.user_id, 10, 6) }}</span>
                         <span :class="user.status === 'active' ? 'text-emerald-600' : 'text-red-600'" class="text-[9.5px]/none font-bold block mt-1">
                           ● {{ userStatusLabel(user.status) }}
                         </span>
@@ -2509,7 +2575,7 @@ onBeforeUnmount(() => {
                     <Award :size="16" />
                     <span>推广审核</span>
                   </h3>
-                  <p class="text-xs text-brand-secondary">审核用户申请成为推广大使或高级推广大使。</p>
+                  <p class="text-xs text-brand-secondary">审核用户申请成为推广大使、VIP 推广大使或 SVIP 推广大使。</p>
                 </div>
               </div>
               <div v-if="promotionApplicationError" class="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
@@ -2658,19 +2724,19 @@ onBeforeUnmount(() => {
               </div>
               <div v-if="promotionRulesDraft" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <label class="space-y-1 block">
-                  <span class="text-brand-secondary">普通大使门槛</span>
+                  <span class="text-brand-secondary">推广大使门槛</span>
                   <input v-model.number="promotionRulesDraft.normal_threshold_cents" type="number" class="w-full bg-gray-50 border border-gray-100 rounded-xl p-2.5 outline-none" />
                 </label>
                 <label class="space-y-1 block">
-                  <span class="text-brand-secondary">高级大使门槛</span>
+                  <span class="text-brand-secondary">VIP 推广大使门槛</span>
                   <input v-model.number="promotionRulesDraft.senior_threshold_cents" type="number" class="w-full bg-gray-50 border border-gray-100 rounded-xl p-2.5 outline-none" />
                 </label>
                 <label class="space-y-1 block">
-                  <span class="text-brand-secondary">普通返佣比例</span>
+                  <span class="text-brand-secondary">推广大使返佣比例</span>
                   <input v-model.number="promotionRulesDraft.normal_commission_rate" type="number" step="0.01" class="w-full bg-gray-50 border border-gray-100 rounded-xl p-2.5 outline-none" />
                 </label>
                 <label class="space-y-1 block">
-                  <span class="text-brand-secondary">高级返佣比例</span>
+                  <span class="text-brand-secondary">VIP 返佣比例</span>
                   <input v-model.number="promotionRulesDraft.senior_commission_rate" type="number" step="0.01" class="w-full bg-gray-50 border border-gray-100 rounded-xl p-2.5 outline-none" />
                 </label>
                 <label class="space-y-1 block">
@@ -2688,10 +2754,10 @@ onBeforeUnmount(() => {
           <div v-else-if="activePrimary === 'settings'" class="space-y-6 text-left">
             <div class="bg-white border border-gray-100 rounded-2xl p-6 space-y-6 shadow-sm">
               <div class="flex justify-between items-center pb-3 border-b border-gray-100">
-                <div class="space-y-0.5">
-                  <h3 class="font-bold text-brand-ink-strong">易如反掌系统参数与运营设置</h3>
-                  <p class="text-xs text-brand-secondary">套餐、积分规则、大模型密钥管理与客服联系方式配置。</p>
-                </div>
+	                <div class="space-y-0.5">
+	                  <h3 class="font-bold text-brand-ink-strong">易如反掌系统参数与运营设置</h3>
+	                  <p class="text-xs text-brand-secondary">套餐、积分规则、DeepSeek / 阿里云密钥与客服联系方式配置。</p>
+	                </div>
                 <div class="flex gap-2">
                   <button @click="loadRuntimeConfig" class="bg-white border border-gray-100 text-brand-secondary px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-gray-50">
                     {{ runtimeConfigLoading ? '刷新中...' : '刷新配置' }}
@@ -2744,68 +2810,118 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="space-y-4">
-                <h4 class="text-xs font-bold text-brand-secondary font-mono uppercase pb-2 border-b border-gray-100">2. 大模型密钥管理</h4>
-                <div class="bg-amber-50/40 border border-amber-100 rounded-xl p-4 text-xs text-amber-700 leading-relaxed">
-                  当前为占位配置，不影响线上 DeepSeek 调用。页面不会展示真实 <span class="font-mono font-bold">DEEPSEEK_API_KEY</span>。
+                <h4 class="text-xs font-bold text-brand-secondary font-mono uppercase pb-2 border-b border-gray-100">2. 第三方服务密钥管理</h4>
+                <div class="bg-brand-paper/50 border border-gray-100 rounded-xl p-4 text-xs text-brand-secondary leading-relaxed">
+                  可在这里配置 DeepSeek 与阿里云服务密钥。保存后系统只展示脱敏值，真实 Key 不会在列表或编辑表单中回显；运行时优先使用已启用的后台配置，未配置时继续读取服务器环境变量。
                 </div>
                 <div v-if="llmError" class="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
                   {{ llmError }}
-                </div>
-                <div class="flex justify-end">
-                  <button @click="beginCreateLlmKey" class="bg-brand-primary text-white px-4 py-2 rounded-xl text-xs font-bold">新增密钥</button>
-                </div>
-                <div v-if="llmKeyFormMode" class="border border-gray-100 rounded-xl p-4 space-y-3 bg-gray-50/60">
-                  <div class="text-xs font-bold text-brand-ink-strong">{{ llmKeyFormMode === 'edit' ? '编辑密钥' : '新增密钥' }}</div>
+	                </div>
+	                <div class="flex justify-end">
+	                  <button @click="beginCreateLlmKey" class="bg-brand-primary text-white px-4 py-2 rounded-xl text-xs font-bold">新增服务密钥</button>
+	                </div>
+                <div v-if="llmKeyFormMode" class="border border-gray-100 rounded-xl p-4 space-y-4 bg-gray-50/60">
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div class="text-xs font-bold text-brand-ink-strong">{{ llmKeyFormMode === 'edit' ? '编辑服务密钥' : '新增服务密钥' }}</div>
+                      <div class="text-[11px] text-brand-secondary mt-1">
+                        {{ llmKeyFormMode === 'edit' ? '真实 Key 留空则保留当前配置。' : '新增时必须填写真实 Key。' }}
+                      </div>
+                    </div>
+                    <span class="text-[10px] px-2.5 py-1 rounded-full bg-white border border-gray-100 text-brand-secondary font-mono">
+                      secret_ref 由系统自动生成
+                    </span>
+                  </div>
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <input v-model="llmKeyForm.display_name" class="bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none" placeholder="密钥名称" />
-                    <input v-model="llmKeyForm.provider" class="bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none" placeholder="供应商" />
-                    <input v-model="llmKeyForm.model" class="bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none" placeholder="模型名称" />
-                    <input v-model="llmKeyForm.masked_key" class="bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none" placeholder="脱敏 key" />
-                    <input v-model="llmKeyForm.secret_ref" class="bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none" placeholder="secret_ref" />
-                    <input v-model.number="llmKeyForm.priority" type="number" class="bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none" placeholder="优先级" />
-                    <input v-model="llmKeyForm.last_operator" class="bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none" placeholder="最后操作人" />
-                    <input v-model="llmKeyForm.remark" class="bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none" placeholder="备注" />
+                    <label class="space-y-1.5 block">
+                      <span class="text-[11px] font-bold text-brand-secondary">供应商</span>
+                      <AdminSelect
+                        v-model="llmKeyForm.provider"
+                        @change="handleServiceKeyProviderChange"
+                        :options="serviceKeyProviderSelectOptions"
+                        min-width-class="w-full"
+                        panel-width-class="w-full"
+                      />
+                    </label>
+                    <label class="space-y-1.5 block">
+                      <span class="text-[11px] font-bold text-brand-secondary">模型 / 服务</span>
+                      <AdminSelect
+                        v-model="llmKeyForm.model"
+                        @change="handleServiceKeyModelChange"
+                        :options="activeServiceKeyPresetOptions"
+                        min-width-class="w-full"
+                        panel-width-class="w-full"
+                      />
+                    </label>
+                    <label class="space-y-1.5 block">
+                      <span class="text-[11px] font-bold text-brand-secondary">密钥名称</span>
+                      <input v-model="llmKeyForm.display_name" class="w-full bg-white border border-gray-100 rounded-lg p-2.5 text-xs outline-none" placeholder="例如：DeepSeek 主模型 Key" />
+                    </label>
+                    <label class="space-y-1.5 block">
+                      <span class="text-[11px] font-bold text-brand-secondary">真实 Key</span>
+                      <input v-model="llmKeyForm.secret_value" type="password" autocomplete="new-password" class="w-full bg-white border border-gray-100 rounded-lg p-2.5 text-xs outline-none" :placeholder="llmKeyFormMode === 'edit' ? '留空则保留原密钥' : '粘贴 DeepSeek 或阿里云真实 Key'" />
+                    </label>
+                    <label class="space-y-1.5 block">
+                      <span class="text-[11px] font-bold text-brand-secondary">优先级</span>
+                      <input v-model.number="llmKeyForm.priority" type="number" class="w-full bg-white border border-gray-100 rounded-lg p-2.5 text-xs outline-none" placeholder="数字越小优先级越高" />
+                    </label>
+                    <label class="space-y-1.5 block">
+                      <span class="text-[11px] font-bold text-brand-secondary">最后操作人</span>
+                      <input v-model="llmKeyForm.last_operator" class="w-full bg-white border border-gray-100 rounded-lg p-2.5 text-xs outline-none" placeholder="最后操作人" />
+                    </label>
+                    <label class="space-y-1.5 block md:col-span-2">
+                      <span class="text-[11px] font-bold text-brand-secondary">备注</span>
+                      <input v-model="llmKeyForm.remark" class="w-full bg-white border border-gray-100 rounded-lg p-2.5 text-xs outline-none" placeholder="例如：生产主 Key、备用 Key、阿里云语音服务 Token" />
+                    </label>
                   </div>
                   <label class="inline-flex items-center gap-2 text-xs text-brand-secondary">
                     <input v-model="llmKeyForm.enabled" type="checkbox" />
                     启用
                   </label>
                   <div class="flex gap-2">
-                    <button @click="submitLlmKeyForm" class="bg-brand-primary text-white px-4 py-2 rounded-lg text-xs font-bold">保存</button>
+                    <button @click="submitLlmKeyForm" class="bg-brand-primary text-white px-4 py-2 rounded-lg text-xs font-bold">保存密钥</button>
                     <button @click="llmKeyFormMode = null" class="bg-white border border-gray-100 text-brand-secondary px-4 py-2 rounded-lg text-xs font-bold">取消</button>
                   </div>
                 </div>
-                <div class="overflow-x-auto border border-gray-100 rounded-xl bg-white">
-                  <table class="w-full text-xs font-sans text-left">
-                    <thead>
-                      <tr class="bg-gray-50 border-b border-gray-100 text-brand-secondary uppercase font-mono text-[10px] tracking-wider">
-                        <th class="p-3">密钥名称</th>
-                        <th class="p-3">供应商</th>
-                        <th class="p-3">模型</th>
-                        <th class="p-3">脱敏值</th>
-                        <th class="p-3">启用状态</th>
-                        <th class="p-3">备注</th>
-                        <th class="p-3 text-right">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                      <tr v-for="item in llmKeys" :key="item.key_id" class="hover:bg-brand-paper/50">
-                        <td class="p-3 font-bold text-brand-ink-strong">{{ item.display_name }}</td>
-                        <td class="p-3 font-mono text-brand-secondary">{{ item.provider }}</td>
-                        <td class="p-3 font-mono text-brand-secondary">{{ item.model }}</td>
-                        <td class="p-3 font-mono text-brand-ink-strong">{{ item.masked_key }}</td>
-                        <td class="p-3">{{ item.enabled ? '启用' : '停用' }}</td>
-                        <td class="p-3 text-brand-secondary">{{ item.remark || '--' }}</td>
-                        <td class="p-3 text-right">
+	                <div class="overflow-x-auto border border-gray-100 rounded-xl bg-white">
+	                  <table class="w-full text-xs font-sans text-left">
+	                    <thead>
+	                      <tr class="bg-gray-50 border-b border-gray-100 text-brand-secondary uppercase font-mono text-[10px] tracking-wider">
+	                        <th class="p-3">密钥名称</th>
+	                        <th class="p-3">供应商</th>
+	                        <th class="p-3">模型 / 服务</th>
+	                        <th class="p-3">脱敏值</th>
+	                        <th class="p-3">真实 Key</th>
+	                        <th class="p-3">启用状态</th>
+	                        <th class="p-3">优先级</th>
+	                        <th class="p-3">备注</th>
+	                        <th class="p-3 text-right">操作</th>
+	                      </tr>
+	                    </thead>
+	                    <tbody class="divide-y divide-gray-100">
+	                      <tr v-for="item in llmKeys" :key="item.key_id" class="hover:bg-brand-paper/50">
+	                        <td class="p-3 font-bold text-brand-ink-strong">{{ item.display_name }}</td>
+	                        <td class="p-3 font-mono text-brand-secondary">{{ serviceKeyProviderLabel(item.provider) }}</td>
+	                        <td class="p-3 font-mono text-brand-secondary">{{ serviceKeyModelLabel(item.provider, item.model) }}</td>
+	                        <td class="p-3 font-mono text-brand-ink-strong">{{ item.masked_key }}</td>
+	                        <td class="p-3">
+	                          <span class="text-[10px] px-2 py-1 rounded-full border" :class="item.secret_configured ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-100'">
+	                            {{ item.secret_configured ? '已配置' : '未配置' }}
+	                          </span>
+	                        </td>
+	                        <td class="p-3">{{ item.enabled ? '启用' : '停用' }}</td>
+	                        <td class="p-3 font-mono text-brand-secondary">{{ item.priority }}</td>
+	                        <td class="p-3 text-brand-secondary">{{ item.remark || '--' }}</td>
+	                        <td class="p-3 text-right">
                           <div class="flex justify-end gap-2">
                             <button @click="beginEditLlmKey(item)" class="text-brand-primary font-bold">编辑</button>
                             <button @click="removeLlmKey(item.key_id)" class="text-red-500 font-bold">删除</button>
                           </div>
                         </td>
-                      </tr>
-                      <tr v-if="!llmLoading && llmKeys.length === 0">
-                        <td colspan="7" class="p-8 text-center text-brand-secondary font-mono">暂无密钥占位配置。真实 DeepSeek 调用仍读取环境变量。</td>
-                      </tr>
+	                      </tr>
+	                      <tr v-if="!llmLoading && llmKeys.length === 0">
+	                        <td colspan="9" class="p-8 text-center text-brand-secondary font-mono">暂无服务密钥配置。系统将继续读取服务器环境变量。</td>
+	                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -2826,12 +2942,12 @@ onBeforeUnmount(() => {
                   alt="用户头像"
                   class="w-full h-full object-cover"
                 />
-                <span v-else>{{ (selectedUser.user.nickname || selectedUser.user.user_id).substring(0, 1) }}</span>
+                <span v-else>{{ (selectedUser.user.nickname || selectedUser.user.uid || selectedUser.user.user_id).substring(0, 1) }}</span>
               </div>
               <div class="min-w-0">
                 <p class="text-[10px] font-mono text-brand-secondary uppercase font-bold">User Operation File</p>
                 <h2 class="font-serif text-xl font-bold text-brand-ink-strong truncate">{{ selectedUser.user.nickname || '未命名用户' }}</h2>
-                <p class="font-mono text-[11px] text-brand-secondary select-all break-all">{{ selectedUser.user.user_id }}</p>
+                <p class="font-mono text-[11px] text-brand-secondary select-all">{{ selectedUser.user.uid ? `UID ${selectedUser.user.uid}` : selectedUser.user.user_id }}</p>
               </div>
             </div>
             <div class="hidden lg:grid flex-1 grid-cols-5 gap-2 text-[10.5px]">

@@ -35,7 +35,14 @@ tarball="$tmp_dir/easewise-api-$release_id.tgz"
 remote_tarball="/tmp/easewise-api-$release_id.tgz"
 
 export COPYFILE_DISABLE=1
-tar -czf "$tarball" -C "$REPO_ROOT" README.md features product/backend
+tar \
+  --exclude='product/backend/api/data' \
+  --exclude='product/backend/api/static/uploads' \
+  --exclude='product/backend/api/static/voice/*.mp3' \
+  --exclude='*/__pycache__' \
+  --exclude='*.pyc' \
+  --exclude='.DS_Store' \
+  -czf "$tarball" -C "$REPO_ROOT" README.md features product/backend
 scp_to_remote "$tarball" "$remote_tarball"
 
 if [[ $SYNC_ENV -eq 1 && -f "$TARGET_SERVER_ENV_FILE" ]]; then

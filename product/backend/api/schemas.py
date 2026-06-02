@@ -14,6 +14,8 @@ RechargeOrderReviewAction = Literal['approve', 'reject']
 AdminRechargeOrderStatus = Literal['unpaid', 'paid', 'completed', 'refund_pending', 'refunded', 'closed']
 PaymentTransactionStatus = Literal['pending', 'provider_unconfigured', 'paid', 'failed', 'cancelled']
 AdminReviewAction = Literal['approve', 'reject']
+VoiceNarrationScene = Literal['phone_summary', 'phone_stability', 'phone_aspect']
+VoiceNarrationFormat = Literal['mp3']
 
 
 class DashboardMetricResponse(BaseModel):
@@ -246,6 +248,7 @@ class PasswordChangeResponse(BaseModel):
 
 class UserResponse(BaseModel):
     user_id: str
+    uid: str | None = None
     status: str
     identity_level: str = 'normal_user'
     nickname: str | None = None
@@ -258,6 +261,7 @@ class UserResponse(BaseModel):
 
 class InternalUserResponse(BaseModel):
     user_id: str
+    uid: str | None = None
     status: str
     identity_level: str = 'normal_user'
     primary_identity_type: str = 'unknown'
@@ -688,6 +692,7 @@ class LlmApiKeyResponse(BaseModel):
     display_name: str
     masked_key: str
     secret_ref: str
+    secret_configured: bool = False
     enabled: bool
     priority: int
     remark: str | None = None
@@ -707,8 +712,9 @@ class LlmApiKeyUpsertRequest(BaseModel):
     provider: str = Field(min_length=1, max_length=64)
     model: str = Field(min_length=1, max_length=128)
     display_name: str = Field(min_length=1, max_length=128)
-    masked_key: str = Field(min_length=1, max_length=256)
-    secret_ref: str = Field(min_length=1, max_length=256)
+    masked_key: str | None = Field(default=None, max_length=256)
+    secret_ref: str | None = Field(default=None, max_length=256)
+    secret_value: str | None = Field(default=None, max_length=4096)
     enabled: bool = False
     priority: int = 100
     remark: str | None = Field(default=None, max_length=512)
@@ -777,6 +783,25 @@ class ReviewAspectUnlockListResponse(BaseModel):
     aspect_unlock_points_cost: int
     unlock_enforcement_enabled: bool
     aspects: list[ReviewAspectResponse] = Field(default_factory=list)
+
+
+class VoiceNarrationRequest(BaseModel):
+    scene: VoiceNarrationScene
+    review_id: str = Field(min_length=1, max_length=64)
+    aspect_key: str | None = Field(default=None, min_length=1, max_length=64)
+    voice_key: str | None = Field(default=None, max_length=64)
+
+
+class VoiceNarrationResponse(BaseModel):
+    narration_id: str
+    scene: VoiceNarrationScene
+    text_hash: str
+    audio_url: str
+    provider: str
+    voice_key: str
+    format: VoiceNarrationFormat
+    char_count: int
+    cached: bool
 
 
 class RuntimeConfigEntryResponse(BaseModel):
@@ -850,10 +875,21 @@ class ModuleRuntimeConfigResponse(BaseModel):
     metaphysics_skill_enabled: bool | None = None
 
 
+class VoiceRuntimeConfigResponse(BaseModel):
+    enabled: bool
+    mode: Literal['hybrid', 'browser', 'cloud']
+    autoplay_default_enabled: bool
+    provider: str
+    default_voice_key: str
+    cache_enabled: bool
+    max_chars_per_request: int
+
+
 class RuntimeModulesConfigResponse(BaseModel):
     phone_review: ModuleRuntimeConfigResponse
     agent: ModuleRuntimeConfigResponse
     almanac: ModuleRuntimeConfigResponse
+    voice: VoiceRuntimeConfigResponse
 
 
 class PublicRuntimeConfigResponse(BaseModel):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -13,6 +14,16 @@ from .config import get_database_path
 
 class InsufficientPointsError(RuntimeError):
     pass
+
+
+CANONICAL_USER_IDENTITY_LEVELS = {"normal_user", "promoter", "vip_promoter", "svip_promoter"}
+USER_IDENTITY_LEVEL_ALIASES = {
+    "promotion_ambassador": "promoter",
+    "vip_promotion_ambassador": "vip_promoter",
+    "senior_promoter": "vip_promoter",
+    "senior_promotion_ambassador": "vip_promoter",
+    "svip_promotion_ambassador": "svip_promoter",
+}
 
 CREATE_REVIEWS_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS reviews (
@@ -36,6 +47,7 @@ CREATE TABLE IF NOT EXISTS reviews (
 CREATE_USERS_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
+    uid TEXT UNIQUE,
     status TEXT NOT NULL,
     identity_level TEXT NOT NULL DEFAULT 'normal_user',
     primary_identity_type TEXT NOT NULL DEFAULT 'unknown',
@@ -205,6 +217,7 @@ CREATE TABLE IF NOT EXISTS llm_api_keys (
     display_name TEXT NOT NULL,
     masked_key TEXT NOT NULL,
     secret_ref TEXT NOT NULL,
+    secret_value TEXT,
     enabled INTEGER NOT NULL DEFAULT 0,
     priority INTEGER NOT NULL DEFAULT 100,
     remark TEXT,
@@ -397,6 +410,7 @@ CREATE TABLE IF NOT EXISTS promotion_withdrawals (
 CREATE_INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS idx_reviews_created_at ON reviews(created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_reviews_user_created_at ON reviews(user_id, created_at DESC)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_uid ON users(uid)",
     "CREATE INDEX IF NOT EXISTS idx_users_identity_type_created_at ON users(primary_identity_type, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_phone_identity_user_id ON user_phone_identities(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_phone_identity_normalized_phone ON user_phone_identities(country_code, normalized_phone)",
@@ -450,6 +464,8 @@ def _ensure_reviews_columns(connection: sqlite3.Connection) -> None:
 
 def _ensure_users_columns(connection: sqlite3.Connection) -> None:
     columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
+    if "uid" not in columns:
+        connection.execute("ALTER TABLE users ADD COLUMN uid TEXT")
     if "identity_level" not in columns:
         connection.execute("ALTER TABLE users ADD COLUMN identity_level TEXT NOT NULL DEFAULT 'normal_user'")
     if "primary_identity_type" not in columns:
@@ -458,6 +474,24 @@ def _ensure_users_columns(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE users ADD COLUMN registered_channel TEXT")
     if "promoter_parent_user_id" not in columns:
         connection.execute("ALTER TABLE users ADD COLUMN promoter_parent_user_id TEXT")
+    _backfill_missing_user_uids(connection)
+
+
+def _generate_unique_user_uid(connection: sqlite3.Connection) -> str:
+    for _ in range(100):
+        uid = f"{secrets.randbelow(90_000_000) + 10_000_000:08d}"
+        exists = connection.execute("SELECT 1 FROM users WHERE uid = ? LIMIT 1", (uid,)).fetchone()
+        if exists is None:
+            return uid
+    raise RuntimeError("user_uid_generation_failed")
+
+
+def _backfill_missing_user_uids(connection: sqlite3.Connection) -> None:
+    rows = connection.execute(
+        "SELECT id FROM users WHERE uid IS NULL OR TRIM(uid) = '' ORDER BY created_at, id"
+    ).fetchall()
+    for row in rows:
+        connection.execute("UPDATE users SET uid = ? WHERE id = ?", (_generate_unique_user_uid(connection), str(row["id"])))
 
 
 def _ensure_usage_records_columns(connection: sqlite3.Connection) -> None:
@@ -474,6 +508,27 @@ def _ensure_recharge_orders_columns(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE recharge_orders ADD COLUMN completed_at TEXT")
     if "closed_at" not in columns:
         connection.execute("ALTER TABLE recharge_orders ADD COLUMN closed_at TEXT")
+
+
+def _ensure_llm_api_keys_columns(connection: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(llm_api_keys)").fetchall()}
+    if "secret_value" not in columns:
+        connection.execute("ALTER TABLE llm_api_keys ADD COLUMN secret_value TEXT")
+    connection.execute(
+        """
+        UPDATE llm_api_keys
+        SET
+            model = 'bailian_api_key',
+            display_name = CASE
+                WHEN display_name IN ('阿里云 TTS AppKey', '阿里云 NLS TTS AppKey') THEN '阿里云百炼 API Key'
+                ELSE display_name
+            END,
+            secret_ref = 'admin:aliyun:bailian_api_key:' || id
+        WHERE provider = 'aliyun'
+          AND model = 'tts_app_key'
+          AND secret_value LIKE 'sk-%'
+        """
+    )
 
 
 def _ensure_promotion_wallet_accounts(connection: sqlite3.Connection) -> None:
@@ -518,6 +573,7 @@ def ensure_schema() -> None:
         connection.execute(CREATE_USAGE_RECORDS_TABLE_SQL)
         _ensure_usage_records_columns(connection)
         connection.execute(CREATE_LLM_API_KEYS_TABLE_SQL)
+        _ensure_llm_api_keys_columns(connection)
         connection.execute(CREATE_RUNTIME_CONFIG_ENTRIES_TABLE_SQL)
         connection.execute(CREATE_REVIEW_ASPECT_UNLOCKS_TABLE_SQL)
         connection.execute(CREATE_RECHARGE_ORDERS_TABLE_SQL)
@@ -770,9 +826,10 @@ def upsert_wechat_user(*, appid: str, openid: str, unionid: str | None, session_
         existing = matched_by_openid or matched_by_unionid
         if existing is None:
             user_id = uuid4().hex
+            user_uid = _generate_unique_user_uid(connection)
             connection.execute(
-                "INSERT INTO users (id, status, primary_identity_type, registered_channel, created_at, updated_at, last_active_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (user_id, "active", normalized_identity_type, f"wechat:{appid}", now_text, now_text, now_text),
+                "INSERT INTO users (id, uid, status, primary_identity_type, registered_channel, created_at, updated_at, last_active_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (user_id, user_uid, "active", normalized_identity_type, f"wechat:{appid}", now_text, now_text, now_text),
             )
             connection.execute(
                 "INSERT INTO user_profiles (user_id, nickname, avatar_url, profile_completed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -914,9 +971,10 @@ def create_phone_user(*, normalized_phone: str, password_hash: str, initial_poin
         if existing is not None:
             raise ValueError("phone_already_registered")
         try:
+            user_uid = _generate_unique_user_uid(connection)
             connection.execute(
-                "INSERT INTO users (id, status, primary_identity_type, registered_channel, created_at, updated_at, last_active_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (user_id, "active", "phone", registered_channel or "phone:h5", now_text, now_text, now_text),
+                "INSERT INTO users (id, uid, status, primary_identity_type, registered_channel, created_at, updated_at, last_active_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (user_id, user_uid, "active", "phone", registered_channel or "phone:h5", now_text, now_text, now_text),
             )
             connection.execute(
                 "INSERT INTO user_profiles (user_id, nickname, avatar_url, profile_completed, created_at, updated_at) VALUES (?, NULL, NULL, 0, ?, ?)",
@@ -1045,7 +1103,7 @@ def get_user(user_id: str) -> dict[str, Any] | None:
 
 def get_internal_user(user_id: str) -> dict[str, Any] | None:
     sql = (
-        "SELECT u.id AS user_id, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, "
+        "SELECT u.id AS user_id, u.uid, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, "
         "COALESCE(pwa.withdrawable_balance_cents, pra.balance, 0) AS withdrawable_balance_cents, COALESCE(pwa.frozen_commission_cents, pra.frozen_balance, 0) AS frozen_commission_cents, COALESCE(pwa.withdrawn_amount_cents, 0) AS withdrawn_amount_cents, "
         "pra.balance AS rebate_points_balance, pra.frozen_balance AS rebate_frozen_balance, "
         "MAX(pi.normalized_phone) AS primary_phone, MAX(pi.verified_at) AS phone_verified_at, MAX(w.unionid) AS primary_unionid, "
@@ -1059,7 +1117,7 @@ def get_internal_user(user_id: str) -> dict[str, Any] | None:
         "LEFT JOIN promotion_wallet_accounts pwa ON pwa.user_id = u.id "
         "LEFT JOIN user_wechat_identities w ON w.user_id = u.id "
         "WHERE u.id = ? "
-        "GROUP BY u.id, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, pra.balance, pra.frozen_balance, pwa.withdrawable_balance_cents, pwa.frozen_commission_cents, pwa.withdrawn_amount_cents"
+        "GROUP BY u.id, u.uid, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, pra.balance, pra.frozen_balance, pwa.withdrawable_balance_cents, pwa.frozen_commission_cents, pwa.withdrawn_amount_cents"
     )
     with open_connection() as connection:
         row = connection.execute(sql, (user_id,)).fetchone()
@@ -1121,7 +1179,7 @@ def list_users(
     normalized_offset = max(0, int(offset))
     normalized_query = _normalize_optional_text(keyword) or _normalize_optional_text(query)
     sql = (
-        "SELECT u.id AS user_id, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, "
+        "SELECT u.id AS user_id, u.uid, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, "
         "COALESCE(pwa.withdrawable_balance_cents, pra.balance, 0) AS withdrawable_balance_cents, COALESCE(pwa.frozen_commission_cents, pra.frozen_balance, 0) AS frozen_commission_cents, COALESCE(pwa.withdrawn_amount_cents, 0) AS withdrawn_amount_cents, "
         "pra.balance AS rebate_points_balance, pra.frozen_balance AS rebate_frozen_balance, "
         "MAX(pi.normalized_phone) AS primary_phone, MAX(pi.verified_at) AS phone_verified_at, MAX(w.unionid) AS primary_unionid, "
@@ -1138,9 +1196,9 @@ def list_users(
     conditions: list[str] = []
     parameters: list[Any] = []
     if normalized_query:
-        conditions.append("(u.id LIKE ? OR IFNULL(p.nickname, '') LIKE ? OR IFNULL(pi.normalized_phone, '') LIKE ? OR IFNULL(w.unionid, '') LIKE ? OR IFNULL(w.openid, '') LIKE ?)")
+        conditions.append("(u.id LIKE ? OR IFNULL(u.uid, '') LIKE ? OR IFNULL(p.nickname, '') LIKE ? OR IFNULL(pi.normalized_phone, '') LIKE ? OR IFNULL(w.unionid, '') LIKE ? OR IFNULL(w.openid, '') LIKE ?)")
         like_value = f"%{normalized_query}%"
-        parameters.extend([like_value, like_value, like_value, like_value, like_value])
+        parameters.extend([like_value, like_value, like_value, like_value, like_value, like_value])
     if _normalize_optional_text(status):
         try:
             normalized_filter_status = _normalize_user_status(status)
@@ -1151,9 +1209,17 @@ def list_users(
         else:
             conditions.append("u.status = ?")
             parameters.append(normalized_filter_status)
-    if _normalize_optional_text(identity_level):
-        conditions.append("u.identity_level = ?")
-        parameters.append(str(identity_level))
+    normalized_identity_filter = _normalize_optional_text(identity_level)
+    if normalized_identity_filter:
+        canonical_identity_filter = _normalize_user_identity_for_output(normalized_identity_filter)
+        identity_aliases = [
+            value
+            for value, canonical_value in USER_IDENTITY_LEVEL_ALIASES.items()
+            if canonical_value == canonical_identity_filter
+        ]
+        identity_values = [canonical_identity_filter, *identity_aliases]
+        conditions.append("u.identity_level IN (" + ", ".join("?" for _ in identity_values) + ")")
+        parameters.extend(identity_values)
     if _normalize_optional_text(channel):
         conditions.append("u.registered_channel = ?")
         parameters.append(str(channel))
@@ -1165,7 +1231,7 @@ def list_users(
         parameters.append(str(date_to))
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)
-    sql += " GROUP BY u.id, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, pra.balance, pra.frozen_balance, pwa.withdrawable_balance_cents, pwa.frozen_commission_cents, pwa.withdrawn_amount_cents ORDER BY u.last_active_at DESC LIMIT ? OFFSET ?"
+    sql += " GROUP BY u.id, u.uid, u.status, u.identity_level, u.primary_identity_type, u.registered_channel, u.promoter_parent_user_id, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance, pra.balance, pra.frozen_balance, pwa.withdrawable_balance_cents, pwa.frozen_commission_cents, pwa.withdrawn_amount_cents ORDER BY u.last_active_at DESC LIMIT ? OFFSET ?"
     parameters.extend([normalized_limit, normalized_offset])
     with open_connection() as connection:
         rows = connection.execute(sql, parameters).fetchall()
@@ -1242,9 +1308,7 @@ def update_user_status(*, user_id: str, status: str, reason: str | None, operato
 
 
 def update_user_identity(*, user_id: str, identity_level: str, reason: str | None, operator_note: str | None, operator: str | None, now_text: str) -> dict[str, Any] | None:
-    normalized_identity = _normalize_optional_text(identity_level)
-    if not normalized_identity:
-        raise ValueError("identity_level_required")
+    normalized_identity = _normalize_user_identity_for_storage(identity_level)
     with open_connection() as connection:
         before = connection.execute("SELECT id, identity_level FROM users WHERE id = ?", (user_id,)).fetchone()
         if before is None:
@@ -1716,8 +1780,10 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
         daily_active_users = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE date(datetime(last_active_at), '+8 hours') = date('now', '+8 hours')").fetchone()["total"])
         active_users_7d = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE datetime(last_active_at) >= datetime('now', '-7 day')").fetchone()["total"])
         active_users_30d = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE datetime(last_active_at) >= datetime('now', '-30 day')").fetchone()["total"])
-        total_promoters = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE identity_level IN ('promoter', 'promotion_ambassador', 'senior_promoter', 'senior_promotion_ambassador')").fetchone()["total"])
-        senior_promoters = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE identity_level IN ('senior_promoter', 'senior_promotion_ambassador')").fetchone()["total"])
+        normal_promoters = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE identity_level IN ('promoter', 'promotion_ambassador')").fetchone()["total"])
+        vip_promoters = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE identity_level IN ('vip_promoter', 'vip_promotion_ambassador', 'senior_promoter', 'senior_promotion_ambassador')").fetchone()["total"])
+        svip_promoters = int(connection.execute("SELECT COUNT(*) AS total FROM users WHERE identity_level IN ('svip_promoter', 'svip_promotion_ambassador')").fetchone()["total"])
+        total_promoters = normal_promoters + vip_promoters + svip_promoters
         total_orders = int(connection.execute("SELECT COUNT(*) AS total FROM recharge_orders").fetchone()["total"])
         today_paid_orders = int(connection.execute("SELECT COUNT(*) AS total FROM recharge_orders WHERE status IN ('approved', 'paid', 'completed') AND date(COALESCE(paid_at, reviewed_at, created_at)) = date('now')").fetchone()["total"])
         today_paid_amount_cents = int(connection.execute("SELECT COALESCE(SUM(amount_cents), 0) AS total FROM recharge_orders WHERE status IN ('approved', 'paid', 'completed') AND date(COALESCE(paid_at, reviewed_at, created_at)) = date('now')").fetchone()["total"])
@@ -1819,7 +1885,10 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
         "active_users_30d": active_users_30d,
         "monthly_active_users": active_users_30d,
         "promoter_count": total_promoters,
-        "senior_promoter_count": senior_promoters,
+        "normal_promoter_count": normal_promoters,
+        "vip_promoter_count": vip_promoters,
+        "svip_promoter_count": svip_promoters,
+        "senior_promoter_count": vip_promoters,
         "users_with_points": users_with_points,
         "total_points_balance": total_points_balance,
     }
@@ -1836,7 +1905,10 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
     }
     promotion_block = {
         "promoter_count": total_promoters,
-        "senior_promoter_count": senior_promoters,
+        "normal_promoter_count": normal_promoters,
+        "vip_promoter_count": vip_promoters,
+        "svip_promoter_count": svip_promoters,
+        "senior_promoter_count": vip_promoters,
         "pending_applications": pending_applications,
         "pending_withdrawals": pending_withdrawals,
         "payout_failed_withdrawals": payout_failed_withdrawals,
@@ -1887,7 +1959,9 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
                     {"label": "月活", "value": active_users_30d, "display_value": str(active_users_30d), "unit": "人"},
                     {"label": "30日活跃", "value": active_users_30d, "display_value": str(active_users_30d), "unit": "人"},
                     {"label": "推广用户", "value": total_promoters, "display_value": str(total_promoters), "unit": "人"},
-                    {"label": "高级推广", "value": senior_promoters, "display_value": str(senior_promoters), "unit": "人"},
+                    {"label": "推广大使", "value": normal_promoters, "display_value": str(normal_promoters), "unit": "人"},
+                    {"label": "VIP 推广大使", "value": vip_promoters, "display_value": str(vip_promoters), "unit": "人"},
+                    {"label": "SVIP 推广大使", "value": svip_promoters, "display_value": str(svip_promoters), "unit": "人"},
                     {"label": "有积分用户", "value": users_with_points, "display_value": str(users_with_points), "unit": "人"},
                     {"label": "积分余额", "value": total_points_balance, "display_value": str(total_points_balance), "unit": "积分"},
                 ],
@@ -1910,8 +1984,9 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
                 "title": "推广合作",
                 "summary": "申请、提现和返佣记录的可见状态",
                 "metrics": [
-                    {"label": "普通大使", "value": max(0, total_promoters - senior_promoters), "display_value": str(max(0, total_promoters - senior_promoters)), "unit": "人"},
-                    {"label": "高级大使", "value": senior_promoters, "display_value": str(senior_promoters), "unit": "人"},
+                    {"label": "推广大使", "value": normal_promoters, "display_value": str(normal_promoters), "unit": "人"},
+                    {"label": "VIP 推广大使", "value": vip_promoters, "display_value": str(vip_promoters), "unit": "人"},
+                    {"label": "SVIP 推广大使", "value": svip_promoters, "display_value": str(svip_promoters), "unit": "人"},
                     {"label": "待审核申请", "value": pending_applications, "display_value": str(pending_applications), "unit": "条"},
                     {"label": "待提现申请", "value": pending_withdrawals, "display_value": str(pending_withdrawals), "unit": "笔"},
                     {"label": "打款失败", "value": payout_failed_withdrawals, "display_value": str(payout_failed_withdrawals), "unit": "笔"},
@@ -2127,9 +2202,10 @@ def review_promotion_application(*, application_id: str, action: str, reject_rea
             (next_status, _normalize_optional_text(reject_reason), _normalize_optional_text(review_note), operator, now_text, now_text, application_id),
         )
         if normalized_action == "approve":
+            approved_identity = _normalize_user_identity_for_storage(str(row["requested_level"]))
             connection.execute(
                 "UPDATE users SET identity_level = ?, updated_at = ? WHERE id = ?",
-                (str(row["requested_level"]), now_text, str(row["user_id"])),
+                (approved_identity, now_text, str(row["user_id"])),
             )
         _insert_admin_operation_log(
             connection,
@@ -2140,7 +2216,7 @@ def review_promotion_application(*, application_id: str, action: str, reject_rea
             reason=reject_reason,
             operator_note=review_note,
             before={"status": row["status"]},
-            after={"status": next_status, "identity_level": str(row["requested_level"]) if normalized_action == "approve" else None},
+            after={"status": next_status, "identity_level": _normalize_user_identity_for_output(row["requested_level"]) if normalized_action == "approve" else None},
             created_at=now_text,
         )
     refreshed = get_promotion_application(application_id)
@@ -2741,8 +2817,8 @@ def _deserialize_promotion_application_row(row: sqlite3.Row) -> dict[str, Any]:
         "application_id": row["id"],
         "user_id": row["user_id"],
         "user_nickname": row["user_nickname"] if "user_nickname" in row.keys() else None,
-        "current_identity_level": row["current_identity_level"] if "current_identity_level" in row.keys() else None,
-        "requested_level": row["requested_level"],
+        "current_identity_level": _normalize_user_identity_for_output(row["current_identity_level"]) if "current_identity_level" in row.keys() else None,
+        "requested_level": _normalize_user_identity_for_output(row["requested_level"]),
         "status": row["status"],
         "applicant_name": row["applicant_name"],
         "applicant_phone": row["applicant_phone"],
@@ -2782,7 +2858,7 @@ def _deserialize_promotion_withdrawal_row(row: sqlite3.Row) -> dict[str, Any]:
         "withdrawal_id": row["id"],
         "user_id": row["user_id"],
         "user_nickname": row["user_nickname"] if "user_nickname" in row.keys() else None,
-        "identity_level": row["identity_level"] if "identity_level" in row.keys() else None,
+        "identity_level": _normalize_user_identity_for_output(row["identity_level"]) if "identity_level" in row.keys() else None,
         "status": row["status"],
         "withdrawable_balance_snapshot_cents": int(row["withdrawable_balance_snapshot_cents"] or row["rebate_points_balance_snapshot"] or 0) if "withdrawable_balance_snapshot_cents" in row.keys() else int(row["rebate_points_balance_snapshot"] or 0),
         "frozen_commission_snapshot_cents": int(row["frozen_commission_snapshot_cents"] or 0) if "frozen_commission_snapshot_cents" in row.keys() else 0,
@@ -2852,7 +2928,7 @@ def _deserialize_review_summary_row(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def _deserialize_user_row(row: sqlite3.Row) -> dict[str, Any]:
-    return {"user_id": row["user_id"], "status": _normalize_user_status_for_output(row["status"]), "identity_level": row["identity_level"] if "identity_level" in row.keys() else "normal_user", "nickname": row["nickname"], "avatar_url": row["avatar_url"], "profile_completed": bool(row["profile_completed"]), "points_balance": int(row["balance"] or 0), "frozen_balance": int(row["frozen_balance"] or 0), "created_at": row["created_at"], "updated_at": row["updated_at"], "last_active_at": row["last_active_at"]}
+    return {"user_id": row["user_id"], "uid": row["uid"] if "uid" in row.keys() else None, "status": _normalize_user_status_for_output(row["status"]), "identity_level": _normalize_user_identity_for_output(row["identity_level"] if "identity_level" in row.keys() else "normal_user"), "nickname": row["nickname"], "avatar_url": row["avatar_url"], "profile_completed": bool(row["profile_completed"]), "points_balance": int(row["balance"] or 0), "frozen_balance": int(row["frozen_balance"] or 0), "created_at": row["created_at"], "updated_at": row["updated_at"], "last_active_at": row["last_active_at"]}
 
 
 def _deserialize_internal_user_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -2867,8 +2943,9 @@ def _deserialize_internal_user_row(row: sqlite3.Row) -> dict[str, Any]:
     registered_at = min(identity_registered_candidates) if identity_registered_candidates else row["created_at"]
     return {
         "user_id": row["user_id"],
+        "uid": row["uid"] if "uid" in row.keys() else None,
         "status": _normalize_user_status_for_output(row["status"]),
-        "identity_level": row["identity_level"] if "identity_level" in row.keys() else "normal_user",
+        "identity_level": _normalize_user_identity_for_output(row["identity_level"] if "identity_level" in row.keys() else "normal_user"),
         "primary_identity_type": row["primary_identity_type"] if "primary_identity_type" in row.keys() else "unknown",
         "registered_channel": row["registered_channel"] if "registered_channel" in row.keys() else None,
         "promoter_parent_user_id": row["promoter_parent_user_id"] if "promoter_parent_user_id" in row.keys() else None,
@@ -2998,18 +3075,53 @@ def _scene_to_feature_name(scene: str) -> str | None:
 def list_llm_api_keys() -> list[dict[str, Any]]:
     with open_connection() as connection:
         rows = connection.execute(
-            "SELECT id, provider, model, display_name, masked_key, secret_ref, enabled, priority, remark, last_operator, created_at, updated_at FROM llm_api_keys ORDER BY enabled DESC, priority ASC, updated_at DESC, id DESC"
+            "SELECT id, provider, model, display_name, masked_key, secret_ref, CASE WHEN IFNULL(secret_value, '') != '' THEN 1 ELSE 0 END AS secret_configured, enabled, priority, remark, last_operator, created_at, updated_at FROM llm_api_keys ORDER BY enabled DESC, priority ASC, updated_at DESC, id DESC"
         ).fetchall()
     return [_deserialize_llm_api_key_row(row) for row in rows]
 
 
-def upsert_llm_api_key(*, key_id: str | None, provider: str, model: str, display_name: str, masked_key: str, secret_ref: str, enabled: bool, priority: int, remark: str | None, last_operator: str | None, now_text: str) -> dict[str, Any]:
+def get_llm_api_key(key_id: str) -> dict[str, Any] | None:
+    with open_connection() as connection:
+        row = connection.execute(
+            "SELECT id, provider, model, display_name, masked_key, secret_ref, secret_value, CASE WHEN IFNULL(secret_value, '') != '' THEN 1 ELSE 0 END AS secret_configured, enabled, priority, remark, last_operator, created_at, updated_at FROM llm_api_keys WHERE id = ?",
+            (key_id,),
+        ).fetchone()
+    return _deserialize_llm_api_key_row(row, include_secret=True) if row is not None else None
+
+
+def get_enabled_llm_api_key(*, provider: str, model: str | None = None) -> dict[str, Any] | None:
+    normalized_provider = _normalize_optional_text(provider)
+    normalized_model = _normalize_optional_text(model)
+    if not normalized_provider:
+        return None
+    conditions = ["provider = ?", "enabled = 1", "IFNULL(secret_value, '') != ''"]
+    parameters: list[Any] = [normalized_provider]
+    if normalized_model:
+        conditions.append("model = ?")
+        parameters.append(normalized_model)
+    with open_connection() as connection:
+        row = connection.execute(
+            "SELECT id, provider, model, display_name, masked_key, secret_ref, secret_value, CASE WHEN IFNULL(secret_value, '') != '' THEN 1 ELSE 0 END AS secret_configured, enabled, priority, remark, last_operator, created_at, updated_at FROM llm_api_keys WHERE "
+            + " AND ".join(conditions)
+            + " ORDER BY priority ASC, updated_at DESC, id DESC LIMIT 1",
+            parameters,
+        ).fetchone()
+    return _deserialize_llm_api_key_row(row, include_secret=True) if row is not None else None
+
+
+def upsert_llm_api_key(*, key_id: str | None, provider: str, model: str, display_name: str, masked_key: str, secret_ref: str, secret_value: str | None, enabled: bool, priority: int, remark: str | None, last_operator: str | None, now_text: str) -> dict[str, Any]:
     normalized_key_id = _normalize_optional_text(key_id) or uuid4().hex
+    normalized_secret_value = _normalize_optional_text(secret_value)
+    if normalized_secret_value is None and key_id:
+        existing = get_llm_api_key(key_id)
+        normalized_secret_value = str(existing.get("secret_value") or "") if existing else None
+    if not normalized_secret_value:
+        raise ValueError("secret_value_required")
     with open_connection() as connection:
         connection.execute(
             """
-            INSERT INTO llm_api_keys (id, provider, model, display_name, masked_key, secret_ref, enabled, priority, remark, last_operator, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO llm_api_keys (id, provider, model, display_name, masked_key, secret_ref, secret_value, enabled, priority, remark, last_operator, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id)
             DO UPDATE SET
                 provider = excluded.provider,
@@ -3017,6 +3129,7 @@ def upsert_llm_api_key(*, key_id: str | None, provider: str, model: str, display
                 display_name = excluded.display_name,
                 masked_key = excluded.masked_key,
                 secret_ref = excluded.secret_ref,
+                secret_value = excluded.secret_value,
                 enabled = excluded.enabled,
                 priority = excluded.priority,
                 remark = excluded.remark,
@@ -3030,6 +3143,7 @@ def upsert_llm_api_key(*, key_id: str | None, provider: str, model: str, display
                 display_name,
                 masked_key,
                 secret_ref,
+                normalized_secret_value,
                 int(bool(enabled)),
                 int(priority),
                 remark,
@@ -3039,7 +3153,7 @@ def upsert_llm_api_key(*, key_id: str | None, provider: str, model: str, display
             ),
         )
         row = connection.execute(
-            "SELECT id, provider, model, display_name, masked_key, secret_ref, enabled, priority, remark, last_operator, created_at, updated_at FROM llm_api_keys WHERE id = ?",
+            "SELECT id, provider, model, display_name, masked_key, secret_ref, CASE WHEN IFNULL(secret_value, '') != '' THEN 1 ELSE 0 END AS secret_configured, enabled, priority, remark, last_operator, created_at, updated_at FROM llm_api_keys WHERE id = ?",
             (normalized_key_id,),
         ).fetchone()
     if row is None:
@@ -3052,14 +3166,15 @@ def delete_llm_api_key(key_id: str) -> None:
         connection.execute("DELETE FROM llm_api_keys WHERE id = ?", (key_id,))
 
 
-def _deserialize_llm_api_key_row(row: sqlite3.Row) -> dict[str, Any]:
-    return {
+def _deserialize_llm_api_key_row(row: sqlite3.Row, *, include_secret: bool = False) -> dict[str, Any]:
+    output = {
         "key_id": row["id"],
         "provider": row["provider"],
         "model": row["model"],
         "display_name": row["display_name"],
         "masked_key": row["masked_key"],
         "secret_ref": row["secret_ref"],
+        "secret_configured": bool(row["secret_configured"]) if "secret_configured" in row.keys() else False,
         "enabled": bool(row["enabled"]),
         "priority": int(row["priority"]),
         "remark": row["remark"],
@@ -3067,6 +3182,9 @@ def _deserialize_llm_api_key_row(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+    if include_secret:
+        output["secret_value"] = row["secret_value"] if "secret_value" in row.keys() else None
+    return output
 
 
 def _get_recharge_order_in_connection(connection: sqlite3.Connection, *, order_id: str) -> dict[str, Any] | None:
@@ -3161,6 +3279,23 @@ def _normalize_user_status_for_output(status: Any) -> str:
         return "disabled"
 
 
+def _normalize_user_identity_for_storage(identity_level: str | None) -> str:
+    normalized_identity = (_normalize_optional_text(identity_level) or "").lower()
+    if not normalized_identity:
+        raise ValueError("identity_level_required")
+    normalized_identity = USER_IDENTITY_LEVEL_ALIASES.get(normalized_identity, normalized_identity)
+    if normalized_identity not in CANONICAL_USER_IDENTITY_LEVELS:
+        raise ValueError("invalid_identity_level")
+    return normalized_identity
+
+
+def _normalize_user_identity_for_output(identity_level: Any) -> str:
+    try:
+        return _normalize_user_identity_for_storage(str(identity_level))
+    except ValueError:
+        return "normal_user"
+
+
 def _utc_now_text() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -3192,7 +3327,7 @@ def _get_review_aspect_unlock_in_connection(connection: sqlite3.Connection, *, r
 
 
 _USER_SELECT_SQL = """
-SELECT u.id AS user_id, u.status, u.identity_level, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance
+SELECT u.id AS user_id, u.uid, u.status, u.identity_level, u.created_at, u.updated_at, u.last_active_at, p.nickname, p.avatar_url, p.profile_completed, pa.balance, pa.frozen_balance
 FROM users u
 LEFT JOIN user_profiles p ON p.user_id = u.id
 LEFT JOIN points_accounts pa ON pa.user_id = u.id

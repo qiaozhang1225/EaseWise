@@ -19,6 +19,17 @@ class DeepSeekAPIError(RuntimeError):
     pass
 
 
+def _get_configured_deepseek_key() -> dict[str, Any] | None:
+    try:
+        from product.backend.api.database import get_enabled_llm_api_key
+
+        configured_key = get_enabled_llm_api_key(provider="deepseek")
+    except Exception:
+        return None
+    secret_value = str(configured_key.get("secret_value") or "").strip() if configured_key else ""
+    return configured_key if secret_value else None
+
+
 def load_env_file(path: str | os.PathLike[str] = ".env.local", *, override: bool = False) -> None:
     env_path = Path(path)
     if not env_path.exists():
@@ -65,12 +76,16 @@ class DeepSeekConfig:
         if env_file:
             load_env_file(env_file)
 
-        api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
-        if not api_key:
-            raise DeepSeekAPIError("Missing `DEEPSEEK_API_KEY`. Set it in the environment or `.env.local`.")
-
         base_url = os.getenv("DEEPSEEK_BASE_URL", DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL
         model = os.getenv("DEEPSEEK_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+        api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+        configured_key = _get_configured_deepseek_key()
+        if configured_key:
+            api_key = str(configured_key.get("secret_value") or "").strip()
+            model = str(configured_key.get("model") or model).strip() or model
+        if not api_key:
+            raise DeepSeekAPIError("Missing DeepSeek API key. Set it in the admin system configuration or `DEEPSEEK_API_KEY`.")
+
         timeout_raw = os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "45").strip() or "45"
         temp_raw = os.getenv("DEEPSEEK_TEMPERATURE", "0").strip()
         thinking_raw = os.getenv("DEEPSEEK_THINKING_ENABLED", "true").strip().lower()

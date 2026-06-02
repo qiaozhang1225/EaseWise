@@ -26,9 +26,9 @@ const selectedAmbassadorTier = ref<'normal' | 'vip' | 'svip'>('normal');
 const directUsersCount = ref(50);                      // 直属推荐人脉数
 const avgAnnualDirectSpend = ref(300);                  // 平均直属推荐年消费额
 
-const normalAmbassadorPerformance = ref(30000);         // 旗下普通大使推广充值金额
-const vipAmbassadorPerformance = ref(20000);            // 旗下 VIP 大使推广充值金额
-const svipAmbassadorPerformance = ref(10000);           // 旗下 SVIP 大使推广充值金额
+const normalAmbassadorPerformance = ref(30000);         // 旗下推广大使推广充值金额
+const vipAmbassadorPerformance = ref(20000);            // 旗下 VIP 推广大使推广充值金额
+const svipAmbassadorPerformance = ref(10000);           // 旗下 SVIP 推广大使推广充值金额
 
 // Rates mapping for ambassador tiers
 const tierRates = {
@@ -244,18 +244,18 @@ const handleApplyJoin = () => {
                   <td class="py-2.5 px-2 text-brand-secondary font-black">—</td>
                 </tr>
                 <tr class="border-b border-gray-100 bg-gray-50/20">
-                  <td class="py-2.5 px-1 font-bold text-amber-800">普通大使</td>
+                  <td class="py-2.5 px-1 font-bold text-amber-800">推广大使</td>
                   <td class="py-2.5 px-1 text-emerald-600 font-extrabold text-[12px]">10% 直属提成</td>
                   <td rowspan="3" class="py-2 px-2 text-left align-middle text-[10px] text-brand-secondary leading-snug border-l border-gray-100">
                     推广提成以 7 天为标准。订单完成后 7 天自动结算至推广余额，达最低提现金额后可随时提现。
                   </td>
                 </tr>
                 <tr class="border-b border-gray-100">
-                  <td class="py-2.5 px-1 font-extrabold text-amber-600">VIP 大使</td>
+                  <td class="py-2.5 px-1 font-extrabold text-amber-600">VIP 推广大使</td>
                   <td class="py-2.5 px-1 text-emerald-600 font-black text-[12px]">25% 直属提成</td>
                 </tr>
                 <tr class="bg-purple-500/[0.04]">
-                  <td class="py-2.5 px-1 font-black text-purple-700">SVIP 大使</td>
+                  <td class="py-2.5 px-1 font-black text-purple-700">SVIP 推广大使</td>
                   <td class="py-2.5 px-1 text-red-600 font-black text-[12px]">40% 直属提成</td>
                 </tr>
               </tbody>
@@ -385,7 +385,7 @@ const handleApplyJoin = () => {
                       </div>
                       <div class="bg-white px-3 py-2.5 rounded-xl border border-indigo-100/60 shadow-xs">
                         <div class="font-mono text-[10px] text-indigo-950 font-black leading-tight break-all">
-                          业绩总额 = 普通大使业绩 + VIP 大使业绩 + SVIP 大使业绩 + 直属推荐人脉消费额
+                          业绩总额 = 推广大使业绩 + VIP 推广大使业绩 + SVIP 推广大使业绩 + 直属推荐人脉消费额
                         </div>
                         <div class="text-[9.5px] text-slate-500 border-t border-dashed border-indigo-50 mt-2.5 pt-2 leading-relaxed">
                           📌 <span class="font-extrabold text-amber-800">备注：</span>直属推荐人脉消费额同样计入团队业绩总额。
@@ -400,7 +400,7 @@ const handleApplyJoin = () => {
                       </div>
                       <div class="bg-white px-3 py-2.5 rounded-xl border border-indigo-100/60 shadow-xs">
                         <div class="font-mono text-[10px] text-indigo-950 font-black leading-normal break-all">
-                          奖金总额 = 普通大使充值 × 15% + VIP 大使充值 × 10% + SVIP 大使充值 × 5% + 直属推荐人脉消费额 × 5%
+                          奖金总额 = 推广大使充值 × 15% + VIP 推广大使充值 × 10% + SVIP 推广大使充值 × 5% + 直属推荐人脉消费额 × 5%
                         </div>
                       </div>
                     </div>
@@ -494,7 +494,7 @@ const handleApplyJoin = () => {
             <!-- Parameter 3: Normal ambassador performance -->
             <div class="space-y-1">
               <div class="flex justify-between text-[11px] text-slate-350">
-                <span class="font-bold">3. 旗下普通大使推广充值：</span>
+                <span class="font-bold">3. 旗下推广大使推广充值：</span>
                 <span class="text-amber-400 font-extrabold font-mono">{{ normalAmbassadorPerformance }} 元/年</span>
               </div>
               <div class="flex items-center gap-2">
@@ -509,7 +509,7 @@ const handleApplyJoin = () => {
             <!-- Parameter 4: VIP ambassador performance -->
             <div class="space-y-1">
               <div class="flex justify-between text-[11px] text-slate-350">
-                <span class="font-bold">4. 旗下 VIP 大使推广充值：</span>
+                <span class="font-bold">4. 旗下 VIP 推广大使推广充值：</span>
                 <span class="text-amber-400 font-extrabold font-mono">{{ vipAmbassadorPerformance }} 元/年</span>
               </div>
               <div class="flex items-center gap-2">
@@ -524,7 +524,7 @@ const handleApplyJoin = () => {
             <!-- Parameter 5: SVIP ambassador performance -->
             <div class="space-y-1">
               <div class="flex justify-between text-[11px] text-slate-350">
-                <span class="font-bold">5. 旗下 SVIP 大使推广充值：</span>
+                <span class="font-bold">5. 旗下 SVIP 推广大使推广充值：</span>
                 <span class="text-amber-400 font-extrabold font-mono">{{ svipAmbassadorPerformance }} 元/年</span>
               </div>
               <div class="flex items-center gap-2">
@@ -535,7 +535,7 @@ const handleApplyJoin = () => {
                 <span class="text-[9px] font-mono text-slate-400 bg-black/25 px-1.5 py-0.5 rounded w-14 text-center font-bold">{{ svipAmbassadorPerformance }}元</span>
               </div>
               <p class="text-[9.5px] text-slate-400 leading-snug">
-                合伙人的个人直推金额 {{ formatCurrency(directAnnualPerformance) }} 同步计入 SVIP 大使推广充值业绩。
+                合伙人的个人直推金额 {{ formatCurrency(directAnnualPerformance) }} 同步计入 SVIP 推广大使推广充值业绩。
               </p>
             </div>
 

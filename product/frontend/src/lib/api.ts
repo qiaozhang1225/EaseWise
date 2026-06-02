@@ -44,6 +44,8 @@ import type {
   UsageRecordListResponse,
   InternalUserResponse,
   UserProfileUpdateRequest,
+  VoiceNarrationRequest,
+  VoiceNarrationResponse,
 } from '../types/api';
 
 const API_BASE_URL = resolveApiBaseUrl();
@@ -301,6 +303,14 @@ export function unlockPhoneReviewAspect(accessToken: string, reviewId: string, a
   });
 }
 
+export function createVoiceNarration(accessToken: string, payload: VoiceNarrationRequest): Promise<VoiceNarrationResponse> {
+  return requestJson<VoiceNarrationResponse>('/api/v1/voice/narrations', {
+    method: 'POST',
+    accessToken,
+    body: payload,
+  });
+}
+
 type QueryValue = string | number | boolean | null | undefined;
 
 export function getInternalDashboard(adminToken: string, params: Record<string, QueryValue> = {}): Promise<DashboardResponse> {
@@ -319,8 +329,9 @@ export type InternalLlmApiKeyPayload = {
   provider: string;
   model: string;
   display_name: string;
-  masked_key: string;
-  secret_ref: string;
+  masked_key?: string | null;
+  secret_ref?: string | null;
+  secret_value?: string | null;
   enabled: boolean;
   priority: number;
   remark?: string | null;

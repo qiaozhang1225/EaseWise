@@ -29,14 +29,15 @@ const benefitCards = [
   },
   {
     title: '收益灵活处理',
-    desc: '推广收益可按正式规则申请提现，或转换为服务积分继续使用。',
+    desc: '推广收益可按正式规则申请提现，并在推广资产页面查看结算状态。',
     icon: WalletCards,
   },
 ];
 
 const thresholds = [
-  { label: '普通推广大使', value: '累计充值 398 元', desc: '适合刚开始推广的用户' },
-  { label: '高级推广大使', value: '累计充值 3980 元', desc: '适合持续推广与深度合作用户' },
+  { label: '推广大使', value: '累计充值 398 元', desc: '适合刚开始推广的用户' },
+  { label: 'VIP 推广大使', value: '累计充值 3980 元', desc: '适合持续推广与深度合作用户' },
+  { label: 'SVIP 推广大使', value: '以后台规则为准', desc: '适合重点合作与高价值推广用户' },
 ];
 
 const rules = [
@@ -91,8 +92,8 @@ const rules = [
 
             <div class="grid grid-cols-3 gap-2.5 pt-1">
               <div class="rounded-xl bg-white/8 border border-white/10 p-3 text-center">
-                <p class="font-serif text-[18px] leading-none font-bold text-brand-accent">2级</p>
-                <p class="mt-1 font-sans text-[10px] text-white/60">身份体系</p>
+                <p class="font-serif text-[18px] leading-none font-bold text-brand-accent">3档</p>
+                <p class="mt-1 font-sans text-[10px] text-white/60">推广身份</p>
               </div>
               <div class="rounded-xl bg-white/8 border border-white/10 p-3 text-center">
                 <p class="font-serif text-[18px] leading-none font-bold text-brand-accent">直邀</p>

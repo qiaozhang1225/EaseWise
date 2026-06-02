@@ -22,12 +22,13 @@ from features.phone_qimen.scoring.total_score.bundle import build_scoring_bundle
 from .agent import build_agent_reply
 from .auth import build_session_expiry, exchange_wechat_code, hash_access_token, hash_password, issue_access_token, require_authenticated_user, require_authenticated_user_with_token_hash, require_internal_admin_access, require_registered_user, resolve_authenticated_user, verify_password
 from .config import APP_TITLE, APP_VERSION, allow_mock_wechat_login, get_cors_origins, get_database_path, get_public_base_url, get_wechat_oa_app_id
-from .database import InsufficientPointsError, adjust_points, adjust_rebate_points, complete_review, complete_review_with_message, complete_usage_record, create_payment_transaction, create_phone_user, create_recharge_order, create_refund_request, create_review_aspect_unlock, create_review_with_charge, create_session, create_usage_record, delete_llm_api_key, ensure_schema, fail_review, fail_usage_record, get_dashboard_summary, get_internal_user, get_latest_payment_transaction_for_order, get_phone_identity_by_normalized_phone, get_points_account, get_primary_phone_identity_by_user_id, get_promotion_application, get_promotion_commission, get_promotion_rules, get_promotion_withdrawal, get_recharge_order, get_review, get_usage_record, get_user, list_llm_api_keys, list_payment_transactions_for_order, list_points_ledger, list_promotion_applications, list_promotion_commissions, list_promotion_withdrawals, list_recharge_orders, list_recent_recharge_orders_for_user, list_refund_requests_for_order, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, mark_phone_identity_login, mark_promotion_withdrawal_paid, refund_points, revoke_session_by_token_hash, retry_promotion_withdrawal_payout, retry_refund_request, review_promotion_application, review_promotion_withdrawal, review_recharge_order, review_refund_request, settle_payment_transaction, update_phone_identity_password, update_review_generation_payload, update_review_progress, update_review_score_template, update_user_identity, update_user_profile, update_user_promoter_parent, update_user_status, upsert_llm_api_key, upsert_runtime_config_entry, upsert_wechat_user
+from .database import InsufficientPointsError, adjust_points, adjust_rebate_points, complete_review, complete_review_with_message, complete_usage_record, create_payment_transaction, create_phone_user, create_recharge_order, create_refund_request, create_review_aspect_unlock, create_review_with_charge, create_session, create_usage_record, delete_llm_api_key, ensure_schema, fail_review, fail_usage_record, get_dashboard_summary, get_internal_user, get_latest_payment_transaction_for_order, get_llm_api_key, get_phone_identity_by_normalized_phone, get_points_account, get_primary_phone_identity_by_user_id, get_promotion_application, get_promotion_commission, get_promotion_rules, get_promotion_withdrawal, get_recharge_order, get_review, get_usage_record, get_user, list_llm_api_keys, list_payment_transactions_for_order, list_points_ledger, list_promotion_applications, list_promotion_commissions, list_promotion_withdrawals, list_recharge_orders, list_recent_recharge_orders_for_user, list_refund_requests_for_order, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, mark_phone_identity_login, mark_promotion_withdrawal_paid, refund_points, revoke_session_by_token_hash, retry_promotion_withdrawal_payout, retry_refund_request, review_promotion_application, review_promotion_withdrawal, review_recharge_order, review_refund_request, settle_payment_transaction, update_phone_identity_password, update_review_generation_payload, update_review_progress, update_review_score_template, update_user_identity, update_user_profile, update_user_promoter_parent, update_user_status, upsert_llm_api_key, upsert_runtime_config_entry, upsert_wechat_user
 from .phone_review_view import PUBLIC_ASPECT_ORDER, build_phone_review_product_view
 from .payments import create_payment_request
 from .product_review import build_product_review_aspects_render, build_product_review_core_render
-from .runtime_config import get_runtime_agent_metaphysics_skill_enabled, get_runtime_available_recharge_packages, get_runtime_initial_points, get_runtime_phone_review_aspect_order, get_runtime_phone_review_aspect_unlock_points_cost, get_runtime_phone_review_base_points_cost, get_runtime_phone_review_free_aspect_keys, get_runtime_phone_review_unlock_enforcement_enabled, is_module_enabled, normalize_channel_key, normalize_config_key, normalize_scope_key, normalize_scope_type, resolve_public_runtime_config
-from .schemas import AdminReviewRequest, AgentReplyRequest, AgentReplyResponse, AlmanacResponse, AuthLoginResponse, AvatarUploadRequest, ComplianceConfigResponse, CurrentUserResponse, CustomerServiceConfigResponse, DashboardResponse, DashboardMetricResponse, DashboardSectionResponse, InternalUserAdminSummaryResponse, InternalUserListResponse, InternalUserResponse, LlmApiKeyListResponse, LlmApiKeyResponse, LlmApiKeyUpsertRequest, ManualPointsAdjustRequest, ManualPointsAdjustResponse, ModuleRuntimeConfigResponse, PasswordChangeRequest, PasswordChangeResponse, PaymentNotifyResponse, PaymentTransactionCreateRequest, PaymentTransactionResponse, PhonePasswordLoginRequest, PhonePasswordRegisterRequest, PhoneStatusRequest, PhoneStatusResponse, PointsAccountResponse, PointsLedgerEntryResponse, PointsLedgerListResponse, PublicRuntimeConfigResponse, PromotionApplicationListResponse, PromotionApplicationResponse, PromotionCommissionListResponse, PromotionCommissionResponse, PromotionRulesResponse, PromotionRulesUpdateRequest, PromotionWithdrawalListResponse, PromotionWithdrawalPayoutRequest, PromotionWithdrawalResponse, RebatePointsAdjustRequest, RebatePointsAdjustResponse, RebatePointsAccountResponse, RefundCreateRequest, RefundRequestResponse, RefundRetryRequest, RechargeOrderCreateRequest, RechargeOrderListResponse, RechargeOrderPaymentStatusResponse, RechargeOrderResponse, RechargeOrderReviewRequest, RechargeOrderReviewResponse, RechargeOrderSummaryResponse, RechargePackageListResponse, RechargePackageResponse, ReviewAspectResponse, ReviewAspectUnlockListResponse, ReviewAspectUnlockRequest, ReviewAspectUnlockResponse, ReviewBoardResponse, ReviewCreateRequest, ReviewListResponse, ReviewPhoneSummaryResponse, ReviewRecordResponse, ReviewStabilityDetailResponse, ReviewSummaryResponse, RuntimeConfigEntryResponse, RuntimeConfigListResponse, RuntimeConfigSchemaItemResponse, RuntimeConfigSchemaResponse, RuntimeConfigUpsertRequest, RuntimeModulesConfigResponse, RuntimePointsConfigResponse, RuntimeRechargeConfigResponse, UsageRecordDetailResponse, UsageRecordListResponse, UsageRecordResponse, UserIdentityUpdateRequest, UserPromoterParentUpdateRequest, UserProfileUpdateRequest, UserResponse, UserStatusUpdateRequest, WeChatLoginRequest
+from .runtime_config import get_runtime_agent_metaphysics_skill_enabled, get_runtime_available_recharge_packages, get_runtime_initial_points, get_runtime_phone_review_aspect_order, get_runtime_phone_review_aspect_unlock_points_cost, get_runtime_phone_review_base_points_cost, get_runtime_phone_review_free_aspect_keys, get_runtime_phone_review_unlock_enforcement_enabled, get_runtime_voice_cache_enabled, get_runtime_voice_default_voice_key, get_runtime_voice_max_chars_per_request, get_runtime_voice_provider, is_module_enabled, normalize_channel_key, normalize_config_key, normalize_scope_key, normalize_scope_type, resolve_public_runtime_config
+from .schemas import AdminReviewRequest, AgentReplyRequest, AgentReplyResponse, AlmanacResponse, AuthLoginResponse, AvatarUploadRequest, ComplianceConfigResponse, CurrentUserResponse, CustomerServiceConfigResponse, DashboardResponse, DashboardMetricResponse, DashboardSectionResponse, InternalUserAdminSummaryResponse, InternalUserListResponse, InternalUserResponse, LlmApiKeyListResponse, LlmApiKeyResponse, LlmApiKeyUpsertRequest, ManualPointsAdjustRequest, ManualPointsAdjustResponse, ModuleRuntimeConfigResponse, PasswordChangeRequest, PasswordChangeResponse, PaymentNotifyResponse, PaymentTransactionCreateRequest, PaymentTransactionResponse, PhonePasswordLoginRequest, PhonePasswordRegisterRequest, PhoneStatusRequest, PhoneStatusResponse, PointsAccountResponse, PointsLedgerEntryResponse, PointsLedgerListResponse, PublicRuntimeConfigResponse, PromotionApplicationListResponse, PromotionApplicationResponse, PromotionCommissionListResponse, PromotionCommissionResponse, PromotionRulesResponse, PromotionRulesUpdateRequest, PromotionWithdrawalListResponse, PromotionWithdrawalPayoutRequest, PromotionWithdrawalResponse, RebatePointsAdjustRequest, RebatePointsAdjustResponse, RebatePointsAccountResponse, RefundCreateRequest, RefundRequestResponse, RefundRetryRequest, RechargeOrderCreateRequest, RechargeOrderListResponse, RechargeOrderPaymentStatusResponse, RechargeOrderResponse, RechargeOrderReviewRequest, RechargeOrderReviewResponse, RechargeOrderSummaryResponse, RechargePackageListResponse, RechargePackageResponse, ReviewAspectResponse, ReviewAspectUnlockListResponse, ReviewAspectUnlockRequest, ReviewAspectUnlockResponse, ReviewBoardResponse, ReviewCreateRequest, ReviewListResponse, ReviewPhoneSummaryResponse, ReviewRecordResponse, ReviewStabilityDetailResponse, ReviewSummaryResponse, RuntimeConfigEntryResponse, RuntimeConfigListResponse, RuntimeConfigSchemaItemResponse, RuntimeConfigSchemaResponse, RuntimeConfigUpsertRequest, RuntimeModulesConfigResponse, RuntimePointsConfigResponse, RuntimeRechargeConfigResponse, UsageRecordDetailResponse, UsageRecordListResponse, UsageRecordResponse, UserIdentityUpdateRequest, UserPromoterParentUpdateRequest, UserProfileUpdateRequest, UserResponse, UserStatusUpdateRequest, VoiceNarrationRequest, VoiceNarrationResponse, VoiceRuntimeConfigResponse, WeChatLoginRequest
+from .tts import VoiceProviderUnavailableError, VoiceSynthesisError, synthesize_voice_audio
 from .wechat_h5 import STATE_COOKIE_NAME, build_oauth_state, build_wechat_oauth_authorize_url, exchange_h5_oauth_code, h5_oauth_is_configured, is_wechat_browser
 
 PHONE_PATTERN = re.compile(r"^\d{11}$")
@@ -41,6 +42,7 @@ RULES = load_rules()
 PHONE_REVIEW_BASE_SCENE = "phone_review_base"
 PHONE_REVIEW_BASE_REFUND_BIZ_TYPE = "phone_review_base_refund"
 PHONE_REVIEW_ASPECT_UNLOCK_SCENE = "phone_review_aspect_unlock"
+VOICE_TTS_SCENE = "voice_tts"
 REVIEW_PREVIEW_ASPECT_THRESHOLD = 4
 _RUNTIME_CONFIG_SCHEMA_ITEMS: list[dict[str, object]] = [
     {"config_key": "recharge.packages", "label": "充值套餐", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": True, "description": "充值金额与积分套餐列表"},
@@ -59,10 +61,16 @@ _RUNTIME_CONFIG_SCHEMA_ITEMS: list[dict[str, object]] = [
     {"config_key": "phone_review.aspect_order", "label": "维度顺序", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "手机号评测维度展示顺序"},
     {"config_key": "phone_review.unlock_enforcement_enabled", "label": "维度解锁限制", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "是否强制未解锁维度隐藏内容"},
     {"config_key": "agent.metaphysics_skill_enabled", "label": "智能体玄学技能开关", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "仅控制智能体的玄学技能"},
-    {"config_key": "promotion.normal_threshold_cents", "label": "普通大使门槛", "value_type": "int", "default_value": 39800, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "普通推广大使申请门槛"},
-    {"config_key": "promotion.senior_threshold_cents", "label": "高级大使门槛", "value_type": "int", "default_value": 398000, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "高级推广大使申请门槛"},
-    {"config_key": "promotion.normal_commission_rate", "label": "普通返佣比例", "value_type": "float", "default_value": 0.1, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "普通推广大使返佣比例"},
-    {"config_key": "promotion.senior_commission_rate", "label": "高级返佣比例", "value_type": "float", "default_value": 0.2, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "高级推广大使返佣比例"},
+    {"config_key": "voice.mode", "label": "语音播报模式", "value_type": "string", "default_value": "hybrid", "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "hybrid / browser / cloud"},
+    {"config_key": "voice.autoplay_default_enabled", "label": "语音默认自动播报", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "控制前台新用户是否默认自动播报"},
+    {"config_key": "voice.provider", "label": "语音合成供应商", "value_type": "string", "default_value": "aliyun", "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "当前支持 aliyun / bailian，检测到百炼 API Key 时优先走百炼语音"},
+    {"config_key": "voice.default_voice_key", "label": "默认音色", "value_type": "string", "default_value": "zhiyan_emo", "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "云 TTS 默认 voice key，知燕多情感对应 zhiyan_emo"},
+    {"config_key": "voice.cache_enabled", "label": "语音缓存", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "同文案同音色复用已生成音频"},
+    {"config_key": "voice.max_chars_per_request", "label": "单次播报最大字数", "value_type": "int", "default_value": 1800, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "超过后服务端会拒绝生成语音"},
+    {"config_key": "promotion.normal_threshold_cents", "label": "推广大使门槛", "value_type": "int", "default_value": 39800, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "推广大使申请门槛"},
+    {"config_key": "promotion.senior_threshold_cents", "label": "VIP 推广大使门槛", "value_type": "int", "default_value": 398000, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "VIP 推广大使申请门槛"},
+    {"config_key": "promotion.normal_commission_rate", "label": "推广大使返佣比例", "value_type": "float", "default_value": 0.1, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "推广大使返佣比例"},
+    {"config_key": "promotion.senior_commission_rate", "label": "VIP 返佣比例", "value_type": "float", "default_value": 0.2, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "VIP 推广大使返佣比例"},
     {"config_key": "promotion.min_withdraw_cents", "label": "最低提现门槛", "value_type": "int", "default_value": 3000, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "最低提现金额"},
     {"config_key": "promotion.order_completion_days", "label": "订单完成判定天数", "value_type": "int", "default_value": 7, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": True, "description": "充值订单完成判定天数"},
 ]
@@ -466,6 +474,7 @@ def get_public_runtime_config(channel: str | None = Query(default=None, max_leng
             phone_review=ModuleRuntimeConfigResponse(**payload["modules"]["phone_review"]),
             agent=ModuleRuntimeConfigResponse(**payload["modules"]["agent"]),
             almanac=ModuleRuntimeConfigResponse(**payload["modules"]["almanac"]),
+            voice=VoiceRuntimeConfigResponse(**payload["modules"]["voice"]),
         ),
     )
 
@@ -876,41 +885,82 @@ def get_internal_review_detail(review_id: str, _: None = Depends(require_interna
     return _build_review_record_response(review)
 
 
+def _normalize_service_key_text(value: str | None, *, required: bool = True) -> str | None:
+    normalized_value = (value or "").strip()
+    if required and not normalized_value:
+        raise HTTPException(status_code=422, detail="service_key_field_required")
+    return normalized_value or None
+
+
+def _mask_secret_value(secret_value: str) -> str:
+    normalized_secret = secret_value.strip()
+    if len(normalized_secret) <= 8:
+        return f"****{normalized_secret[-4:]}"
+    prefix = normalized_secret[:3] if normalized_secret.startswith("sk-") else normalized_secret[:4]
+    return f"{prefix}****{normalized_secret[-4:]}"
+
+
+def _build_secret_ref(*, provider: str, model: str, key_id: str) -> str:
+    normalized_model = re.sub(r"[^a-zA-Z0-9_.:-]+", "-", model.strip()).strip("-").lower() or "default"
+    return f"admin:{provider}:{normalized_model}:{key_id}"
+
+
+def _save_internal_service_key(*, payload: LlmApiKeyUpsertRequest, key_id: str | None) -> dict[str, object]:
+    existing_key = get_llm_api_key(key_id) if key_id else None
+    if key_id and existing_key is None:
+        raise HTTPException(status_code=404, detail="llm_api_key_not_found")
+
+    normalized_provider = str(_normalize_service_key_text(payload.provider)).lower()
+    normalized_model = str(_normalize_service_key_text(payload.model))
+    normalized_display_name = str(_normalize_service_key_text(payload.display_name))
+    normalized_key_id = key_id or uuid4().hex
+    normalized_secret_value = _normalize_service_key_text(payload.secret_value, required=False)
+    if key_id is None and not normalized_secret_value:
+        raise HTTPException(status_code=422, detail="secret_value_required")
+
+    existing_masked_key = str(existing_key.get("masked_key") or "") if existing_key else ""
+    masked_key = (
+        _mask_secret_value(normalized_secret_value)
+        if normalized_secret_value
+        else existing_masked_key or str(payload.masked_key or "****")
+    )
+    secret_ref = (
+        str(payload.secret_ref or "").strip()
+        or (str(existing_key.get("secret_ref")) if existing_key else "")
+        or _build_secret_ref(provider=normalized_provider, model=normalized_model, key_id=normalized_key_id)
+    )
+
+    try:
+        return upsert_llm_api_key(
+            key_id=normalized_key_id,
+            provider=normalized_provider,
+            model=normalized_model,
+            display_name=normalized_display_name,
+            masked_key=masked_key,
+            secret_ref=secret_ref,
+            secret_value=normalized_secret_value,
+            enabled=payload.enabled,
+            priority=payload.priority,
+            remark=payload.remark,
+            last_operator=payload.last_operator,
+            now_text=_utc_now(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 def get_internal_llm_api_keys(_: None = Depends(require_internal_admin_access)) -> LlmApiKeyListResponse:
-    return LlmApiKeyListResponse(items=[LlmApiKeyResponse(**item) for item in list_llm_api_keys()])
+    items = [LlmApiKeyResponse(**item) for item in list_llm_api_keys()]
+    return LlmApiKeyListResponse(items=items, total=len(items))
 
 
 def post_internal_llm_api_key(payload: LlmApiKeyUpsertRequest, _: None = Depends(require_internal_admin_access)) -> LlmApiKeyResponse:
-    saved = upsert_llm_api_key(
-        key_id=None,
-        provider=payload.provider,
-        model=payload.model,
-        display_name=payload.display_name,
-        masked_key=payload.masked_key,
-        secret_ref=payload.secret_ref,
-        enabled=payload.enabled,
-        priority=payload.priority,
-        remark=payload.remark,
-        last_operator=payload.last_operator,
-        now_text=_utc_now(),
-    )
+    saved = _save_internal_service_key(payload=payload, key_id=None)
     return LlmApiKeyResponse(**saved)
 
 
 def patch_internal_llm_api_key(key_id: str, payload: LlmApiKeyUpsertRequest, _: None = Depends(require_internal_admin_access)) -> LlmApiKeyResponse:
-    saved = upsert_llm_api_key(
-        key_id=key_id,
-        provider=payload.provider,
-        model=payload.model,
-        display_name=payload.display_name,
-        masked_key=payload.masked_key,
-        secret_ref=payload.secret_ref,
-        enabled=payload.enabled,
-        priority=payload.priority,
-        remark=payload.remark,
-        last_operator=payload.last_operator,
-        now_text=_utc_now(),
-    )
+    saved = _save_internal_service_key(payload=payload, key_id=key_id)
     return LlmApiKeyResponse(**saved)
 
 
@@ -1127,6 +1177,7 @@ def create_review_record(request: Request, background_tasks: BackgroundTasks, pa
         include_markdown=payload.include_markdown,
         user_id=user_id,
         points_cost=points_cost,
+        channel_key=channel_key,
     )
     review = get_review(review_id)
     if review is None:
@@ -1220,6 +1271,72 @@ def create_review_aspect_unlock_record(
     )
 
 
+def create_voice_narration(
+    payload: VoiceNarrationRequest,
+    request: Request,
+    current_user: dict[str, object] = Depends(require_registered_user),
+) -> VoiceNarrationResponse:
+    _ensure_module_available(module_key="voice", request=request)
+    current_user_id = str(current_user["user_id"])
+    channel_key = _resolve_request_channel(request)
+    review = _require_owned_review(
+        payload.review_id,
+        current_user_id=current_user_id,
+        not_ready_detail="review_not_ready_for_voice",
+    )
+    public_view = _resolve_review_voice_public_view(review, current_user_id=current_user_id, channel_key=channel_key)
+    if not public_view:
+        raise HTTPException(status_code=409, detail="review_not_ready_for_voice")
+
+    narration_text = _build_voice_narration_text(payload, public_view)
+    max_chars = get_runtime_voice_max_chars_per_request(channel_key)
+    if len(narration_text) > max_chars:
+        raise HTTPException(status_code=422, detail="voice_text_too_long")
+
+    provider = get_runtime_voice_provider(channel_key)
+    voice_key = str(payload.voice_key or get_runtime_voice_default_voice_key(channel_key)).strip() or get_runtime_voice_default_voice_key(channel_key)
+    try:
+        audio_result = synthesize_voice_audio(
+            text=narration_text,
+            scene=payload.scene,
+            provider=provider,
+            voice_key=voice_key,
+            cache_enabled=get_runtime_voice_cache_enabled(channel_key),
+        )
+    except VoiceProviderUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc) or "voice_provider_unavailable") from exc
+    except VoiceSynthesisError as exc:
+        raise HTTPException(status_code=502, detail=str(exc) or "voice_synthesis_failed") from exc
+
+    target_id = _resolve_voice_target_id(payload)
+    _record_zero_cost_usage(
+        user_id=current_user_id,
+        scene=VOICE_TTS_SCENE,
+        channel=channel_key,
+        target_id=target_id,
+        request_payload_summary={"scene": payload.scene, "review_id": payload.review_id, "aspect_key": payload.aspect_key},
+        result_summary={
+            "status": "completed",
+            "provider": audio_result.provider,
+            "voice_key": audio_result.voice_key,
+            "text_hash": audio_result.text_hash,
+            "char_count": audio_result.char_count,
+            "cached": audio_result.cached,
+        },
+    )
+    return VoiceNarrationResponse(
+        narration_id=uuid4().hex,
+        scene=payload.scene,
+        text_hash=audio_result.text_hash,
+        audio_url=audio_result.audio_url,
+        provider=audio_result.provider,
+        voice_key=audio_result.voice_key,
+        format="mp3",
+        char_count=audio_result.char_count,
+        cached=audio_result.cached,
+    )
+
+
 def get_user_debug(user_id: str) -> UserResponse:
     user = get_user(user_id)
     if user is None:
@@ -1280,13 +1397,14 @@ def _build_review_summary_response(review: dict[str, object]) -> ReviewSummaryRe
 
 
 def _build_user_response(user: dict[str, object]) -> UserResponse:
-    return UserResponse(user_id=str(user["user_id"]), status=str(user["status"]), identity_level=str(user.get("identity_level") or "normal_user"), nickname=user.get("nickname"), avatar_url=user.get("avatar_url"), profile_completed=bool(user["profile_completed"]), created_at=str(user["created_at"]), updated_at=str(user["updated_at"]), last_active_at=str(user["last_active_at"]))
+    return UserResponse(user_id=str(user["user_id"]), uid=str(user["uid"]) if user.get("uid") else None, status=str(user["status"]), identity_level=str(user.get("identity_level") or "normal_user"), nickname=user.get("nickname"), avatar_url=user.get("avatar_url"), profile_completed=bool(user["profile_completed"]), created_at=str(user["created_at"]), updated_at=str(user["updated_at"]), last_active_at=str(user["last_active_at"]))
 
 
 
 def _build_internal_user_response(user: dict[str, object]) -> InternalUserResponse:
     return InternalUserResponse(
         user_id=str(user["user_id"]),
+        uid=str(user["uid"]) if user.get("uid") else None,
         status=str(user["status"]),
         identity_level=str(user.get("identity_level") or "normal_user"),
         primary_identity_type=str(user.get("primary_identity_type") or "unknown"),
@@ -1496,6 +1614,106 @@ def _build_review_aspect_unlock_response(
     )
 
 
+def _build_voice_narration_text(payload: VoiceNarrationRequest, public_view: dict[str, Any]) -> str:
+    if payload.scene == "phone_summary":
+        phone_summary = _build_review_phone_summary(public_view.get("phone_summary"))
+        if phone_summary is None:
+            raise HTTPException(status_code=409, detail="phone_summary_not_ready")
+        parts = [
+            "综合评述",
+            phone_summary.title,
+            "风险提醒",
+            phone_summary.risk,
+            "使用建议",
+            phone_summary.usage_guidance,
+        ]
+        return _join_voice_parts(parts)
+
+    if payload.scene == "phone_stability":
+        stability_detail = _build_review_stability_detail(public_view.get("stability_detail"))
+        if stability_detail is None:
+            raise HTTPException(status_code=409, detail="stability_detail_not_ready")
+        parts = [
+            "长期使用建议",
+            stability_detail.verdict,
+            stability_detail.content,
+        ]
+        return _join_voice_parts(parts)
+
+    if payload.scene == "phone_aspect":
+        aspect_key = str(payload.aspect_key or "").strip().lower()
+        if not aspect_key:
+            raise HTTPException(status_code=422, detail="aspect_key_required")
+        aspect = _find_public_view_aspect(public_view, aspect_key)
+        if aspect is None:
+            raise HTTPException(status_code=422, detail="invalid_aspect_key")
+        if not aspect.is_unlocked:
+            raise HTTPException(status_code=403, detail="aspect_not_unlocked")
+        if not str(aspect.content or "").strip():
+            raise HTTPException(status_code=409, detail="aspect_not_ready")
+        aspect_title = aspect.short_title or aspect.title
+        parts = [
+            f"{aspect_title}专项",
+            aspect.title,
+        ]
+        if str(aspect.risk or "").strip():
+            parts.extend(["风险提示", aspect.risk or ""])
+        parts.append(aspect.content or "")
+        return _join_voice_parts(parts)
+
+    raise HTTPException(status_code=422, detail="invalid_voice_scene")
+
+
+def _resolve_voice_target_id(payload: VoiceNarrationRequest) -> str:
+    if payload.scene == "phone_aspect":
+        return f"{payload.review_id}:{payload.aspect_key}"
+    if payload.scene == "phone_stability":
+        return f"{payload.review_id}:stability"
+    return payload.review_id
+
+
+def _find_public_view_aspect(public_view: dict[str, Any], aspect_key: str) -> ReviewAspectResponse | None:
+    for aspect in _build_review_aspect_models(public_view):
+        if aspect.aspect_key == aspect_key:
+            return aspect
+    return None
+
+
+def _join_voice_parts(parts: list[str | None]) -> str:
+    cleaned_parts = []
+    for part in parts:
+        text = str(part or "").strip()
+        if text and text not in {"title", "risk", "usage guidance"}:
+            cleaned_parts.append(text.strip(" 。"))
+    narration_text = "。".join(cleaned_parts).strip(" 。")
+    if not narration_text:
+        raise HTTPException(status_code=409, detail="voice_text_empty")
+    return f"{narration_text}。"
+
+
+def _resolve_review_voice_public_view(
+    review: dict[str, object],
+    *,
+    current_user_id: str | None,
+    channel_key: str | None,
+) -> dict[str, Any] | None:
+    score_template = review.get("score_template")
+    if not isinstance(score_template, dict):
+        return None
+
+    score_result = review.get("score_result")
+    if isinstance(score_result, dict):
+        base_view = build_phone_review_product_view(score_result, score_template)
+        base_view["rules_version"] = RULES.get("version")
+    else:
+        stored_view = score_template.get("product_view")
+        if not isinstance(stored_view, dict):
+            return None
+        base_view = dict(stored_view)
+
+    return _apply_review_public_view_access(base_view, review, current_user_id=current_user_id, channel_key=channel_key)
+
+
 def _resolve_review_public_view(
     review: dict[str, object],
     *,
@@ -1536,15 +1754,31 @@ def _resolve_review_public_view(
         base_view = build_phone_review_product_view(score_result, score_template)
         base_view["rules_version"] = RULES.get("version")
         score_template["product_view"] = base_view
+        now_text = _utc_now()
         complete_review(
             review_id=str(review["id"]),
-            status=str(review.get("status") or "completed"),
+            status="completed",
             score_result=score_result,
             score_template=score_template,
             score_markdown=review.get("score_markdown") if isinstance(review.get("score_markdown"), str) else None,
-            updated_at=_utc_now(),
+            updated_at=now_text,
         )
+        review["status"] = "completed"
+        review["progress_stage"] = "completed"
+        review["progress_message"] = "评测结果已生成"
+        review["score_template"] = score_template
+        review["updated_at"] = now_text
 
+    return _apply_review_public_view_access(base_view, review, current_user_id=current_user_id, channel_key=channel_key)
+
+
+def _apply_review_public_view_access(
+    base_view: dict[str, Any],
+    review: dict[str, object],
+    *,
+    current_user_id: str | None,
+    channel_key: str | None,
+) -> dict[str, Any]:
     public_view = dict(base_view)
     aspects = [dict(item) for item in public_view.get("aspects", []) if isinstance(item, dict)]
     configured_order = get_runtime_phone_review_aspect_order(channel_key)
@@ -1774,7 +2008,7 @@ def _find_available_recharge_package(*, package_key: str, channel_key: str | Non
 
 
 
-def _require_owned_review(review_id: str, *, current_user_id: str) -> dict[str, object]:
+def _require_owned_review(review_id: str, *, current_user_id: str, not_ready_detail: str = "review_not_ready_for_unlock") -> dict[str, object]:
     review = get_review(review_id)
     if review is None:
         raise HTTPException(status_code=404, detail="review_not_found")
@@ -1782,7 +2016,7 @@ def _require_owned_review(review_id: str, *, current_user_id: str) -> dict[str, 
     if not review_user_id or review_user_id != current_user_id:
         raise HTTPException(status_code=404, detail="review_not_found")
     if str(review.get("status")) != "completed" or not isinstance(review.get("score_template"), dict):
-        raise HTTPException(status_code=409, detail="review_not_ready_for_unlock")
+        raise HTTPException(status_code=409, detail=not_ready_detail)
     return review
 
 
@@ -1820,7 +2054,7 @@ def _review_aspect_detail_ready(review: dict[str, object], aspect_key: str) -> b
 
 
 
-def _run_review_generation(*, review_id: str, phone: str, gender: str, include_markdown: bool, user_id: str | None = None, points_cost: int = 0) -> None:
+def _run_review_generation(*, review_id: str, phone: str, gender: str, include_markdown: bool, user_id: str | None = None, points_cost: int = 0, channel_key: str | None = None) -> None:
     aspect_prefetch_started = False
     try:
         update_review_progress(review_id=review_id, progress_stage="scoring", progress_message="正在计算基础盘面", updated_at=_utc_now())
@@ -1854,15 +2088,15 @@ def _run_review_generation(*, review_id: str, phone: str, gender: str, include_m
         bundle["score_template"]["product_view"] = build_phone_review_product_view(bundle["score_result"], bundle["score_template"])
         bundle["score_template"]["product_view"]["rules_version"] = RULES.get("version")
 
-        update_review_generation_payload(
+        complete_review_with_message(
             review_id=review_id,
             score_result=bundle["score_result"],
             score_template=bundle["score_template"],
             score_markdown=bundle.get("score_markdown"),
-            progress_stage="rendering",
-            progress_message="总评和长期使用建议已完成，专项内容正在预热",
+            progress_message="总评和长期使用建议已完成，专项内容正在后台生成",
             updated_at=_utc_now(),
         )
+        _start_review_voice_preheat(review_id=review_id, channel_key=channel_key)
     except Exception as exc:
         fail_review(review_id=review_id, error_message=str(exc), updated_at=_utc_now())
         if user_id and points_cost > 0:
@@ -1890,6 +2124,45 @@ def _start_review_aspect_prefetch(*, review_id: str) -> None:
     thread.start()
 
 
+def _start_review_voice_preheat(*, review_id: str, channel_key: str | None) -> None:
+    thread = threading.Thread(target=_run_review_voice_preheat, kwargs={"review_id": review_id, "channel_key": channel_key}, daemon=True)
+    thread.start()
+
+
+def _run_review_voice_preheat(*, review_id: str, channel_key: str | None) -> None:
+    if not is_module_enabled("voice", channel_key=channel_key):
+        return
+    review = get_review(review_id)
+    if review is None:
+        return
+    review_user_id = str(review.get("user_id") or "") or None
+    public_view = _resolve_review_voice_public_view(review, current_user_id=review_user_id, channel_key=channel_key)
+    if not public_view:
+        return
+
+    provider = get_runtime_voice_provider(channel_key)
+    voice_key = get_runtime_voice_default_voice_key(channel_key)
+    cache_enabled = get_runtime_voice_cache_enabled(channel_key)
+    max_chars = get_runtime_voice_max_chars_per_request(channel_key)
+    for scene in ("phone_summary", "phone_stability"):
+        try:
+            payload = VoiceNarrationRequest(scene=scene, review_id=review_id, voice_key=voice_key)
+            narration_text = _build_voice_narration_text(payload, public_view)
+            if len(narration_text) > max_chars:
+                continue
+            synthesize_voice_audio(
+                text=narration_text,
+                scene=scene,
+                provider=provider,
+                voice_key=voice_key,
+                cache_enabled=cache_enabled,
+            )
+        except (HTTPException, VoiceProviderUnavailableError, VoiceSynthesisError):
+            continue
+        except Exception:
+            continue
+
+
 def _run_review_aspect_prefetch(*, review_id: str) -> None:
     review = get_review(review_id)
     if review is None or not isinstance(review.get("score_result"), dict) or not isinstance(review.get("score_template"), dict):
@@ -1898,36 +2171,22 @@ def _run_review_aspect_prefetch(*, review_id: str) -> None:
         score_template = dict(review["score_template"])
         if not isinstance(score_template.get("product_aspects_render"), dict):
             score_template["product_aspects_render"] = {}
-        update_review_score_template(review_id=review_id, score_template=score_template, updated_at=_utc_now())
-
-        progressed_count = 0
-        preview_completed = False
 
         def persist_aspect(aspect_key: str, rendered_aspect: dict[str, Any]) -> None:
-            nonlocal progressed_count, preview_completed
             current_review = get_review(review_id)
             if current_review is None or not isinstance(current_review.get("score_template"), dict):
                 return
+            current_score_result = current_review.get("score_result")
+            if not isinstance(current_score_result, dict):
+                current_score_result = review["score_result"]
             current_template = dict(current_review["score_template"])
             current_render = current_template.get("product_aspects_render") if isinstance(current_template.get("product_aspects_render"), dict) else {}
             next_render = dict(current_render)
             next_render[aspect_key] = rendered_aspect
             current_template["product_aspects_render"] = next_render
-            current_template["product_view"] = build_phone_review_product_view(review["score_result"], current_template)
+            current_template["product_view"] = build_phone_review_product_view(current_score_result, current_template)
             current_template["product_view"]["rules_version"] = RULES.get("version")
             update_review_score_template(review_id=review_id, score_template=current_template, updated_at=_utc_now())
-            progressed_count = len(next_render)
-
-            if progressed_count >= REVIEW_PREVIEW_ASPECT_THRESHOLD and not preview_completed:
-                complete_review_with_message(
-                    review_id=review_id,
-                    score_result=review["score_result"],
-                    score_template=current_template,
-                    score_markdown=review.get("score_markdown") if isinstance(review.get("score_markdown"), str) else None,
-                    progress_message=f"前 {REVIEW_PREVIEW_ASPECT_THRESHOLD} 个专项已完成，剩余专项继续后台生成",
-                    updated_at=_utc_now(),
-                )
-                preview_completed = True
 
         rendered_aspects = build_product_review_aspects_render(
             {
@@ -1936,28 +2195,20 @@ def _run_review_aspect_prefetch(*, review_id: str) -> None:
             },
             on_result=persist_aspect,
         )
-        score_template["product_aspects_render"] = rendered_aspects
-        score_template["product_view"] = build_phone_review_product_view(review["score_result"], score_template)
-        score_template["product_view"]["rules_version"] = RULES.get("version")
-        if preview_completed or len(rendered_aspects) >= REVIEW_PREVIEW_ASPECT_THRESHOLD:
-            complete_review_with_message(
-                review_id=review_id,
-                score_result=review["score_result"],
-                score_template=score_template,
-                score_markdown=review.get("score_markdown") if isinstance(review.get("score_markdown"), str) else None,
-                progress_message="12 个专项已全部生成",
-                updated_at=_utc_now(),
-            )
-        else:
-            update_review_generation_payload(
-                review_id=review_id,
-                score_result=review["score_result"],
-                score_template=score_template,
-                score_markdown=review.get("score_markdown") if isinstance(review.get("score_markdown"), str) else None,
-                progress_stage="finalizing",
-                progress_message=f"专项内容已生成 {len(rendered_aspects)}/12，稍后可继续刷新查看",
-                updated_at=_utc_now(),
-            )
+        current_review = get_review(review_id)
+        if current_review is None or not isinstance(current_review.get("score_template"), dict):
+            return
+        current_score_result = current_review.get("score_result")
+        if not isinstance(current_score_result, dict):
+            current_score_result = review["score_result"]
+        current_template = dict(current_review["score_template"])
+        current_render = current_template.get("product_aspects_render") if isinstance(current_template.get("product_aspects_render"), dict) else {}
+        next_render = dict(current_render)
+        next_render.update(rendered_aspects)
+        current_template["product_aspects_render"] = next_render
+        current_template["product_view"] = build_phone_review_product_view(current_score_result, current_template)
+        current_template["product_view"]["rules_version"] = RULES.get("version")
+        update_review_score_template(review_id=review_id, score_template=current_template, updated_at=_utc_now())
     except Exception:
         return
 

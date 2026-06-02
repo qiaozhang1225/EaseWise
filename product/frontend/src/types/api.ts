@@ -1,6 +1,9 @@
 export type Gender = 'male' | 'female';
 export type ReviewStatus = 'processing' | 'completed' | 'failed';
 export type ReviewProgressStage = 'queued' | 'scoring' | 'rendering' | 'finalizing' | 'completed' | 'failed';
+export type VoiceNarrationScene = 'phone_summary' | 'phone_stability' | 'phone_aspect';
+export type VoiceNarrationFormat = 'mp3';
+export type VoiceMode = 'hybrid' | 'browser' | 'cloud';
 
 export interface ReviewPhoneSummary {
   title: string;
@@ -180,6 +183,7 @@ export interface DashboardResponse {
 
 export interface UserResponse {
   user_id: string;
+  uid: string | null;
   status: string;
   identity_level: string;
   nickname: string | null;
@@ -239,6 +243,16 @@ export interface ModuleRuntimeConfigResponse {
   metaphysics_skill_enabled?: boolean | null;
 }
 
+export interface VoiceRuntimeConfigResponse {
+  enabled: boolean;
+  mode: VoiceMode;
+  autoplay_default_enabled: boolean;
+  provider: string;
+  default_voice_key: string;
+  cache_enabled: boolean;
+  max_chars_per_request: number;
+}
+
 export interface PublicRuntimeConfigResponse {
   channel: string | null;
   points: {
@@ -262,11 +276,29 @@ export interface PublicRuntimeConfigResponse {
     phone_review: ModuleRuntimeConfigResponse;
     agent: ModuleRuntimeConfigResponse;
     almanac: ModuleRuntimeConfigResponse;
+    voice: VoiceRuntimeConfigResponse;
   };
 }
 
 export interface PhoneStatusRequest {
   phone: string;
+}
+
+export type VoiceNarrationRequest =
+  | { scene: 'phone_summary'; review_id: string; voice_key?: string | null }
+  | { scene: 'phone_stability'; review_id: string; voice_key?: string | null }
+  | { scene: 'phone_aspect'; review_id: string; aspect_key: string; voice_key?: string | null };
+
+export interface VoiceNarrationResponse {
+  narration_id: string;
+  scene: VoiceNarrationScene;
+  text_hash: string;
+  audio_url: string;
+  provider: string;
+  voice_key: string;
+  format: VoiceNarrationFormat;
+  char_count: number;
+  cached: boolean;
 }
 
 export interface PhoneStatusResponse {
@@ -332,6 +364,7 @@ export interface ReviewAspectUnlockResponse {
 
 export interface InternalUserResponse {
   user_id: string;
+  uid: string | null;
   status: string;
   identity_level: string;
   primary_identity_type: string;
@@ -538,6 +571,7 @@ export interface LlmApiKeyResponse {
   display_name: string;
   masked_key: string;
   secret_ref: string;
+  secret_configured: boolean;
   enabled: boolean;
   priority: number;
   remark: string | null;

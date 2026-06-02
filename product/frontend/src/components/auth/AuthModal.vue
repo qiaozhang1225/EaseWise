@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import {
   AlertCircle,
   ArrowRight,
@@ -36,6 +36,8 @@ const phoneHint = ref('');
 const actionError = ref('');
 const submitting = ref(false);
 const passwordVisible = ref(false);
+const phoneInputRef = ref<HTMLInputElement | null>(null);
+const passwordInputRef = ref<HTMLInputElement | null>(null);
 
 const visible = computed(() => state.authPromptVisible);
 const promptReason = computed(() => state.authPromptReason || '继续当前操作');
@@ -170,9 +172,11 @@ async function handlePhoneNext(): Promise<void> {
     if (status.registered) {
       mode.value = 'login';
       phoneHint.value = '该手机号已注册，请直接输入密码登录。';
+      await focusPasswordInput();
     } else {
       mode.value = 'register';
       phoneHint.value = '该手机号尚未注册，请先设置密码完成注册。';
+      await focusPasswordInput();
     }
   } catch (error) {
     actionError.value = humanizeError(error);
@@ -233,6 +237,7 @@ function switchToPhoneFlow(): void {
   mode.value = 'phone';
   actionError.value = '';
   phoneHint.value = '';
+  void focusPhoneInput();
 }
 
 function isRegisterMode(): boolean {
@@ -259,6 +264,16 @@ function handleBack(): void {
     return;
   }
   mode.value = 'options';
+}
+
+async function focusPhoneInput(): Promise<void> {
+  await nextTick();
+  phoneInputRef.value?.focus();
+}
+
+async function focusPasswordInput(): Promise<void> {
+  await nextTick();
+  passwordInputRef.value?.focus();
 }
 </script>
 
@@ -411,6 +426,7 @@ function handleBack(): void {
                 <span class="pl-3.5 text-[11px] text-brand-primary font-bold">+86</span>
                 <span class="h-4 w-px bg-gray-300 mx-2"></span>
                 <input
+                  ref="phoneInputRef"
                   v-model="phone"
                   type="tel"
                   inputmode="numeric"
@@ -441,6 +457,7 @@ function handleBack(): void {
                     <span class="pl-3.5 text-gray-400 shrink-0"><LockKeyhole :size="12" /></span>
                     <span class="h-4 w-px bg-gray-300 mx-2"></span>
                     <input
+                      ref="passwordInputRef"
                       v-model="password"
                       :type="passwordVisible ? 'text' : 'password'"
                       autocomplete="current-password"

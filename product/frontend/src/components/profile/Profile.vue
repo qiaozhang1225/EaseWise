@@ -13,7 +13,7 @@ import {
   LogOut,
   LogIn,
   PencilLine,
-  LockKeyhole,
+  KeyRound,
 } from 'lucide-vue-next';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 import type { PointsLedgerEntryResponse, ReviewSummary } from '../../types/api';
@@ -43,7 +43,6 @@ const {
 
 const activeModal = ref<string | null>(null);
 const feedbackText = ref('');
-const ambassadorStatus = ref<'regular' | 'ambassador'>('regular');
 const showSystemIntro = ref(false);
 const openingReviewId = ref<string | null>(null);
 const historyActionError = ref('');
@@ -68,6 +67,7 @@ const currentPoints = computed(() => state.points?.balance ?? 0);
 const reportHistory = computed(() => state.reviewHistory);
 const ledgerRecords = computed(() => state.pointsLedger);
 const userReady = computed(() => Boolean(state.user));
+const profileUserUidDisplay = computed(() => state.user?.uid || '未生成');
 const primaryAccountActionLabel = computed(() => (isRegisteredUser.value ? '退出登录' : '登录 / 注册'));
 const profileIdentityLabel = computed(() => {
   if (!isRegisteredUser.value) {
@@ -89,18 +89,18 @@ const profileIdentityLabel = computed(() => {
 });
 const profileIdentityClass = computed(() => {
   if (profileIdentityLabel.value.startsWith('SVIP')) {
-    return 'bg-amber-500/15 text-amber-700 border-amber-500/20';
+    return 'bg-gradient-to-r from-violet-600 via-pink-600 to-amber-500 text-white font-black text-[11.5px] px-4 py-1.5 rounded-full shadow-[0_8px_24px_rgba(139,92,246,0.45)] tracking-widest border-2 border-amber-300/40 uppercase';
   }
   if (profileIdentityLabel.value.startsWith('VIP')) {
-    return 'bg-purple-500/10 text-purple-700 border-purple-500/15';
+    return 'bg-gradient-to-r from-rose-500 via-orange-500 to-rose-600 text-white font-black text-[11px] px-3.5 py-1.5 rounded-full shadow-[0_6px_16px_rgba(244,63,94,0.35)] tracking-wider border border-white/20';
   }
   if (profileIdentityLabel.value === '推广大使') {
-    return 'bg-brand-primary/10 text-brand-primary border-brand-primary/15';
+    return 'bg-gradient-to-r from-[#DFB26F] via-[#F6DFA2] to-[#B38C4F] text-[#422C0A] border border-[#F6DFA2]/40 font-black text-[10.5px] px-3.5 py-1.5 rounded-full shadow-[0_4px_12px_rgba(223,178,111,0.32)] tracking-wide';
   }
   if (profileIdentityLabel.value === '普通用户') {
-    return 'bg-green-500/10 text-green-700 border-green-500/15';
+    return 'bg-sky-50 text-sky-700 border border-sky-200/80 text-[10.5px] font-bold px-3 py-1 rounded-full shadow-[0_2px_6px_rgba(14,165,233,0.1)]';
   }
-  return 'bg-amber-500/10 text-amber-700 border-amber-500/15';
+  return 'bg-neutral-100 text-neutral-600 border border-neutral-200/60 text-[10.5px] font-medium px-2.5 py-1 rounded-full';
 });
 const connectionHint = computed(() => {
   if (state.connectionError) {
@@ -511,7 +511,7 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         <div class="absolute right-0 bottom-0 text-slate-100/40 font-serif text-[42px] select-none translate-y-3 translate-x-1">
           ☯
         </div>
-        <div class="flex items-center gap-3.5 z-10 min-w-0">
+        <div class="flex items-center gap-3.5 z-10 min-w-0 flex-1">
           <div class="relative group shrink-0">
             <div class="w-14 h-14 rounded-full overflow-hidden border-2 border-brand-primary/10 bg-brand-primary/5 flex items-center justify-center font-serif font-bold text-brand-primary text-[20px] shadow-inner select-none">
               <img
@@ -543,7 +543,7 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
 
           <div class="text-left min-w-0">
             <div class="flex items-center gap-1.5 flex-wrap">
-              <h3 class="font-serif text-[17px] font-black text-brand-ink-strong truncate max-w-[12rem]">{{ displayNickname }}</h3>
+              <h3 class="font-serif text-[17px] font-black text-brand-ink-strong truncate max-w-[11rem]">{{ displayNickname }}</h3>
               <button
                 type="button"
                 class="text-gray-400 hover:text-brand-primary cursor-pointer select-none outline-none inline-flex items-center"
@@ -553,54 +553,52 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
               </button>
             </div>
 
-            <div class="mt-2 flex flex-wrap items-center gap-2">
-              <span class="inline-flex items-center px-2.5 py-1 rounded-lg border font-sans text-[10.5px] font-black select-none" :class="profileIdentityClass">
-                {{ profileIdentityLabel }}
+            <p class="mt-1 text-[10.5px] text-brand-secondary/85 font-mono flex items-center gap-1 select-none min-w-0">
+              <span class="bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded scale-90 origin-left truncate max-w-[13rem]">
+                UID: {{ profileUserUidDisplay }}
               </span>
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 px-2.5 py-1 font-sans text-[10.5px] font-semibold bg-brand-paper hover:bg-brand-primary/10 rounded-lg text-brand-secondary hover:text-brand-primary transition-colors cursor-pointer outline-none"
-                @click="openPasswordEditor"
-              >
-                <LockKeyhole :size="12" />
-                修改密码
-              </button>
-            </div>
+            </p>
             <p v-if="avatarUploadError" class="mt-1.5 text-[10px] text-red-500 leading-relaxed">
               {{ avatarUploadError }}
             </p>
           </div>
         </div>
-        <button
-          v-if="ambassadorStatus === 'ambassador'"
-          type="button"
-          class="inline-flex self-start mt-1 px-2.5 py-1 font-sans text-[10px] font-semibold bg-brand-paper hover:bg-brand-primary/10 rounded text-brand-secondary hover:text-brand-primary transition-colors cursor-pointer outline-none"
-          @click="showSystemIntro = true"
+        <span
+          class="inline-flex items-center gap-1.5 select-none transition-all shrink-0 ml-3"
+          :class="profileIdentityClass"
         >
-          VIP推广大使
-        </button>
+          {{ profileIdentityLabel }}
+        </span>
       </div>
 
       <div
         v-else
-        class="bg-white rounded-2xl p-5 border border-amber-200/60 bg-amber-50/20 flex flex-col items-center text-center space-y-4 shadow-sm"
+        class="bg-white rounded-2xl p-5 border border-gray-100 flex items-center justify-between shadow-sm relative overflow-hidden"
       >
-        <div class="w-11 h-11 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-600 shrink-0">
-          <AlertTriangle :size="20" />
+        <div class="absolute right-0 bottom-0 text-slate-100/40 font-serif text-[42px] select-none translate-y-3 translate-x-1">
+          ☯
         </div>
-        <div class="space-y-1">
-          <p class="font-sans text-[13px] font-bold text-brand-ink-strong">{{ profileFallbackTitle }}</p>
-          <p v-if="connectionHint" class="font-sans text-[11px] text-brand-secondary px-4 leading-relaxed">
-            {{ connectionHint }}
-          </p>
+        <div class="flex items-center gap-3.5 z-10 min-w-0">
+          <div class="w-14 h-14 rounded-full border border-gray-100 bg-gray-50 flex items-center justify-center text-gray-400 shrink-0 shadow-inner select-none">
+            <AlertTriangle :size="20" />
+          </div>
+          <div class="text-left min-w-0">
+            <h3 class="text-[16px] font-serif font-black text-brand-ink-strong">游客用户</h3>
+            <p class="text-[10.5px] text-brand-secondary/80 mt-1 leading-relaxed">
+              {{ profileFallbackTitle }}
+            </p>
+            <p v-if="connectionHint" class="text-[10px] text-brand-secondary/70 mt-1 leading-relaxed">
+              {{ connectionHint }}
+            </p>
+          </div>
         </div>
         <button
           @click="handleProfileFallbackAction"
-          class="px-6 py-2 bg-brand-primary hover:bg-brand-primary-strong text-white rounded-full font-sans text-[13px] font-bold inline-flex items-center gap-1 cursor-pointer outline-none shadow-sm transition-all"
+          class="z-10 inline-flex items-center gap-1 px-3.5 py-1.5 text-[10.5px] font-bold rounded-full select-none bg-neutral-100 hover:bg-neutral-200 text-neutral-600 border border-neutral-300/60 shadow-xs cursor-pointer transition-all active:scale-95"
           :disabled="state.booting"
         >
           <RefreshCw v-if="state.booting || state.connectionError" :size="13" :class="state.booting ? 'animate-spin' : ''" />
-          <LogIn v-else :size="13" />
+          <LogIn v-else :size="12" />
           <span>{{ profileFallbackActionLabel }}</span>
         </button>
       </div>
@@ -700,6 +698,20 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
             <span v-if="reportHistory.length > 0" class="font-sans text-[10px] text-brand-primary font-bold bg-brand-primary/10 px-1.5 py-0.5 rounded-full">
               {{ reportHistory.length }}
             </span>
+            <ChevronRight :size="16" class="text-gray-300" />
+          </div>
+        </div>
+
+        <div
+          @click="openPasswordEditor"
+          class="flex items-center justify-between p-4 bg-white hover:bg-gray-50/50 transition-colors cursor-pointer select-none"
+        >
+          <div class="flex items-center gap-3">
+            <KeyRound :size="18" class="text-brand-secondary" />
+            <span class="font-sans text-[13px] font-bold text-brand-ink-strong">修改密码</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="font-sans text-[9px] text-gray-400 font-bold bg-gray-100 px-1.5 py-0.5 rounded-md">密保安全</span>
             <ChevronRight :size="16" class="text-gray-300" />
           </div>
         </div>
