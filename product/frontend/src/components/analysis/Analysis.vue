@@ -12,7 +12,6 @@ import {
   Star,
   Clock,
   Check,
-  Copy,
   AlertCircle,
   Sparkles,
   Lightbulb,
@@ -90,8 +89,8 @@ const {
   requestRegisteredUser,
   reviewBasePointsCost,
   aspectUnlockPointsCost,
-  customerServiceContact,
-  customerServiceGuidance,
+  customerServiceCopyForScene,
+  openCustomerServiceModal,
   humanizeError,
 } = useEaseWiseApp();
 
@@ -108,7 +107,6 @@ const activeAspect = ref(-1);
 const errorType = ref<ErrorType>('none');
 const errorDetail = ref('');
 const toast = ref<string | null>(null);
-const copied = ref(false);
 const exportingImage = ref(false);
 const currentProgressStage = ref<ReviewProgressStage | null>(null);
 const currentProgressMessage = ref('');
@@ -1189,17 +1187,8 @@ async function tryUnlockAspectWithWait(reviewId: string, aspectKey: string, titl
   throw new Error('aspect_unlock_timeout');
 }
 
-async function handleCopyServiceContact(): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(customerServiceContact.value);
-    copied.value = true;
-    showToast('已复制客服联系方式。');
-    window.setTimeout(() => {
-      copied.value = false;
-    }, 2000);
-  } catch {
-    showToast('复制失败，请手动记录客服联系方式。');
-  }
+function handleOpenServiceContact(scene = 'review_support'): void {
+  openCustomerServiceModal(scene);
 }
 
 function handleSelectNextLockedAspect(): void {
@@ -2414,7 +2403,7 @@ function sleep(ms: number): Promise<void> {
 
         <section class="mt-4">
           <div
-            @click="handleCopyServiceContact"
+            @click="handleOpenServiceContact('review_support')"
             class="bg-brand-primary/5 hover:bg-brand-primary/10 transition-colors border border-brand-primary/10 rounded-2xl p-4 flex items-center justify-between cursor-pointer group shadow-sm bg-white"
           >
             <div class="flex items-center gap-2.5 text-left">
@@ -2423,13 +2412,12 @@ function sleep(ms: number): Promise<void> {
               </div>
               <div class="font-sans">
                 <p class="text-[13px] font-bold text-brand-ink-strong">联系客服获取后续支持</p>
-                <p class="text-[11px] text-brand-secondary mt-0.5">{{ customerServiceGuidance }}</p>
+                <p class="text-[11px] text-brand-secondary mt-0.5">{{ customerServiceCopyForScene('review_support') }}</p>
               </div>
             </div>
             <div class="text-brand-primary font-sans font-bold text-[11px] bg-brand-primary/10 group-hover:bg-brand-primary/20 px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
-              <span>复制</span>
-              <Check v-if="copied" :size="10" />
-              <Copy v-else :size="10" />
+              <span>打开</span>
+              <MessageSquare :size="10" />
             </div>
           </div>
         </section>
@@ -2461,22 +2449,21 @@ function sleep(ms: number): Promise<void> {
             <Lightbulb :size="16" class="text-brand-primary shrink-0 mt-0.5" />
             <div>
               <span class="font-bold text-brand-ink-strong">联系客服支持: </span>
-              <span>{{ customerServiceGuidance }}</span>
+              <span>{{ customerServiceCopyForScene('points_insufficient') }}</span>
             </div>
           </div>
 
           <div class="bg-brand-paper p-3 rounded-xl flex items-center justify-between border border-gray-100 font-sans">
             <div class="text-left font-mono">
-              <p class="text-[10px] text-brand-secondary">客服联系方式：</p>
-              <p class="text-[15px] font-bold text-brand-ink-strong">{{ customerServiceContact }}</p>
+              <p class="text-[10px] text-brand-secondary">客服支持：</p>
+              <p class="text-[15px] font-bold text-brand-ink-strong">打开客服弹窗</p>
             </div>
             <button
-              @click="handleCopyServiceContact"
+              @click="handleOpenServiceContact('points_insufficient')"
               class="px-3.5 py-1.5 bg-brand-primary text-white hover:bg-brand-primary-strong font-sans text-[11px] font-bold rounded-lg cursor-pointer outline-none flex items-center gap-1 shrink-0 transition-all shadow-sm"
             >
-              <Check v-if="copied" :size="11" />
-              <Copy v-else :size="11" />
-              <span>{{ copied ? '已复制' : '复制' }}</span>
+              <MessageSquare :size="11" />
+              <span>联系客服</span>
             </button>
           </div>
         </div>

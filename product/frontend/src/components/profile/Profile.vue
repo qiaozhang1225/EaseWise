@@ -39,6 +39,7 @@ const {
   isGuestUser,
   isRegisteredUser,
   requestRegisteredUser,
+  openCustomerServiceModal,
   humanizeError,
 } = useEaseWiseApp();
 
@@ -1027,9 +1028,17 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
               placeholder="请再次输入新密码"
             />
 
-            <p class="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 font-sans text-[11px] text-amber-700 leading-relaxed">
-              如果忘记当前密码，当前版本暂未接入短信验证自助找回。请先联系客服人工核验，或等待验证能力接入后再重置。
-            </p>
+            <div class="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 font-sans text-[11px] text-amber-700 leading-relaxed">
+              <p>如果忘记当前密码，当前版本暂未接入短信验证自助找回。请先联系客服人工核验，或等待验证能力接入后再重置。</p>
+              <button
+                type="button"
+                class="mt-2 inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-[10.5px] font-bold text-amber-800 shadow-sm outline-none"
+                @click="openCustomerServiceModal('account_security')"
+              >
+                <MessageSquare :size="11" />
+                <span>联系客服</span>
+              </button>
+            </div>
 
             <p v-if="passwordSaveError" class="rounded-xl border border-red-100 bg-red-50 px-3 py-2 font-sans text-[11px] text-red-600 leading-relaxed">
               {{ passwordSaveError }}

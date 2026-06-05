@@ -5,6 +5,7 @@ import {
   TrendingUp, Users2, ShieldCheck, Landmark, CheckCircle2,
   Gift, Calculator, HelpCircle
 } from 'lucide-vue-next';
+import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 
 // Emits to communicate with parent
 const emit = defineEmits<{
@@ -13,7 +14,7 @@ const emit = defineEmits<{
 
 const copied = ref(false);
 const showApplyPlaceholder = ref(false);
-const customerServiceLink = '';
+const { openCustomerServiceModal } = useEaseWiseApp();
 
 // Interactive Calculator states
 // We divide the calculator into two versions: "partner" and "ambassador"
@@ -123,12 +124,7 @@ const copyManualText = () => {
 };
 
 const handleContactSupport = () => {
-  if (customerServiceLink) {
-    window.location.href = customerServiceLink;
-    return;
-  }
-
-  window.alert('联系客服链接暂未配置。');
+  openCustomerServiceModal('promotion_consulting');
 };
 
 const handleApplyJoin = () => {

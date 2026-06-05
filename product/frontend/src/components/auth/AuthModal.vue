@@ -20,8 +20,8 @@ const {
   cancelAuthRequest,
   checkPhoneAuthStatus,
   loginWithPhonePassword,
-  customerServiceContact,
-  customerServiceGuidance,
+  customerServiceCopyForScene,
+  openCustomerServiceModal,
   registerWithPhonePassword,
   humanizeError,
 } = useEaseWiseApp();
@@ -154,6 +154,10 @@ function openForgotPasswordHelp(): void {
   mode.value = 'forgot_password';
   actionError.value = '';
   phoneHint.value = '';
+}
+
+function openForgotPasswordCustomerService(): void {
+  openCustomerServiceModal('account_security');
 }
 
 async function handlePhoneNext(): Promise<void> {
@@ -395,13 +399,19 @@ async function focusPasswordInput(): Promise<void> {
               </p>
               <div class="rounded-xl bg-brand-paper border border-gray-100 px-3 py-2 text-left text-[10.5px] text-brand-secondary leading-relaxed">
                 <p class="font-bold text-brand-ink-strong">客服指引</p>
-                <p class="mt-1">{{ customerServiceGuidance }}</p>
-                <p class="mt-1 break-all">联系信息：{{ customerServiceContact }}</p>
+                <p class="mt-1">{{ customerServiceCopyForScene('account_security') }}</p>
               </div>
             </div>
             <button
               type="button"
               class="w-full py-2.5 bg-brand-primary hover:bg-brand-primary-strong text-white active:scale-95 font-bold rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer transition-all outline-none border border-transparent shadow-sm"
+              @click="openForgotPasswordCustomerService"
+            >
+              联系客服人工核验
+            </button>
+            <button
+              type="button"
+              class="w-full py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-600 active:scale-95 font-bold rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer transition-all outline-none border border-transparent"
               @click="handleBack"
             >
               <ChevronLeft :size="12" />

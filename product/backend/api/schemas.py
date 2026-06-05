@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 Gender = Literal['male', 'female']
 ReviewStatus = Literal['processing', 'completed', 'failed']
 ReviewProgressStage = Literal['queued', 'scoring', 'rendering', 'finalizing', 'completed', 'failed']
 AgentMessageRole = Literal['user', 'assistant']
 RuntimeConfigScopeType = Literal['global', 'channel']
+InitialPointsApplyScope = Literal['future_users', 'all_users']
 RechargeOrderStatus = Literal['pending', 'approved', 'rejected']
 RechargeOrderReviewAction = Literal['approve', 'reject']
 AdminRechargeOrderStatus = Literal['unpaid', 'paid', 'completed', 'refund_pending', 'refunded', 'closed']
@@ -234,6 +235,10 @@ class UserProfileUpdateRequest(BaseModel):
 
 class AvatarUploadRequest(BaseModel):
     image_data_url: str = Field(min_length=1, max_length=2_000_000)
+
+
+class CustomerServiceQrCodeUploadRequest(BaseModel):
+    image_data_url: str = Field(min_length=1, max_length=2_100_000)
 
 
 class PasswordChangeRequest(BaseModel):
@@ -482,6 +487,18 @@ class RechargeOrderReviewResponse(BaseModel):
     ledger: PointsLedgerEntryResponse | None = None
 
 
+class RechargeOrderManualCompleteRequest(BaseModel):
+    payment_method: str | None = Field(default=None, max_length=64)
+    payment_reference: str | None = Field(default=None, max_length=128)
+    operator_note: str | None = Field(default=None, max_length=512)
+
+
+class RechargeOrderManualCompleteResponse(BaseModel):
+    order: RechargeOrderResponse
+    points: PointsAccountResponse
+    ledger: PointsLedgerEntryResponse | None = None
+
+
 class ManualPointsAdjustRequest(BaseModel):
     delta: int
     biz_type: str = Field(min_length=1, max_length=128)
@@ -580,6 +597,66 @@ class UsageRecordDetailResponse(BaseModel):
     record: UsageRecordResponse
     user: InternalUserResponse
     recent_orders: list[RechargeOrderSummaryResponse] = Field(default_factory=list)
+
+
+class InternalPhoneQimenSummaryResponse(BaseModel):
+    generated_at: str
+    today_review_count: int = 0
+    week_review_count: int = 0
+    total_review_count: int = 0
+    completed_review_count: int = 0
+    failed_review_count: int = 0
+    success_rate: float = 0
+    average_generation_seconds: float | None = None
+    aspect_unlock_count: int = 0
+    aspect_unlock_rate: float = 0
+    review_points_cost: int = 0
+    voice_request_count: int = 0
+
+
+class InternalPhoneQimenReviewItemResponse(BaseModel):
+    review_id: str
+    user_id: str | None = None
+    user_uid: str | None = None
+    user_nickname: str | None = None
+    user_phone: str | None = None
+    phone: str
+    gender: Gender
+    status: ReviewStatus
+    progress_stage: ReviewProgressStage | None = None
+    progress_message: str | None = None
+    error_message: str | None = None
+    channel: str | None = None
+    base_points_cost: int = 0
+    unlock_count: int = 0
+    voice_count: int = 0
+    generation_duration_seconds: int | None = None
+    created_at: str
+    updated_at: str
+
+
+class InternalPhoneQimenReviewListResponse(BaseModel):
+    items: list[InternalPhoneQimenReviewItemResponse]
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+
+
+class InternalPhoneQimenAspectUnlockRecordResponse(BaseModel):
+    unlock_id: str
+    review_id: str
+    user_id: str
+    aspect_key: str
+    aspect_name: str
+    points_cost: int
+    usage_record_id: str | None = None
+    unlocked_at: str
+
+
+class InternalPhoneQimenReviewDetailResponse(BaseModel):
+    review: InternalPhoneQimenReviewItemResponse
+    unlock_records: list[InternalPhoneQimenAspectUnlockRecordResponse] = Field(default_factory=list)
+    voice_records: list[UsageRecordResponse] = Field(default_factory=list)
 
 
 class AdminReviewRequest(BaseModel):
@@ -813,6 +890,25 @@ class RuntimeConfigEntryResponse(BaseModel):
     updated_at: str
 
 
+class RuntimeInitialPointsUpdateRequest(BaseModel):
+    initial_grant: int = Field(ge=0)
+    apply_scope: InitialPointsApplyScope = 'future_users'
+    reason: str | None = Field(default=None, max_length=512)
+
+
+class RuntimeInitialPointsUpdateResponse(BaseModel):
+    previous_initial_grant: int
+    initial_grant: int
+    delta: int
+    apply_scope: InitialPointsApplyScope
+    target_user_count: int = 0
+    affected_user_count: int = 0
+    adjusted_points_total: int = 0
+    zeroed_user_count: int = 0
+    operation_id: str
+    entry: RuntimeConfigEntryResponse
+
+
 class RuntimeConfigEntryUpsertRequest(BaseModel):
     scope_type: RuntimeConfigScopeType
     scope_key: str = Field(min_length=1, max_length=128)
@@ -838,6 +934,13 @@ class RuntimeConfigSchemaItemResponse(BaseModel):
     group: str
     high_risk: bool = False
     description: str | None = None
+    admin_group: str | None = None
+    admin_section: str | None = None
+    advanced: bool = False
+    sort_order: int = 100
+    input_options: list[dict[str, Any]] | None = None
+    help_text: str | None = None
+    admin_hidden: bool = False
 
 
 class RuntimeConfigSchemaResponse(BaseModel):
@@ -853,9 +956,16 @@ class RuntimeRechargeConfigResponse(BaseModel):
 
 
 class CustomerServiceConfigResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    wechat_id: str | None = None
     contact_url: str | None = None
     qr_code_url: str | None = None
     guidance_text: str
+    qr_guidance_text: str
+    copy_button_text: str
+    unconfigured_text: str
+    copy_texts: dict[str, str] = Field(default_factory=dict, alias='copy')
 
 
 class ComplianceConfigResponse(BaseModel):

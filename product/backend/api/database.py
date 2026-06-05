@@ -790,6 +790,249 @@ def list_reviews(
     return [_deserialize_review_summary_row(row) for row in rows]
 
 
+def get_internal_phone_qimen_summary() -> dict[str, Any]:
+    with open_connection() as connection:
+        review_row = connection.execute(
+            """
+            WITH base_usage AS (
+                SELECT COALESCE(NULLIF(target_id, ''), id) AS review_id, SUM(points_cost) AS points_cost
+                FROM usage_records
+                WHERE scene = 'phone_review_base'
+                GROUP BY COALESCE(NULLIF(target_id, ''), id)
+            )
+            SELECT
+                COUNT(r.id) AS total_review_count,
+                SUM(CASE WHEN date(datetime(r.created_at), '+8 hours') = date('now', '+8 hours') THEN 1 ELSE 0 END) AS today_review_count,
+                SUM(CASE WHEN datetime(r.created_at, '+8 hours') >= date('now', '+8 hours', 'weekday 1', '-7 days') THEN 1 ELSE 0 END) AS week_review_count,
+                SUM(CASE WHEN r.status = 'completed' THEN 1 ELSE 0 END) AS completed_review_count,
+                SUM(CASE WHEN r.status = 'failed' THEN 1 ELSE 0 END) AS failed_review_count,
+                AVG(CASE WHEN r.status IN ('completed', 'failed') THEN strftime('%s', r.updated_at) - strftime('%s', r.created_at) END) AS average_generation_seconds,
+                COALESCE(SUM(COALESCE(base_usage.points_cost, 0)), 0) AS review_points_cost
+            FROM reviews r
+            LEFT JOIN base_usage ON base_usage.review_id = r.id
+            """
+        ).fetchone()
+        unlock_row = connection.execute(
+            "SELECT COUNT(*) AS unlock_count, COUNT(DISTINCT review_id) AS unlocked_review_count FROM review_aspect_unlocks"
+        ).fetchone()
+        voice_row = connection.execute(
+            "SELECT COUNT(*) AS voice_request_count FROM usage_records WHERE scene = 'voice_tts'"
+        ).fetchone()
+
+    total_review_count = int(review_row["total_review_count"] or 0) if review_row else 0
+    completed_review_count = int(review_row["completed_review_count"] or 0) if review_row else 0
+    unlocked_review_count = int(unlock_row["unlocked_review_count"] or 0) if unlock_row else 0
+    return {
+        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "today_review_count": int(review_row["today_review_count"] or 0) if review_row else 0,
+        "week_review_count": int(review_row["week_review_count"] or 0) if review_row else 0,
+        "total_review_count": total_review_count,
+        "completed_review_count": completed_review_count,
+        "failed_review_count": int(review_row["failed_review_count"] or 0) if review_row else 0,
+        "success_rate": round(completed_review_count / total_review_count * 100, 1) if total_review_count else 0,
+        "average_generation_seconds": round(float(review_row["average_generation_seconds"]), 1) if review_row and review_row["average_generation_seconds"] is not None else None,
+        "aspect_unlock_count": int(unlock_row["unlock_count"] or 0) if unlock_row else 0,
+        "aspect_unlock_rate": round(unlocked_review_count / completed_review_count * 100, 1) if completed_review_count else 0,
+        "review_points_cost": int(review_row["review_points_cost"] or 0) if review_row else 0,
+        "voice_request_count": int(voice_row["voice_request_count"] or 0) if voice_row else 0,
+    }
+
+
+def _build_internal_phone_qimen_review_conditions(
+    *,
+    keyword: str | None = None,
+    status: str | None = None,
+    gender: str | None = None,
+    channel: str | None = None,
+    user_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    review_id: str | None = None,
+) -> tuple[list[str], list[Any]]:
+    conditions: list[str] = []
+    parameters: list[Any] = []
+    if _normalize_optional_text(review_id):
+        conditions.append("r.id = ?")
+        parameters.append(str(review_id))
+    if _normalize_optional_text(user_id):
+        conditions.append("r.user_id = ?")
+        parameters.append(str(user_id))
+    if _normalize_optional_text(status):
+        conditions.append("r.status = ?")
+        parameters.append(str(status))
+    if _normalize_optional_text(gender):
+        conditions.append("r.gender = ?")
+        parameters.append(str(gender))
+    if _normalize_optional_text(channel):
+        conditions.append("base_usage.channel = ?")
+        parameters.append(str(channel))
+    if _normalize_optional_text(date_from):
+        conditions.append("r.created_at >= ?")
+        parameters.append(str(date_from))
+    if _normalize_optional_text(date_to):
+        conditions.append("r.created_at <= ?")
+        parameters.append(str(date_to))
+    if _normalize_optional_text(keyword):
+        like_value = f"%{str(keyword).strip()}%"
+        conditions.append(
+            "(r.id LIKE ? OR r.phone LIKE ? OR IFNULL(r.user_id, '') LIKE ? OR IFNULL(u.uid, '') LIKE ? OR IFNULL(p.nickname, '') LIKE ? OR IFNULL(pi.normalized_phone, '') LIKE ?)"
+        )
+        parameters.extend([like_value, like_value, like_value, like_value, like_value, like_value])
+    return conditions, parameters
+
+
+def _internal_phone_qimen_review_from_clause() -> str:
+    return """
+        FROM reviews r
+        LEFT JOIN users u ON u.id = r.user_id
+        LEFT JOIN user_profiles p ON p.user_id = r.user_id
+        LEFT JOIN user_phone_identities pi ON pi.user_id = r.user_id AND pi.is_primary = 1
+        LEFT JOIN (
+            SELECT
+                COALESCE(NULLIF(target_id, ''), id) AS review_id,
+                MAX(channel) AS channel,
+                SUM(points_cost) AS points_cost
+            FROM usage_records
+            WHERE scene = 'phone_review_base'
+            GROUP BY COALESCE(NULLIF(target_id, ''), id)
+        ) base_usage ON base_usage.review_id = r.id
+        LEFT JOIN (
+            SELECT review_id, COUNT(*) AS unlock_count
+            FROM review_aspect_unlocks
+            GROUP BY review_id
+        ) unlocks ON unlocks.review_id = r.id
+        LEFT JOIN (
+            SELECT
+                CASE
+                    WHEN target_id LIKE '%:%' THEN substr(target_id, 1, instr(target_id, ':') - 1)
+                    ELSE target_id
+                END AS review_id,
+                COUNT(*) AS voice_count
+            FROM usage_records
+            WHERE scene = 'voice_tts' AND IFNULL(target_id, '') != ''
+            GROUP BY
+                CASE
+                    WHEN target_id LIKE '%:%' THEN substr(target_id, 1, instr(target_id, ':') - 1)
+                    ELSE target_id
+                END
+        ) voices ON voices.review_id = r.id
+    """
+
+
+def count_internal_phone_qimen_reviews(
+    *,
+    keyword: str | None = None,
+    status: str | None = None,
+    gender: str | None = None,
+    channel: str | None = None,
+    user_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> int:
+    conditions, parameters = _build_internal_phone_qimen_review_conditions(
+        keyword=keyword,
+        status=status,
+        gender=gender,
+        channel=channel,
+        user_id=user_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    sql = "SELECT COUNT(r.id) AS total " + _internal_phone_qimen_review_from_clause()
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    with open_connection() as connection:
+        row = connection.execute(sql, parameters).fetchone()
+    return int(row["total"] if row is not None else 0)
+
+
+def list_internal_phone_qimen_reviews(
+    *,
+    limit: int = 20,
+    offset: int = 0,
+    keyword: str | None = None,
+    status: str | None = None,
+    gender: str | None = None,
+    channel: str | None = None,
+    user_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict[str, Any]]:
+    normalized_limit = max(1, min(int(limit), 100))
+    normalized_offset = max(0, int(offset))
+    conditions, parameters = _build_internal_phone_qimen_review_conditions(
+        keyword=keyword,
+        status=status,
+        gender=gender,
+        channel=channel,
+        user_id=user_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    sql = (
+        """
+        SELECT
+            r.id, r.user_id, u.uid AS user_uid, p.nickname AS user_nickname, pi.normalized_phone AS user_phone,
+            r.phone, r.gender, r.status, r.progress_stage, r.progress_message, r.error_message,
+            base_usage.channel, COALESCE(base_usage.points_cost, 0) AS base_points_cost,
+            COALESCE(unlocks.unlock_count, 0) AS unlock_count,
+            COALESCE(voices.voice_count, 0) AS voice_count,
+            CASE WHEN r.status IN ('completed', 'failed') THEN CAST(strftime('%s', r.updated_at) - strftime('%s', r.created_at) AS INTEGER) ELSE NULL END AS generation_duration_seconds,
+            r.created_at, r.updated_at
+        """
+        + _internal_phone_qimen_review_from_clause()
+    )
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    sql += " ORDER BY r.created_at DESC, r.id DESC LIMIT ? OFFSET ?"
+    parameters.extend([normalized_limit, normalized_offset])
+    with open_connection() as connection:
+        rows = connection.execute(sql, parameters).fetchall()
+    return [_deserialize_internal_phone_qimen_review_row(row) for row in rows]
+
+
+def get_internal_phone_qimen_review(review_id: str) -> dict[str, Any] | None:
+    conditions, parameters = _build_internal_phone_qimen_review_conditions(review_id=review_id)
+    sql = (
+        """
+        SELECT
+            r.id, r.user_id, u.uid AS user_uid, p.nickname AS user_nickname, pi.normalized_phone AS user_phone,
+            r.phone, r.gender, r.status, r.progress_stage, r.progress_message, r.error_message,
+            base_usage.channel, COALESCE(base_usage.points_cost, 0) AS base_points_cost,
+            COALESCE(unlocks.unlock_count, 0) AS unlock_count,
+            COALESCE(voices.voice_count, 0) AS voice_count,
+            CASE WHEN r.status IN ('completed', 'failed') THEN CAST(strftime('%s', r.updated_at) - strftime('%s', r.created_at) AS INTEGER) ELSE NULL END AS generation_duration_seconds,
+            r.created_at, r.updated_at
+        """
+        + _internal_phone_qimen_review_from_clause()
+        + " WHERE "
+        + " AND ".join(conditions)
+        + " LIMIT 1"
+    )
+    with open_connection() as connection:
+        row = connection.execute(sql, parameters).fetchone()
+    return _deserialize_internal_phone_qimen_review_row(row) if row is not None else None
+
+
+def list_voice_usage_records_for_review(review_id: str) -> list[dict[str, Any]]:
+    with open_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT ur.id, ur.user_id, ur.scene, ur.channel, ur.target_id, ur.points_cost, ur.status,
+                   ur.request_payload_summary, ur.result_summary, ur.created_at, ur.updated_at,
+                   u.status AS user_status, p.nickname AS user_nickname, p.avatar_url AS user_avatar_url
+            FROM usage_records ur
+            JOIN users u ON u.id = ur.user_id
+            LEFT JOIN user_profiles p ON p.user_id = ur.user_id
+            WHERE ur.scene = 'voice_tts'
+              AND (ur.target_id = ? OR ur.target_id LIKE ?)
+            ORDER BY ur.created_at DESC, ur.id DESC
+            """,
+            (review_id, f"{review_id}:%"),
+        ).fetchall()
+    return [_deserialize_usage_record_row(row) for row in rows]
+
+
 
 def upsert_wechat_user(*, appid: str, openid: str, unionid: str | None, session_key: str | None, nickname: str | None, avatar_url: str | None, initial_points: int, now_text: str) -> dict[str, Any]:
     normalized_unionid = _normalize_optional_text(unionid)
@@ -1236,6 +1479,67 @@ def list_users(
     with open_connection() as connection:
         rows = connection.execute(sql, parameters).fetchall()
     return [_deserialize_internal_user_row(row) for row in rows]
+
+
+def count_users(
+    *,
+    query: str | None = None,
+    keyword: str | None = None,
+    status: str | None = None,
+    identity_level: str | None = None,
+    channel: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> int:
+    normalized_query = _normalize_optional_text(keyword) or _normalize_optional_text(query)
+    sql = (
+        "SELECT COUNT(DISTINCT u.id) AS total "
+        "FROM users u "
+        "LEFT JOIN user_profiles p ON p.user_id = u.id "
+        "LEFT JOIN user_phone_identities pi ON pi.user_id = u.id AND pi.is_primary = 1 "
+        "LEFT JOIN user_wechat_identities w ON w.user_id = u.id"
+    )
+    conditions: list[str] = []
+    parameters: list[Any] = []
+    if normalized_query:
+        conditions.append("(u.id LIKE ? OR IFNULL(u.uid, '') LIKE ? OR IFNULL(p.nickname, '') LIKE ? OR IFNULL(pi.normalized_phone, '') LIKE ? OR IFNULL(w.unionid, '') LIKE ? OR IFNULL(w.openid, '') LIKE ?)")
+        like_value = f"%{normalized_query}%"
+        parameters.extend([like_value, like_value, like_value, like_value, like_value, like_value])
+    if _normalize_optional_text(status):
+        try:
+            normalized_filter_status = _normalize_user_status(status)
+        except ValueError:
+            normalized_filter_status = str(status)
+        if normalized_filter_status == "disabled":
+            conditions.append("u.status != 'active'")
+        else:
+            conditions.append("u.status = ?")
+            parameters.append(normalized_filter_status)
+    normalized_identity_filter = _normalize_optional_text(identity_level)
+    if normalized_identity_filter:
+        canonical_identity_filter = _normalize_user_identity_for_output(normalized_identity_filter)
+        identity_aliases = [
+            value
+            for value, canonical_value in USER_IDENTITY_LEVEL_ALIASES.items()
+            if canonical_value == canonical_identity_filter
+        ]
+        identity_values = [canonical_identity_filter, *identity_aliases]
+        conditions.append("u.identity_level IN (" + ", ".join("?" for _ in identity_values) + ")")
+        parameters.extend(identity_values)
+    if _normalize_optional_text(channel):
+        conditions.append("u.registered_channel = ?")
+        parameters.append(str(channel))
+    if _normalize_optional_text(date_from):
+        conditions.append("u.created_at >= ?")
+        parameters.append(str(date_from))
+    if _normalize_optional_text(date_to):
+        conditions.append("u.created_at <= ?")
+        parameters.append(str(date_to))
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    with open_connection() as connection:
+        row = connection.execute(sql, parameters).fetchone()
+    return int(row["total"] if row is not None else 0)
 
 
 
@@ -1765,6 +2069,101 @@ def settle_payment_transaction(*, transaction_id: str, provider_transaction_id: 
     if refreshed_transaction is None or refreshed_order is None:
         raise RuntimeError("payment_transaction_settle_failed")
     return refreshed_transaction, refreshed_order, ledger
+
+
+def complete_recharge_order_manually(
+    *,
+    order_id: str,
+    payment_method: str | None,
+    payment_reference: str | None,
+    operator_note: str | None,
+    operator: str | None,
+    now_text: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    normalized_payment_method = _normalize_optional_text(payment_method)
+    normalized_payment_reference = _normalize_optional_text(payment_reference)
+    normalized_operator_note = _normalize_optional_text(operator_note)
+    normalized_operator = _normalize_optional_text(operator)
+    idempotency_key = f"recharge:manual_complete:{order_id}"
+
+    with open_connection() as connection:
+        order = _get_recharge_order_in_connection(connection, order_id=order_id)
+        if order is None:
+            raise RuntimeError("recharge_order_not_found")
+
+        current_status = str(order.get("raw_status") or order.get("status") or "").lower()
+        existing_ledger = _get_points_ledger_by_idempotency_key(
+            connection,
+            user_id=str(order["user_id"]),
+            idempotency_key=idempotency_key,
+        )
+        if current_status == "completed":
+            if existing_ledger is not None:
+                return order, existing_ledger
+            raise ValueError("recharge_order_already_completed")
+        if current_status not in {"pending", "unpaid"}:
+            raise ValueError("recharge_order_not_manual_completable")
+
+        before_order = dict(order)
+        ledger = existing_ledger or _credit_points_in_connection(
+            connection,
+            user_id=str(order["user_id"]),
+            points_amount=int(order["points_amount"]) + int(order["bonus_points"]),
+            change_type="recharge",
+            biz_type="recharge_order",
+            biz_id=order_id,
+            idempotency_key=idempotency_key,
+            remark=f"recharge_order:{order['package_key']}:manual_complete",
+            now_text=now_text,
+        )
+        connection.execute(
+            """
+            UPDATE recharge_orders
+            SET status = ?,
+                external_order_id = COALESCE(external_order_id, ?),
+                review_note = COALESCE(?, review_note),
+                reviewed_by = COALESCE(reviewed_by, ?),
+                reviewed_at = COALESCE(reviewed_at, ?),
+                paid_at = COALESCE(paid_at, ?),
+                completed_at = COALESCE(completed_at, ?),
+                granted_ledger_id = COALESCE(granted_ledger_id, ?),
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                "completed",
+                normalized_payment_reference,
+                normalized_operator_note,
+                normalized_operator,
+                now_text,
+                now_text,
+                now_text,
+                ledger["ledger_id"],
+                now_text,
+                order_id,
+            ),
+        )
+        refreshed_order = _get_recharge_order_in_connection(connection, order_id=order_id)
+        if refreshed_order is None:
+            raise RuntimeError("recharge_order_manual_complete_failed")
+        _insert_admin_operation_log(
+            connection,
+            operator=normalized_operator,
+            action="recharge_order_manual_complete",
+            target_type="recharge_order",
+            target_id=order_id,
+            reason="offline_payment_confirmed",
+            operator_note=normalized_operator_note,
+            before=before_order,
+            after={
+                **refreshed_order,
+                "manual_payment_method": normalized_payment_method,
+                "manual_payment_reference": normalized_payment_reference,
+                "granted_ledger_id": ledger["ledger_id"],
+            },
+            created_at=now_text,
+        )
+    return refreshed_order, ledger
 
 
 def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None = None, channel: str | None = None) -> dict[str, Any]:
@@ -2586,6 +2985,107 @@ def upsert_runtime_config_entry(*, scope_type: str, scope_key: str, config_key: 
     return _deserialize_runtime_config_entry_row(row)
 
 
+def update_initial_points_config(
+    *,
+    old_initial_grant: int,
+    new_initial_grant: int,
+    apply_scope: str,
+    reason: str | None,
+    updated_at: str,
+) -> dict[str, Any]:
+    normalized_old_initial = max(0, int(old_initial_grant))
+    normalized_new_initial = max(0, int(new_initial_grant))
+    normalized_scope = _normalize_optional_text(apply_scope) or "future_users"
+    if normalized_scope not in {"future_users", "all_users"}:
+        raise ValueError("invalid_initial_points_apply_scope")
+
+    delta = normalized_new_initial - normalized_old_initial
+    target_user_count = 0
+    affected_user_count = 0
+    adjusted_points_total = 0
+    zeroed_user_count = 0
+    operation_id = uuid4().hex
+    normalized_reason = _normalize_optional_text(reason)
+
+    with open_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO runtime_config_entries (id, scope_type, scope_key, config_key, value_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(scope_type, scope_key, config_key)
+            DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+            """,
+            (uuid4().hex, "global", "default", "points.initial_grant", _serialize_json_value(normalized_new_initial), updated_at),
+        )
+
+        if normalized_scope == "all_users" and delta != 0:
+            rows = connection.execute(
+                """
+                SELECT u.id AS user_id, COALESCE(pa.balance, 0) AS balance
+                FROM users u
+                LEFT JOIN points_accounts pa ON pa.user_id = u.id
+                WHERE u.status IN ('active', 'disabled')
+                  AND u.primary_identity_type IN ('phone', 'wechat_unionid', 'wechat_pending_unionid')
+                ORDER BY u.created_at ASC, u.id ASC
+                """
+            ).fetchall()
+            target_user_count = len(rows)
+            for row in rows:
+                user_id = str(row["user_id"])
+                current_balance = max(0, int(row["balance"] or 0))
+                next_balance = max(0, current_balance + delta)
+                actual_delta = next_balance - current_balance
+                if actual_delta == 0:
+                    continue
+                _ensure_points_account_row(connection, user_id=user_id, now_text=updated_at)
+                connection.execute(
+                    "UPDATE points_accounts SET balance = ?, version = version + 1, updated_at = ? WHERE user_id = ?",
+                    (next_balance, updated_at, user_id),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO points_ledgers (id, user_id, change_type, delta, balance_after, biz_type, biz_id, idempotency_key, remark, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        uuid4().hex,
+                        user_id,
+                        "initial_grant_rebase",
+                        actual_delta,
+                        next_balance,
+                        "initial_points_rebase",
+                        operation_id,
+                        f"initial_points_rebase:{operation_id}:{user_id}",
+                        normalized_reason or f"initial points changed {normalized_old_initial}->{normalized_new_initial}",
+                        updated_at,
+                    ),
+                )
+                affected_user_count += 1
+                adjusted_points_total += actual_delta
+                if actual_delta < 0 and next_balance == 0:
+                    zeroed_user_count += 1
+
+        entry_row = connection.execute(
+            "SELECT id, scope_type, scope_key, config_key, value_json, updated_at FROM runtime_config_entries WHERE scope_type = ? AND scope_key = ? AND config_key = ?",
+            ("global", "default", "points.initial_grant"),
+        ).fetchone()
+
+    if entry_row is None:
+        raise RuntimeError("initial_points_config_update_failed")
+    return {
+        "previous_initial_grant": normalized_old_initial,
+        "initial_grant": normalized_new_initial,
+        "delta": delta,
+        "apply_scope": normalized_scope,
+        "target_user_count": target_user_count,
+        "affected_user_count": affected_user_count,
+        "adjusted_points_total": adjusted_points_total,
+        "zeroed_user_count": zeroed_user_count,
+        "operation_id": operation_id,
+        "entry": _deserialize_runtime_config_entry_row(entry_row),
+    }
+
+
 
 def complete_usage_record(*, usage_record_id: str, result_summary: dict[str, Any] | None, updated_at: str) -> None:
     with open_connection() as connection:
@@ -2921,6 +3421,30 @@ def _deserialize_review_summary_row(row: sqlite3.Row) -> dict[str, Any]:
         "progress_stage": row["progress_stage"],
         "progress_message": row["progress_message"],
         "error_message": row["error_message"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _deserialize_internal_phone_qimen_review_row(row: sqlite3.Row) -> dict[str, Any]:
+    duration = row["generation_duration_seconds"]
+    return {
+        "review_id": row["id"],
+        "user_id": row["user_id"],
+        "user_uid": row["user_uid"],
+        "user_nickname": row["user_nickname"],
+        "user_phone": row["user_phone"],
+        "phone": row["phone"],
+        "gender": row["gender"],
+        "status": row["status"],
+        "progress_stage": row["progress_stage"],
+        "progress_message": row["progress_message"],
+        "error_message": row["error_message"],
+        "channel": row["channel"],
+        "base_points_cost": int(row["base_points_cost"] or 0),
+        "unlock_count": int(row["unlock_count"] or 0),
+        "voice_count": int(row["voice_count"] or 0),
+        "generation_duration_seconds": int(duration) if duration is not None else None,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

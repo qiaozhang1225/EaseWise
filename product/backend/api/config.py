@@ -175,6 +175,10 @@ def get_customer_service_contact_url() -> str | None:
     return _parse_optional_text_env("EASEWISE_CUSTOMER_SERVICE_CONTACT_URL")
 
 
+def get_customer_service_wechat_id() -> str | None:
+    return _parse_optional_text_env("EASEWISE_CUSTOMER_SERVICE_WECHAT_ID")
+
+
 def get_customer_service_qr_code_url() -> str | None:
     return _parse_optional_text_env("EASEWISE_CUSTOMER_SERVICE_QR_CODE_URL")
 

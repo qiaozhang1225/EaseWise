@@ -2,10 +2,14 @@
 import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue';
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   Award,
   Calendar,
   Coins,
   LogOut,
+  MessageSquare,
+  RotateCcw,
   Search,
   Settings,
   ShoppingBag,
@@ -13,14 +17,18 @@ import {
   Smartphone,
   TrendingUp,
   Users,
+  X,
 } from 'lucide-vue-next';
 import {
   ApiError,
   adjustInternalUserPoints,
   createInternalLlmApiKey,
   createInternalRechargeOrderRefund,
+  deleteInternalCustomerServiceQrCode,
   deleteInternalLlmApiKey,
   getInternalDashboard,
+  getInternalPhoneQimenReview,
+  getInternalPhoneQimenSummary,
   getInternalPromotionApplication,
   getInternalPromotionCommission,
   getInternalPromotionRules,
@@ -30,6 +38,7 @@ import {
   getInternalUserAdminSummary,
   getInternalRuntimeConfigSchema,
   listInternalLlmApiKeys,
+  listInternalPhoneQimenReviews,
   listInternalPromotionApplications,
   listInternalPromotionCommissions,
   listInternalPromotionWithdrawals,
@@ -37,11 +46,14 @@ import {
   listInternalRuntimeConfig,
   listInternalUsageRecords,
   listInternalUsers,
+  manualCompleteInternalRechargeOrder,
   markInternalPromotionWithdrawalPaid,
   reviewInternalPromotionApplication,
   reviewInternalPromotionWithdrawal,
   reviewInternalRechargeOrder,
   retryInternalPromotionWithdrawalPayout,
+  uploadInternalCustomerServiceQrCode,
+  updateInternalInitialPointsConfig,
   updateInternalLlmApiKey,
   updateInternalPromotionRules,
   updateInternalRuntimeConfig,
@@ -54,6 +66,9 @@ import {
 import AdminSelect from './AdminSelect.vue';
 import type {
   DashboardResponse,
+  InternalPhoneQimenReviewDetailResponse,
+  InternalPhoneQimenReviewItemResponse,
+  InternalPhoneQimenSummaryResponse,
   InternalUserAdminSummaryResponse,
   InternalUserResponse,
   LlmApiKeyResponse,
@@ -64,6 +79,7 @@ import type {
   RechargeOrderResponse,
   RuntimeConfigEntryResponse,
   RuntimeConfigEntryUpsertRequest,
+  RuntimeInitialPointsUpdateResponse,
   RuntimeConfigSchemaItemResponse,
   UsageRecordDetailResponse,
   UsageRecordResponse,
@@ -74,10 +90,12 @@ const ADMIN_TOKEN_KEY = 'easewise_internal_admin_token';
 type PrimaryNavKey = 'dashboard' | 'orders' | 'users' | 'features' | 'promotion' | 'settings';
 type FeatureNavKey = 'almanac' | 'phone-review';
 type PromotionNavKey = 'review' | 'withdrawals' | 'commissions' | 'rules';
+type SettingsNavKey = 'basic-config' | 'customer-service' | 'voice' | 'safety' | 'service-keys';
 type DashboardMetric = DashboardResponse['sections'][number]['metrics'][number];
 type UserLinkedDestination = 'orders' | 'usage';
 type UserPointOperation = 'increase' | 'decrease' | 'set';
 type FeatureUsageWindowKey = 'today' | 'yesterday' | 'week' | 'month';
+type PhoneReviewAspectConfigModal = 'free' | 'order';
 type SelectedUserInfoCard = {
   key: 'uid' | 'identity' | 'channel' | 'registered_at' | 'phone' | 'unionid';
   label: string;
@@ -95,6 +113,12 @@ type ServiceKeyPreset = {
   dotClass: string;
   defaultName: string;
 };
+type RechargePackageDraft = {
+  package_key: string;
+  price_yuan: number;
+  points_amount: number;
+  enabled: boolean;
+};
 type FeatureUsageWindowCard = {
   key: FeatureUsageWindowKey;
   label: string;
@@ -106,10 +130,60 @@ type AdminRouteQuery = {
   view: PrimaryNavKey;
   feature?: FeatureNavKey;
   promotion?: PromotionNavKey;
+  settings?: SettingsNavKey;
   modal?: 'user';
   user_id?: string;
   return?: 'user';
 };
+
+const INITIAL_POINTS_CONFIG_KEY = 'points.initial_grant';
+const RECHARGE_PACKAGES_CONFIG_KEY = 'recharge.packages';
+const PHONE_REVIEW_BASE_POINTS_CONFIG_KEY = 'phone_review.base_points_cost';
+const PHONE_REVIEW_ASPECT_UNLOCK_POINTS_CONFIG_KEY = 'phone_review.aspect_unlock_points_cost';
+const PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY = 'phone_review.free_aspect_keys';
+const PHONE_REVIEW_ASPECT_ORDER_CONFIG_KEY = 'phone_review.aspect_order';
+const PHONE_REVIEW_UNLOCK_ENFORCEMENT_CONFIG_KEY = 'phone_review.unlock_enforcement_enabled';
+const CUSTOMER_SERVICE_WECHAT_ID_CONFIG_KEY = 'customer_service.wechat_id';
+const CUSTOMER_SERVICE_CONTACT_URL_CONFIG_KEY = 'customer_service.contact_url';
+const CUSTOMER_SERVICE_QR_CODE_URL_CONFIG_KEY = 'customer_service.qr_code_url';
+const CUSTOMER_SERVICE_GUIDANCE_TEXT_CONFIG_KEY = 'customer_service.guidance_text';
+const CUSTOMER_SERVICE_QR_GUIDANCE_TEXT_CONFIG_KEY = 'customer_service.qr_guidance_text';
+const CUSTOMER_SERVICE_COPY_BUTTON_TEXT_CONFIG_KEY = 'customer_service.copy_button_text';
+const CUSTOMER_SERVICE_UNCONFIGURED_TEXT_CONFIG_KEY = 'customer_service.unconfigured_text';
+const CUSTOMER_SERVICE_COPY_CONFIGS = [
+  {key: 'customer_service.copy.default', label: '默认客服文案', scene: '未指定场景', placeholder: '请添加客服微信，客服会协助你处理相关问题。'},
+  {key: 'customer_service.copy.recharge_help', label: '充值协助文案', scene: '充值身份协助 / 充值页底部客服', placeholder: '充值订单与手机号、微信 ID 绑定，可跨平台使用。如需协助，请添加客服。'},
+  {key: 'customer_service.copy.payment_issue', label: '支付异常文案', scene: '支付处理中 / 支付异常 / 扣款疑问', placeholder: '如果已经扣款或支付状态异常，请添加客服协助核查订单。'},
+  {key: 'customer_service.copy.points_insufficient', label: '积分不足文案', scene: '评测积分不足 / 专项解锁积分不足', placeholder: '当前积分不足时，可添加客服协助确认充值或套餐配置。'},
+  {key: 'customer_service.copy.account_security', label: '账号安全文案', scene: '忘记密码 / 修改密码人工核验', placeholder: '账号密码相关问题需要人工核验，请添加客服协助处理。'},
+  {key: 'customer_service.copy.promotion_consulting', label: '推广咨询文案', scene: '推广合作咨询', placeholder: '推广合作申请、身份开通和规则咨询，可添加客服进一步确认。'},
+  {key: 'customer_service.copy.review_support', label: '评测后续支持文案', scene: '评测结果页后续支持', placeholder: '评测后的后续支持、报告疑问和服务说明，可添加客服咨询。'},
+];
+const CUSTOMER_SERVICE_CONFIG_KEYS = new Set([
+  CUSTOMER_SERVICE_WECHAT_ID_CONFIG_KEY,
+  CUSTOMER_SERVICE_CONTACT_URL_CONFIG_KEY,
+  CUSTOMER_SERVICE_QR_CODE_URL_CONFIG_KEY,
+  CUSTOMER_SERVICE_GUIDANCE_TEXT_CONFIG_KEY,
+  CUSTOMER_SERVICE_QR_GUIDANCE_TEXT_CONFIG_KEY,
+  CUSTOMER_SERVICE_COPY_BUTTON_TEXT_CONFIG_KEY,
+  CUSTOMER_SERVICE_UNCONFIGURED_TEXT_CONFIG_KEY,
+  ...CUSTOMER_SERVICE_COPY_CONFIGS.map((item) => item.key),
+]);
+const MAX_RECHARGE_PACKAGE_COUNT = 6;
+const PHONE_REVIEW_ASPECT_OPTIONS = [
+  {key: 'career', label: '事业'},
+  {key: 'wealth', label: '财富'},
+  {key: 'love', label: '感情'},
+  {key: 'health', label: '健康'},
+  {key: 'acad', label: '学业'},
+  {key: 'fortune', label: '运势'},
+  {key: 'investment', label: '投资'},
+  {key: 'travel', label: '出行'},
+  {key: 'social', label: '社交'},
+  {key: 'family', label: '家庭'},
+  {key: 'personality', label: '性格'},
+  {key: 'fengshui', label: '风水'},
+];
 
 const primaryNavItems: Array<{key: PrimaryNavKey; label: string; desc: string}> = [
   {key: 'dashboard', label: '数据大盘', desc: '核心收益与运营摘要'},
@@ -132,6 +206,14 @@ const promotionNavItems: Array<{key: PromotionNavKey; label: string}> = [
   {key: 'rules', label: '规则配置'},
 ];
 
+const settingsNavItems: Array<{key: SettingsNavKey; label: string}> = [
+  {key: 'basic-config', label: '基础配置'},
+  {key: 'customer-service', label: '客服配置'},
+  {key: 'voice', label: '语音播报'},
+  {key: 'safety', label: '安全与合规'},
+  {key: 'service-keys', label: '服务密钥'},
+];
+
 const flatNavItems = primaryNavItems.filter((item) => item.key === 'dashboard' || item.key === 'orders' || item.key === 'users');
 const settingsNavItem = primaryNavItems.find((item) => item.key === 'settings');
 const primaryNavIcons: Record<PrimaryNavKey, Component> = {
@@ -151,6 +233,13 @@ const promotionNavIcons: Record<PromotionNavKey, Component> = {
   withdrawals: Coins,
   commissions: Search,
   rules: Settings,
+};
+const settingsNavIcons: Record<SettingsNavKey, Component> = {
+  'basic-config': Sliders,
+  'customer-service': MessageSquare,
+  voice: Smartphone,
+  safety: AlertTriangle,
+  'service-keys': Settings,
 };
 
 const orderStatusSelectOptions = [
@@ -193,6 +282,19 @@ const usageSceneSelectOptions = [
   {value: 'five_elements_query', label: '五行属性查询', dotClass: 'bg-cyan-500'},
 ];
 
+const reviewStatusSelectOptions = [
+  {value: '', label: '全部状态', dotClass: 'bg-indigo-500'},
+  {value: 'processing', label: '生成中', dotClass: 'bg-amber-500'},
+  {value: 'completed', label: '已完成', dotClass: 'bg-emerald-500'},
+  {value: 'failed', label: '生成失败', dotClass: 'bg-red-500'},
+];
+
+const genderSelectOptions = [
+  {value: '', label: '全部性别', dotClass: 'bg-indigo-500'},
+  {value: 'male', label: '男', dotClass: 'bg-blue-500'},
+  {value: 'female', label: '女', dotClass: 'bg-pink-500'},
+];
+
 const booleanToggleSelectOptions = [
   {value: true, label: '开启', dotClass: 'bg-emerald-500'},
   {value: false, label: '关闭', dotClass: 'bg-gray-400'},
@@ -232,8 +334,10 @@ const loginToken = ref(savedToken || '');
 const activePrimary = ref<PrimaryNavKey>('dashboard');
 const activeFeature = ref<FeatureNavKey>('phone-review');
 const activePromotion = ref<PromotionNavKey>('review');
+const activeSettings = ref<SettingsNavKey>('basic-config');
 const isFeaturesMenuOpen = ref(true);
 const isPromoMenuOpen = ref(true);
+const isSettingsMenuOpen = ref(true);
 const globalMessage = ref('');
 
 const dashboard = ref<DashboardResponse | null>(null);
@@ -273,6 +377,27 @@ const usageFilters = ref({
 const selectedUsage = ref<UsageRecordDetailResponse | null>(null);
 const usageDetailLoading = ref(false);
 
+const phoneQimenSummaryLoading = ref(false);
+const phoneQimenSummaryError = ref('');
+const phoneQimenSummary = ref<InternalPhoneQimenSummaryResponse | null>(null);
+const phoneReviewLoading = ref(false);
+const phoneReviewError = ref('');
+const phoneReviewRecords = ref<InternalPhoneQimenReviewItemResponse[]>([]);
+const phoneReviewTotal = ref(0);
+const phoneReviewPageSize = ref(20);
+const phoneReviewOffset = ref(0);
+const phoneReviewFilters = ref({
+  keyword: '',
+  status: '',
+  gender: '',
+  channel: '',
+  date_from: '',
+  date_to: '',
+  user_id: '',
+});
+const selectedPhoneReview = ref<InternalPhoneQimenReviewDetailResponse | null>(null);
+const phoneReviewDetailLoading = ref(false);
+
 const userLoading = ref(false);
 const userError = ref('');
 const userQuery = ref('');
@@ -282,6 +407,9 @@ const userFilters = ref({
   channel: '',
 });
 const users = ref<InternalUserResponse[]>([]);
+const userTotal = ref(0);
+const userPageSize = ref(20);
+const userOffset = ref(0);
 const selectedUser = ref<InternalUserAdminSummaryResponse | null>(null);
 const expandedUserInfoKey = ref('');
 const adminReturnContext = ref<{
@@ -314,7 +442,7 @@ const activeOrderReturnContext = computed(() => (
     : null
 ));
 const activeUsageReturnContext = computed(() => (
-  adminReturnContext.value?.destination === 'usage' && usageFilters.value.user_id
+  adminReturnContext.value?.destination === 'usage' && phoneReviewFilters.value.user_id
     ? adminReturnContext.value
     : null
 ));
@@ -358,7 +486,30 @@ const activeCode = computed(() => {
   if (activePrimary.value === 'promotion') {
     return `promo_${activePromotion.value}`;
   }
-  return activePrimary.value === 'settings' ? 'configs' : activePrimary.value;
+  if (activePrimary.value === 'settings') {
+    return `settings_${activeSettings.value.replace('-', '_')}`;
+  }
+  return activePrimary.value;
+});
+const activeSettingsTitle = computed(() => {
+  const titleMap: Record<SettingsNavKey, string> = {
+    'basic-config': '基础配置',
+    'customer-service': '客服配置',
+    voice: '语音播报',
+    safety: '安全与合规',
+    'service-keys': '服务密钥管理',
+  };
+  return titleMap[activeSettings.value];
+});
+const activeSettingsDescription = computed(() => {
+  const descriptionMap: Record<SettingsNavKey, string> = {
+    'basic-config': '维护平台充值总开关等基础项，客服、语音、安全和密钥已拆分为独立子项。',
+    'customer-service': '统一维护前台“联系客服”弹窗的二维码、微信号和各业务场景文案。',
+    voice: '维护语音播报模式、自动播报、供应商、音色和缓存策略。',
+    safety: '维护安全模式、允许功能和强制隐藏功能。',
+    'service-keys': '配置 DeepSeek、阿里云 NLS / 百炼等第三方服务密钥。',
+  };
+  return descriptionMap[activeSettings.value];
 });
 const activeHeaderTitle = computed(() => {
   if (activePrimary.value === 'dashboard') return '经营决策中心';
@@ -370,6 +521,11 @@ const activeHeaderTitle = computed(() => {
   if (activePrimary.value === 'promotion' && activePromotion.value === 'withdrawals') return '合伙佣金提现风险审计部';
   if (activePrimary.value === 'promotion' && activePromotion.value === 'commissions') return '大众代理推广返佣流水';
   if (activePrimary.value === 'promotion') return '推广合作规则维护';
+  if (activePrimary.value === 'settings' && activeSettings.value === 'basic-config') return '全局系统基础配置';
+  if (activePrimary.value === 'settings' && activeSettings.value === 'customer-service') return '客服配置中心';
+  if (activePrimary.value === 'settings' && activeSettings.value === 'voice') return '语音播报配置中心';
+  if (activePrimary.value === 'settings' && activeSettings.value === 'safety') return '安全与合规配置';
+  if (activePrimary.value === 'settings' && activeSettings.value === 'service-keys') return 'DeepSeek 与阿里云服务密钥库';
   return '全局系统基础配置部';
 });
 
@@ -494,9 +650,64 @@ const runtimeConfigEntries = ref<RuntimeConfigEntryResponse[]>([]);
 const runtimeConfigSchema = ref<RuntimeConfigSchemaItemResponse[]>([]);
 const runtimeConfigDrafts = ref<Record<string, unknown>>({});
 const runtimeConfigDirty = ref(false);
+const initialPointsDraft = ref(10000);
+const initialPointsScope = ref<'future_users' | 'all_users'>('future_users');
+const initialPointsReason = ref('');
+const initialPointsSaving = ref(false);
+const initialPointsResult = ref<RuntimeInitialPointsUpdateResponse | null>(null);
+const rechargePackageDrafts = ref<RechargePackageDraft[]>([]);
+const rechargePackagesDirty = ref(false);
+const rechargePackagesSaving = ref(false);
+const rechargePackageDragIndex = ref<number | null>(null);
+const rechargePackageEditIndex = ref<number | null>(null);
+const customerServiceQrInputRef = ref<HTMLInputElement | null>(null);
+const customerServiceQrUploading = ref(false);
+const customerServiceQrDeleting = ref(false);
+const customerServiceQrError = ref('');
+const phoneReviewAspectConfigModal = ref<PhoneReviewAspectConfigModal | null>(null);
 
-const featureConfigItems = computed(() => runtimeConfigSchema.value.filter((item) => item.group === '功能管理'));
-const systemConfigItems = computed(() => runtimeConfigSchema.value.filter((item) => item.group === '系统配置'));
+const featureConfigItems = computed(() => sortRuntimeConfigItems(runtimeConfigSchema.value.filter((item) => (
+  !item.admin_hidden
+  && item.group === '功能管理'
+  && item.config_key.startsWith('phone_review.')
+  && item.config_key !== PHONE_REVIEW_UNLOCK_ENFORCEMENT_CONFIG_KEY
+))));
+const phoneReviewBaseCostItem = computed(() => featureConfigItems.value.find((item) => item.config_key === PHONE_REVIEW_BASE_POINTS_CONFIG_KEY));
+const phoneReviewAspectUnlockCostItem = computed(() => featureConfigItems.value.find((item) => item.config_key === PHONE_REVIEW_ASPECT_UNLOCK_POINTS_CONFIG_KEY));
+const phoneReviewFreeAspectsItem = computed(() => featureConfigItems.value.find((item) => item.config_key === PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY));
+const phoneReviewAspectOrderItem = computed(() => featureConfigItems.value.find((item) => item.config_key === PHONE_REVIEW_ASPECT_ORDER_CONFIG_KEY));
+const basicSystemConfigItems = computed(() => sortRuntimeConfigItems(runtimeConfigSchema.value.filter((item) => (
+  !item.admin_hidden
+  && item.group === '系统配置'
+  && item.config_key !== INITIAL_POINTS_CONFIG_KEY
+  && item.config_key !== RECHARGE_PACKAGES_CONFIG_KEY
+  && !CUSTOMER_SERVICE_CONFIG_KEYS.has(item.config_key)
+  && item.admin_section !== '语音播报'
+  && item.admin_section !== '安全与合规'
+))));
+const voiceSystemConfigItems = computed(() => sortRuntimeConfigItems(runtimeConfigSchema.value.filter((item) => !item.admin_hidden && item.admin_section === '语音播报')));
+const safetySystemConfigItems = computed(() => sortRuntimeConfigItems(runtimeConfigSchema.value.filter((item) => !item.admin_hidden && item.admin_section === '安全与合规')));
+const customerServiceBaseConfigItems = computed(() => [
+  runtimeConfigSchemaItemForKey(CUSTOMER_SERVICE_WECHAT_ID_CONFIG_KEY, '客服微信号'),
+  runtimeConfigSchemaItemForKey(CUSTOMER_SERVICE_QR_GUIDANCE_TEXT_CONFIG_KEY, '二维码提示文案'),
+  runtimeConfigSchemaItemForKey(CUSTOMER_SERVICE_COPY_BUTTON_TEXT_CONFIG_KEY, '复制按钮文案'),
+  runtimeConfigSchemaItemForKey(CUSTOMER_SERVICE_UNCONFIGURED_TEXT_CONFIG_KEY, '未配置提示'),
+]);
+const customerServiceCopyConfigItems = computed(() => CUSTOMER_SERVICE_COPY_CONFIGS.map((item) => runtimeConfigSchemaItemForKey(item.key, item.label)));
+const customerServiceQrPreviewUrl = computed(() => resolveApiAssetUrl(String(runtimeConfigDrafts.value[CUSTOMER_SERVICE_QR_CODE_URL_CONFIG_KEY] || '')));
+const canAddRechargePackage = computed(() => rechargePackageDrafts.value.length < MAX_RECHARGE_PACKAGE_COUNT);
+const selectedRechargePackageDraft = computed(() => (
+  rechargePackageEditIndex.value === null ? null : rechargePackageDrafts.value[rechargePackageEditIndex.value] || null
+));
+const rechargePackageGridClass = computed(() => {
+  const count = rechargePackageDrafts.value.length;
+  if (count <= 1) return 'grid grid-cols-1 gap-2 flex-1 min-h-[176px] auto-rows-fr';
+  if (count === 2) return 'grid grid-cols-2 gap-2 flex-1 min-h-[176px] auto-rows-fr';
+  if (count === 3) return 'grid grid-cols-3 gap-2 flex-1 min-h-[176px] auto-rows-fr';
+  if (count === 4) return 'grid grid-cols-2 gap-2 flex-1 min-h-[176px] auto-rows-fr';
+  if (count === 5) return 'grid grid-cols-6 gap-2 flex-1 min-h-[176px] auto-rows-fr';
+  return 'grid grid-cols-3 gap-2 flex-1 min-h-[176px] auto-rows-fr';
+});
 const activeServiceKeyPresetOptions = computed(() => serviceKeyPresetMap[llmKeyForm.value.provider] || serviceKeyPresetMap.deepseek);
 
 const visibleOrders = computed(() => {
@@ -518,19 +729,45 @@ const visibleOrders = computed(() => {
 
 const latestPaidOrders = computed(() => visibleOrders.value.filter(isPaidOrder).slice(0, 2));
 
-const visibleUsers = computed(() => {
-  const keyword = userQuery.value.trim().toLowerCase();
-  if (!keyword) {
-    return users.value;
-  }
-  return users.value.filter((user) => [
-    user.uid || '',
-    user.user_id,
-    user.nickname || '',
-    user.primary_phone || '',
-    user.primary_unionid || '',
-    user.unionid || '',
-  ].some((value) => value.toLowerCase().includes(keyword)));
+const visibleUsers = computed(() => users.value);
+const userTotalPages = computed(() => Math.max(1, Math.ceil(userTotal.value / userPageSize.value)));
+const userCurrentPage = computed(() => Math.floor(userOffset.value / userPageSize.value) + 1);
+const userPageStart = computed(() => (userTotal.value === 0 ? 0 : userOffset.value + 1));
+const userPageEnd = computed(() => Math.min(userOffset.value + users.value.length, userTotal.value));
+const canGoPrevUserPage = computed(() => userOffset.value > 0 && !userLoading.value);
+const canGoNextUserPage = computed(() => userOffset.value + userPageSize.value < userTotal.value && !userLoading.value);
+const phoneReviewTotalPages = computed(() => Math.max(1, Math.ceil(phoneReviewTotal.value / phoneReviewPageSize.value)));
+const phoneReviewCurrentPage = computed(() => Math.floor(phoneReviewOffset.value / phoneReviewPageSize.value) + 1);
+const phoneReviewPageStart = computed(() => (phoneReviewTotal.value === 0 ? 0 : phoneReviewOffset.value + 1));
+const phoneReviewPageEnd = computed(() => Math.min(phoneReviewOffset.value + phoneReviewRecords.value.length, phoneReviewTotal.value));
+const canGoPrevPhoneReviewPage = computed(() => phoneReviewOffset.value > 0 && !phoneReviewLoading.value);
+const canGoNextPhoneReviewPage = computed(() => phoneReviewOffset.value + phoneReviewPageSize.value < phoneReviewTotal.value && !phoneReviewLoading.value);
+const phoneReviewFreeAspectSummary = computed(() => {
+  const keys = runtimeConfigStringList(PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY).filter(isKnownPhoneReviewAspectKey);
+  return keys.length ? keys.map(aspectLabel).join('、') : '未设置免费专项';
+});
+const phoneReviewOrderedAspectOptions = computed(() => phoneReviewOrderedAspectKeys().map((key, index) => ({
+  key,
+  label: aspectLabel(key),
+  index,
+  is_free: isPhoneReviewFreeAspect(key),
+})));
+const phoneReviewAspectOrderSummary = computed(() => {
+  const labels = phoneReviewOrderedAspectOptions.value.map((item) => item.label);
+  return labels.length > 4 ? `${labels.slice(0, 4).join('、')} 等 ${labels.length} 项` : labels.join('、');
+});
+const phoneQimenSummaryCards = computed(() => {
+  const summary = phoneQimenSummary.value;
+  return [
+    {label: '今日评测', value: String(summary?.today_review_count ?? 0), sub: 'UTC+8 今日', tone: 'text-brand-primary'},
+    {label: '本周评测', value: String(summary?.week_review_count ?? 0), sub: '自然周累计', tone: 'text-slate-700'},
+    {label: '总评测数', value: String(summary?.total_review_count ?? 0), sub: `成功率 ${formatPercent(summary?.success_rate)}`, tone: 'text-emerald-700'},
+    {label: '失败记录', value: String(summary?.failed_review_count ?? 0), sub: '可进入详情查看原因', tone: 'text-red-600'},
+    {label: '平均生成耗时', value: formatDuration(summary?.average_generation_seconds), sub: '已完成/失败记录', tone: 'text-amber-700'},
+    {label: '专项解锁', value: String(summary?.aspect_unlock_count ?? 0), sub: `解锁率 ${formatPercent(summary?.aspect_unlock_rate)}`, tone: 'text-emerald-600'},
+    {label: '评测积分消耗', value: String(summary?.review_points_cost ?? 0), sub: '手机号评测基础消耗', tone: 'text-brand-primary-strong'},
+    {label: '语音请求', value: String(summary?.voice_request_count ?? 0), sub: '后端 TTS 请求记录', tone: 'text-slate-700'},
+  ];
 });
 
 function isPrimaryNavKey(value: string | null): value is PrimaryNavKey {
@@ -543,6 +780,10 @@ function isFeatureNavKey(value: string | null): value is FeatureNavKey {
 
 function isPromotionNavKey(value: string | null): value is PromotionNavKey {
   return ['review', 'withdrawals', 'commissions', 'rules'].includes(value || '');
+}
+
+function isSettingsNavKey(value: string | null): value is SettingsNavKey {
+  return ['basic-config', 'customer-service', 'voice', 'safety', 'service-keys'].includes(value || '');
 }
 
 function userDisplayLabel(userId: string) {
@@ -583,6 +824,7 @@ function clearLinkedUserContext() {
 function clearLinkedUserFilters() {
   clearLinkedUserContext();
   usageFilters.value.user_id = '';
+  phoneReviewFilters.value.user_id = '';
   orderFilters.value.user_id = '';
 }
 
@@ -604,6 +846,7 @@ function writeAdminHistory(query: AdminRouteQuery, mode: 'push' | 'replace' = 'p
 
 function clearOverlayState() {
   selectedUsage.value = null;
+  selectedPhoneReview.value = null;
   selectedUser.value = null;
   selectedOrder.value = null;
   selectedPromotionApplication.value = null;
@@ -644,6 +887,11 @@ async function restoreAdminStateFromLocation() {
     activePromotion.value = isPromotionNavKey(promotionParam) ? promotionParam : 'review';
     isPromoMenuOpen.value = true;
   }
+  if (view === 'settings') {
+    const settingsParam = params.get('settings');
+    activeSettings.value = isSettingsNavKey(settingsParam) ? settingsParam : 'basic-config';
+    isSettingsMenuOpen.value = true;
+  }
 
   if (view === 'orders' && userId) {
     orderFilters.value.user_id = userId;
@@ -657,7 +905,7 @@ async function restoreAdminStateFromLocation() {
   }
 
   if (view === 'features' && userId) {
-    usageFilters.value.user_id = userId;
+    phoneReviewFilters.value.user_id = userId;
     if (params.get('return') === 'user') {
       setUserReturnContext(userId, 'usage');
     } else {
@@ -726,10 +974,14 @@ function switchPrimary(key: PrimaryNavKey) {
   if (key === 'promotion') {
     isPromoMenuOpen.value = true;
   }
+  if (key === 'settings') {
+    isSettingsMenuOpen.value = true;
+  }
   writeAdminHistory({
     view: key,
     feature: key === 'features' ? activeFeature.value : undefined,
     promotion: key === 'promotion' ? activePromotion.value : undefined,
+    settings: key === 'settings' ? activeSettings.value : undefined,
   });
   void loadActivePage();
 }
@@ -752,6 +1004,15 @@ function togglePromotionPrimary() {
   void loadPromotionPage();
 }
 
+function toggleSettingsPrimary() {
+  clearLinkedUserFilters();
+  isSettingsMenuOpen.value = !isSettingsMenuOpen.value;
+  activePrimary.value = 'settings';
+  clearOverlayState();
+  writeAdminHistory({view: 'settings', settings: activeSettings.value});
+  void loadActivePage();
+}
+
 async function loadActivePage() {
   if (!adminToken.value) {
     return;
@@ -763,10 +1024,14 @@ async function loadActivePage() {
     await Promise.allSettled([loadRuntimeSchema(), loadRuntimeConfig()]);
   }
   if (activePrimary.value === 'settings') {
-    await Promise.allSettled([loadLlmKeys(), loadRuntimeSchema(), loadRuntimeConfig()]);
+    if (activeSettings.value === 'service-keys') {
+      await loadLlmKeys();
+    } else {
+      await Promise.allSettled([loadRuntimeSchema(), loadRuntimeConfig()]);
+    }
   }
   if (activePrimary.value === 'features' && activeFeature.value === 'phone-review') {
-    await loadUsageRecords();
+    await Promise.allSettled([loadPhoneQimenSummary(), loadPhoneReviewRecords()]);
   }
   if (activePrimary.value === 'users') {
     await loadUsers();
@@ -809,11 +1074,101 @@ async function loadLlmKeys() {
   }
 }
 
+function runtimeConfigDraftValueFromRaw(value: unknown) {
+  return value !== null && typeof value === 'object'
+    ? JSON.stringify(value, null, 2)
+    : value;
+}
+
+function runtimeConfigDraftValue(entry: RuntimeConfigEntryResponse) {
+  return runtimeConfigDraftValueFromRaw(entry.value);
+}
+
+function runtimeConfigDefaultDraftValue(item: RuntimeConfigSchemaItemResponse) {
+  return runtimeConfigDraftValueFromRaw(item.default_value ?? '');
+}
+
+function ensureRuntimeConfigDraftDefaults() {
+  for (const item of runtimeConfigSchema.value) {
+    if (runtimeConfigDrafts.value[item.config_key] === undefined) {
+      runtimeConfigDrafts.value[item.config_key] = runtimeConfigDefaultDraftValue(item);
+    }
+  }
+}
+
+function mergeRuntimeConfigEntries(entries: RuntimeConfigEntryResponse[]) {
+  const nextEntries = [...runtimeConfigEntries.value];
+  for (const entry of entries) {
+    const index = nextEntries.findIndex((item) => (
+      item.scope_type === entry.scope_type
+      && item.scope_key === entry.scope_key
+      && item.config_key === entry.config_key
+    ));
+    if (index >= 0) {
+      nextEntries[index] = entry;
+    } else {
+      nextEntries.push(entry);
+    }
+    runtimeConfigDrafts.value[entry.config_key] = runtimeConfigDraftValue(entry);
+  }
+  runtimeConfigEntries.value = nextEntries;
+}
+
+function resolveRuntimeConfigValue(configKey: string) {
+  const entry = runtimeConfigEntries.value.find((item) => item.config_key === configKey);
+  if (entry) return entry.value;
+  const schemaItem = runtimeConfigSchema.value.find((item) => item.config_key === configKey);
+  return schemaItem?.default_value;
+}
+
+function parsePackageDrafts(rawValue: unknown): RechargePackageDraft[] {
+  let parsed = rawValue;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((item, index) => {
+      const record = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+      const priceCents = Number(record.price_cents ?? 0);
+      const pointsAmount = Number(record.points_amount ?? 0);
+      const sortOrder = Number(record.sort_order ?? index);
+      return {
+        package_key: typeof record.package_key === 'string' ? record.package_key : '',
+        price_yuan: Number.isFinite(priceCents) ? Math.max(0, priceCents / 100) : 0,
+        points_amount: Number.isFinite(pointsAmount) ? Math.max(0, Math.trunc(pointsAmount)) : 0,
+        enabled: record.enabled !== false,
+        sort_order: Number.isFinite(sortOrder) ? sortOrder : index,
+      };
+    })
+    .sort((left, right) => left.sort_order - right.sort_order)
+    .slice(0, MAX_RECHARGE_PACKAGE_COUNT)
+    .map(({package_key, price_yuan, points_amount, enabled}) => ({
+      package_key,
+      price_yuan,
+      points_amount,
+      enabled,
+    }));
+}
+
+function syncSettingsDraftsFromRuntime() {
+  ensureRuntimeConfigDraftDefaults();
+  const initialValue = Number(resolveRuntimeConfigValue(INITIAL_POINTS_CONFIG_KEY) ?? 10000);
+  initialPointsDraft.value = Number.isFinite(initialValue) ? Math.max(0, Math.trunc(initialValue)) : 10000;
+  rechargePackageDrafts.value = parsePackageDrafts(resolveRuntimeConfigValue(RECHARGE_PACKAGES_CONFIG_KEY));
+  rechargePackagesDirty.value = false;
+}
+
 async function loadRuntimeSchema() {
   runtimeConfigSchemaLoading.value = true;
   runtimeConfigError.value = '';
   try {
     runtimeConfigSchema.value = (await getInternalRuntimeConfigSchema(adminToken.value)).items;
+    syncSettingsDraftsFromRuntime();
     globalMessage.value = '';
   } catch (error) {
     const message = resolveError(error);
@@ -828,13 +1183,13 @@ async function loadRuntimeConfig() {
   runtimeConfigLoading.value = true;
   runtimeConfigError.value = '';
   try {
-    runtimeConfigEntries.value = (await listInternalRuntimeConfig(adminToken.value)).items;
+    const entries = (await listInternalRuntimeConfig(adminToken.value)).items;
+    runtimeConfigEntries.value = entries;
     runtimeConfigDrafts.value = {};
-    for (const entry of runtimeConfigEntries.value) {
-      runtimeConfigDrafts.value[entry.config_key] = entry.value !== null && typeof entry.value === 'object'
-        ? JSON.stringify(entry.value, null, 2)
-        : entry.value;
+    for (const entry of entries) {
+      runtimeConfigDrafts.value[entry.config_key] = runtimeConfigDraftValue(entry);
     }
+    syncSettingsDraftsFromRuntime();
     runtimeConfigDirty.value = false;
     globalMessage.value = '';
   } catch (error) {
@@ -864,6 +1219,91 @@ async function loadUsageRecords() {
   }
 }
 
+async function loadPhoneQimenSummary() {
+  phoneQimenSummaryLoading.value = true;
+  phoneQimenSummaryError.value = '';
+  try {
+    phoneQimenSummary.value = await getInternalPhoneQimenSummary(adminToken.value);
+    globalMessage.value = '';
+  } catch (error) {
+    const message = resolveError(error);
+    phoneQimenSummaryError.value = message;
+    globalMessage.value = message;
+  } finally {
+    phoneQimenSummaryLoading.value = false;
+  }
+}
+
+async function loadPhoneReviewRecords(options: {resetPage?: boolean} = {}) {
+  if (options.resetPage) {
+    phoneReviewOffset.value = 0;
+  }
+  phoneReviewLoading.value = true;
+  phoneReviewError.value = '';
+  try {
+    const response = await listInternalPhoneQimenReviews(adminToken.value, {
+      ...phoneReviewFilters.value,
+      limit: phoneReviewPageSize.value,
+      offset: phoneReviewOffset.value,
+    });
+    phoneReviewRecords.value = response.items;
+    phoneReviewTotal.value = response.total;
+    phoneReviewPageSize.value = response.limit;
+    phoneReviewOffset.value = response.offset;
+    globalMessage.value = '';
+  } catch (error) {
+    const message = resolveError(error);
+    phoneReviewError.value = message;
+    globalMessage.value = message;
+  } finally {
+    phoneReviewLoading.value = false;
+  }
+}
+
+async function searchPhoneReviewRecords() {
+  await loadPhoneReviewRecords({resetPage: true});
+}
+
+async function refreshPhoneQimenPage() {
+  await Promise.allSettled([loadPhoneQimenSummary(), loadPhoneReviewRecords()]);
+}
+
+function resetPhoneReviewFilters() {
+  phoneReviewFilters.value = {
+    keyword: '',
+    status: '',
+    gender: '',
+    channel: '',
+    date_from: '',
+    date_to: '',
+    user_id: phoneReviewFilters.value.user_id,
+  };
+  phoneReviewOffset.value = 0;
+}
+
+async function changePhoneReviewPage(direction: number) {
+  const maxOffset = Math.max(0, (phoneReviewTotalPages.value - 1) * phoneReviewPageSize.value);
+  const nextOffset = Math.min(maxOffset, Math.max(0, phoneReviewOffset.value + direction * phoneReviewPageSize.value));
+  if (nextOffset === phoneReviewOffset.value) {
+    return;
+  }
+  phoneReviewOffset.value = nextOffset;
+  await loadPhoneReviewRecords();
+}
+
+async function openPhoneReviewDetail(record: InternalPhoneQimenReviewItemResponse) {
+  phoneReviewDetailLoading.value = true;
+  selectedPhoneReview.value = null;
+  try {
+    selectedPhoneReview.value = await getInternalPhoneQimenReview(adminToken.value, record.review_id);
+    globalMessage.value = '';
+  } catch (error) {
+    globalMessage.value = resolveError(error);
+  } finally {
+    phoneReviewDetailLoading.value = false;
+  }
+}
+
 async function openUsageDetail(record: UsageRecordResponse) {
   usageDetailLoading.value = true;
   try {
@@ -876,14 +1316,23 @@ async function openUsageDetail(record: UsageRecordResponse) {
   }
 }
 
-async function loadUsers() {
+async function loadUsers(options: {resetPage?: boolean} = {}) {
+  if (options.resetPage) {
+    userOffset.value = 0;
+  }
   userLoading.value = true;
   userError.value = '';
   try {
-    users.value = (await listInternalUsers(adminToken.value, {
+    const response = await listInternalUsers(adminToken.value, {
       keyword: userQuery.value,
       ...userFilters.value,
-    })).items;
+      limit: userPageSize.value,
+      offset: userOffset.value,
+    });
+    users.value = response.items;
+    userTotal.value = response.total;
+    userPageSize.value = response.limit;
+    userOffset.value = response.offset;
     globalMessage.value = '';
   } catch (error) {
     const message = resolveError(error);
@@ -894,9 +1343,24 @@ async function loadUsers() {
   }
 }
 
+async function searchUsers() {
+  await loadUsers({resetPage: true});
+}
+
 function resetUserFilters() {
   userQuery.value = '';
   userFilters.value = {status: '', identity_level: '', channel: ''};
+  userOffset.value = 0;
+}
+
+async function changeUserPage(direction: number) {
+  const maxOffset = Math.max(0, (userTotalPages.value - 1) * userPageSize.value);
+  const nextOffset = Math.min(maxOffset, Math.max(0, userOffset.value + direction * userPageSize.value));
+  if (nextOffset === userOffset.value) {
+    return;
+  }
+  userOffset.value = nextOffset;
+  await loadUsers();
 }
 
 async function openUserSummary(userId: string, options: {syncHistory?: boolean} = {}) {
@@ -982,6 +1446,28 @@ async function reviewSelectedOrder(action: 'approve' | 'reject') {
   }
 }
 
+async function manualCompleteSelectedOrder() {
+  if (!selectedOrder.value) return;
+  if (!canManualCompleteOrder(selectedOrder.value)) {
+    orderActionMessage.value = '当前订单状态不可手动完成';
+    return;
+  }
+  orderActionMessage.value = '';
+  try {
+    const result = await manualCompleteInternalRechargeOrder(adminToken.value, selectedOrder.value.order_id, {
+      payment_method: 'offline_customer_service',
+      payment_reference: null,
+      operator_note: orderReviewNote.value || null,
+    });
+    selectedOrder.value = result.order;
+    orderActionMessage.value = `已确认线下收款，已发放 ${result.ledger?.delta ?? result.order.total_points} 积分`;
+    orderReviewNote.value = '';
+    await loadOrders();
+  } catch (error) {
+    orderActionMessage.value = resolveError(error);
+  }
+}
+
 async function createRefundFromSelectedOrder() {
   if (!selectedOrder.value) return;
   orderActionMessage.value = '';
@@ -1009,11 +1495,16 @@ function jumpToUser(userId: string) {
   void loadUsers().then(() => openUserSummary(userId, {syncHistory: false}));
 }
 
+function jumpToNullableUser(userId: string | null | undefined) {
+  if (!userId) return;
+  jumpToUser(userId);
+}
+
 function jumpToUsageForUser(userId: string) {
   activePrimary.value = 'features';
   activeFeature.value = 'phone-review';
   isFeaturesMenuOpen.value = true;
-  usageFilters.value.user_id = userId;
+  phoneReviewFilters.value.user_id = userId;
   setUserReturnContext(userId, 'usage');
   clearOverlayState();
   writeAdminHistory({view: 'features', feature: 'phone-review', user_id: userId, return: 'user'});
@@ -1049,11 +1540,12 @@ function clearOrderUserScope() {
 }
 
 function clearUsageUserScope() {
-  usageFilters.value.user_id = '';
+  phoneReviewFilters.value.user_id = '';
   clearLinkedUserContext();
   selectedUsage.value = null;
+  selectedPhoneReview.value = null;
   writeAdminHistory({view: 'features', feature: activeFeature.value}, 'replace');
-  void loadUsageRecords();
+  void Promise.allSettled([loadPhoneQimenSummary(), loadPhoneReviewRecords({resetPage: true})]);
 }
 
 function selectFeature(key: FeatureNavKey) {
@@ -1062,9 +1554,10 @@ function selectFeature(key: FeatureNavKey) {
   activeFeature.value = key;
   activePrimary.value = 'features';
   selectedUsage.value = null;
+  selectedPhoneReview.value = null;
   writeAdminHistory({view: 'features', feature: key});
   if (key === 'phone-review') {
-    void loadUsageRecords();
+    void Promise.allSettled([loadPhoneQimenSummary(), loadPhoneReviewRecords()]);
   }
 }
 
@@ -1078,6 +1571,16 @@ function selectPromotion(key: PromotionNavKey) {
   selectedPromotionWithdrawal.value = null;
   writeAdminHistory({view: 'promotion', promotion: key});
   void loadPromotionPage();
+}
+
+function selectSettings(key: SettingsNavKey) {
+  clearLinkedUserFilters();
+  isSettingsMenuOpen.value = true;
+  activeSettings.value = key;
+  activePrimary.value = 'settings';
+  clearOverlayState();
+  writeAdminHistory({view: 'settings', settings: key});
+  void loadActivePage();
 }
 
 async function loadPromotionPage() {
@@ -1268,28 +1771,130 @@ async function savePromotionRules() {
 }
 
 function normalizeRuntimeConfigValue(item: RuntimeConfigSchemaItemResponse, rawValue: unknown) {
+  const value = rawValue === undefined ? item.default_value : rawValue;
   if (item.value_type === 'bool') {
-    return Boolean(rawValue);
+    return Boolean(value);
   }
   if (item.value_type === 'int') {
-    const parsed = Number.parseInt(String(rawValue), 10);
+    const parsed = Number.parseInt(String(value), 10);
     return Number.isFinite(parsed) ? parsed : item.default_value;
   }
   if (item.value_type === 'float') {
-    const parsed = Number.parseFloat(String(rawValue));
+    const parsed = Number.parseFloat(String(value));
     return Number.isFinite(parsed) ? parsed : item.default_value;
   }
   if (item.value_type === 'json') {
-    if (typeof rawValue === 'string') {
+    if (value === undefined || value === null || value === '') {
+      return item.default_value ?? null;
+    }
+    if (typeof value === 'string') {
       try {
-        return JSON.parse(rawValue);
+        return JSON.parse(value);
       } catch {
-        return item.default_value;
+        return item.default_value ?? null;
       }
     }
-    return rawValue;
+    return value;
   }
-  return rawValue;
+  return value === undefined ? null : value;
+}
+
+function sortRuntimeConfigItems(items: RuntimeConfigSchemaItemResponse[]) {
+  return [...items].sort((left, right) => (left.sort_order ?? 100) - (right.sort_order ?? 100));
+}
+
+function runtimeConfigStringList(configKey: string): string[] {
+  const value = runtimeConfigDrafts.value[configKey];
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item));
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item));
+      }
+    } catch {
+      return value.split(',').map((item) => item.trim()).filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function toggleRuntimeConfigStringListValue(configKey: string, optionValue: string) {
+  const currentValues = new Set(runtimeConfigStringList(configKey));
+  if (currentValues.has(optionValue)) {
+    currentValues.delete(optionValue);
+  } else {
+    currentValues.add(optionValue);
+  }
+  runtimeConfigDrafts.value[configKey] = [...currentValues];
+  runtimeConfigDirty.value = true;
+}
+
+function setRuntimeConfigStringList(configKey: string, values: string[]) {
+  runtimeConfigDrafts.value[configKey] = [...values];
+  runtimeConfigDirty.value = true;
+}
+
+function isKnownPhoneReviewAspectKey(aspectKey: string | null | undefined) {
+  return PHONE_REVIEW_ASPECT_OPTIONS.some((item) => item.key === aspectKey);
+}
+
+function isPhoneReviewFreeAspect(aspectKey: string) {
+  return runtimeConfigStringList(PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY).includes(aspectKey);
+}
+
+function togglePhoneReviewFreeAspect(aspectKey: string) {
+  const currentValues = new Set(runtimeConfigStringList(PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY).filter(isKnownPhoneReviewAspectKey));
+  if (currentValues.has(aspectKey)) {
+    currentValues.delete(aspectKey);
+  } else {
+    currentValues.add(aspectKey);
+  }
+  const orderedValues = PHONE_REVIEW_ASPECT_OPTIONS.map((item) => item.key).filter((key) => currentValues.has(key));
+  setRuntimeConfigStringList(PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY, orderedValues);
+}
+
+function resetPhoneReviewFreeAspects() {
+  setRuntimeConfigStringList(PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY, []);
+}
+
+function phoneReviewOrderedAspectKeys() {
+  const seenKeys = new Set<string>();
+  const configuredKeys = runtimeConfigStringList(PHONE_REVIEW_ASPECT_ORDER_CONFIG_KEY)
+    .filter(isKnownPhoneReviewAspectKey)
+    .filter((key) => {
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    });
+  const fallbackKeys = PHONE_REVIEW_ASPECT_OPTIONS.map((item) => item.key).filter((key) => !seenKeys.has(key));
+  return [...configuredKeys, ...fallbackKeys];
+}
+
+function movePhoneReviewAspectOrder(aspectKey: string, direction: -1 | 1) {
+  const orderedKeys = phoneReviewOrderedAspectKeys();
+  const currentIndex = orderedKeys.indexOf(aspectKey);
+  const nextIndex = currentIndex + direction;
+  if (currentIndex < 0 || nextIndex < 0 || nextIndex >= orderedKeys.length) {
+    return;
+  }
+  const [item] = orderedKeys.splice(currentIndex, 1);
+  orderedKeys.splice(nextIndex, 0, item);
+  setRuntimeConfigStringList(PHONE_REVIEW_ASPECT_ORDER_CONFIG_KEY, orderedKeys);
+}
+
+function resetPhoneReviewAspectOrder() {
+  setRuntimeConfigStringList(PHONE_REVIEW_ASPECT_ORDER_CONFIG_KEY, PHONE_REVIEW_ASPECT_OPTIONS.map((item) => item.key));
+}
+
+function openPhoneReviewAspectConfigModal(mode: PhoneReviewAspectConfigModal) {
+  phoneReviewAspectConfigModal.value = mode;
+}
+
+function closePhoneReviewAspectConfigModal() {
+  phoneReviewAspectConfigModal.value = null;
 }
 
 function runtimeConfigDisplayValue(item: RuntimeConfigSchemaItemResponse) {
@@ -1300,25 +1905,300 @@ function runtimeConfigDisplayValue(item: RuntimeConfigSchemaItemResponse) {
   return value;
 }
 
-async function saveRuntimeConfig() {
-  if (!runtimeConfigSchema.value.length) return;
-  const entries: RuntimeConfigEntryUpsertRequest[] = runtimeConfigSchema.value.map((item) => ({
-    scope_type: item.scope_type,
-    scope_key: item.scope_key,
-    config_key: item.config_key,
-    value: normalizeRuntimeConfigValue(item, runtimeConfigDrafts.value[item.config_key]),
-  }));
+async function saveRuntimeConfig(items: RuntimeConfigSchemaItemResponse[] = runtimeConfigSchema.value, successMessage = '系统配置已保存') {
+  if (!items.length) return;
+  const entries: RuntimeConfigEntryUpsertRequest[] = items.map((item) => {
+    const value = normalizeRuntimeConfigValue(item, runtimeConfigDrafts.value[item.config_key]);
+    return {
+      scope_type: item.scope_type,
+      scope_key: item.scope_key,
+      config_key: item.config_key,
+      value: value === undefined ? null : value,
+    };
+  });
   runtimeConfigLoading.value = true;
   try {
     const result = await updateInternalRuntimeConfig(adminToken.value, entries);
-    runtimeConfigEntries.value = result.items;
+    mergeRuntimeConfigEntries(result.items);
     runtimeConfigDirty.value = false;
-    globalMessage.value = '系统配置已保存';
+    globalMessage.value = successMessage;
   } catch (error) {
     globalMessage.value = resolveError(error);
   } finally {
     runtimeConfigLoading.value = false;
   }
+}
+
+async function saveInitialPointsSettings() {
+  const nextInitialGrant = Math.trunc(Number(initialPointsDraft.value));
+  if (!Number.isFinite(nextInitialGrant) || nextInitialGrant < 0) {
+    globalMessage.value = '初始积分必须是大于等于 0 的整数';
+    return;
+  }
+  if (
+    initialPointsScope.value === 'all_users'
+    && typeof window !== 'undefined'
+    && !window.confirm('确认按差额调整全部正式用户积分？该操作会写入积分流水。')
+  ) {
+    return;
+  }
+
+  initialPointsSaving.value = true;
+  initialPointsResult.value = null;
+  try {
+    const result = await updateInternalInitialPointsConfig(adminToken.value, {
+      initial_grant: nextInitialGrant,
+      apply_scope: initialPointsScope.value,
+      reason: initialPointsReason.value || null,
+    });
+    mergeRuntimeConfigEntries([result.entry]);
+    initialPointsDraft.value = result.initial_grant;
+    initialPointsResult.value = result;
+    initialPointsReason.value = '';
+    globalMessage.value = result.apply_scope === 'all_users'
+      ? `初始积分已保存，并调整 ${result.affected_user_count} 个正式用户`
+      : '初始积分已保存，仅影响今后注册用户';
+  } catch (error) {
+    globalMessage.value = resolveError(error);
+  } finally {
+    initialPointsSaving.value = false;
+  }
+}
+
+function addRechargePackageDraft() {
+  if (!canAddRechargePackage.value) {
+    globalMessage.value = `充值套餐最多只能配置 ${MAX_RECHARGE_PACKAGE_COUNT} 个`;
+    return;
+  }
+  rechargePackageDrafts.value.push({
+    package_key: '',
+    price_yuan: 9.9,
+    points_amount: 1000,
+    enabled: true,
+  });
+  rechargePackagesDirty.value = true;
+  rechargePackageEditIndex.value = rechargePackageDrafts.value.length - 1;
+}
+
+function removeRechargePackageDraft(index: number) {
+  if (typeof window !== 'undefined' && !window.confirm('确认删除这个充值套餐？保存后才会正式生效。')) {
+    return;
+  }
+  rechargePackageDrafts.value.splice(index, 1);
+  if (rechargePackageEditIndex.value === index) {
+    rechargePackageEditIndex.value = null;
+  } else if (rechargePackageEditIndex.value !== null && rechargePackageEditIndex.value > index) {
+    rechargePackageEditIndex.value -= 1;
+  }
+  rechargePackagesDirty.value = true;
+}
+
+function moveRechargePackageDraft(fromIndex: number, toIndex: number) {
+  if (toIndex < 0 || toIndex >= rechargePackageDrafts.value.length || fromIndex === toIndex) return;
+  const [item] = rechargePackageDrafts.value.splice(fromIndex, 1);
+  rechargePackageDrafts.value.splice(toIndex, 0, item);
+  if (rechargePackageEditIndex.value === fromIndex) {
+    rechargePackageEditIndex.value = toIndex;
+  } else if (
+    rechargePackageEditIndex.value !== null
+    && fromIndex < rechargePackageEditIndex.value
+    && rechargePackageEditIndex.value <= toIndex
+  ) {
+    rechargePackageEditIndex.value -= 1;
+  } else if (
+    rechargePackageEditIndex.value !== null
+    && toIndex <= rechargePackageEditIndex.value
+    && rechargePackageEditIndex.value < fromIndex
+  ) {
+    rechargePackageEditIndex.value += 1;
+  }
+  rechargePackagesDirty.value = true;
+}
+
+function openRechargePackageEditor(index: number) {
+  rechargePackageEditIndex.value = index;
+}
+
+function closeRechargePackageEditor() {
+  rechargePackageEditIndex.value = null;
+}
+
+function rechargePackageCardLayoutClass(index: number) {
+  const count = rechargePackageDrafts.value.length;
+  const rowHeightClass = count <= 3 ? 'min-h-[176px]' : 'min-h-[82px]';
+  if (count === 5) {
+    return `${rowHeightClass} col-span-2 ${index === 3 ? 'col-start-2' : ''}`;
+  }
+  return rowHeightClass;
+}
+
+function rechargePackageAmountClass() {
+  return rechargePackageDrafts.value.length <= 3 ? 'text-xl' : 'text-base';
+}
+
+function rechargePackagePointsClass() {
+  return rechargePackageDrafts.value.length <= 3 ? 'text-base' : 'text-sm';
+}
+
+function startRechargePackageDrag(index: number) {
+  rechargePackageDragIndex.value = index;
+}
+
+function dropRechargePackage(index: number) {
+  if (rechargePackageDragIndex.value === null) return;
+  moveRechargePackageDraft(rechargePackageDragIndex.value, index);
+  rechargePackageDragIndex.value = null;
+}
+
+function generatedPackageKey(packageDraft: RechargePackageDraft, index: number, priceCents: number, pointsAmount: number) {
+  if (packageDraft.package_key.trim()) return packageDraft.package_key.trim();
+  return `pkg_${priceCents}_${pointsAmount}_${index + 1}_${Date.now().toString(36)}`;
+}
+
+function buildRechargePackagePayload() {
+  if (rechargePackageDrafts.value.length > MAX_RECHARGE_PACKAGE_COUNT) {
+    throw new Error(`充值套餐最多只能配置 ${MAX_RECHARGE_PACKAGE_COUNT} 个`);
+  }
+  return rechargePackageDrafts.value.map((packageDraft, index) => {
+    const priceCents = Math.round(Number(packageDraft.price_yuan || 0) * 100);
+    const pointsAmount = Math.trunc(Number(packageDraft.points_amount || 0));
+    if (!Number.isFinite(priceCents) || priceCents <= 0) {
+      throw new Error(`第 ${index + 1} 个套餐的人民币金额必须大于 0`);
+    }
+    if (!Number.isFinite(pointsAmount) || pointsAmount <= 0) {
+      throw new Error(`第 ${index + 1} 个套餐的积分数量必须大于 0`);
+    }
+    const priceText = (priceCents / 100).toFixed(priceCents % 100 === 0 ? 0 : 2);
+    return {
+      package_key: generatedPackageKey(packageDraft, index, priceCents, pointsAmount),
+      title: `${pointsAmount} 积分`,
+      description: `￥${priceText} / ${pointsAmount} 积分`,
+      price_cents: priceCents,
+      points_amount: pointsAmount,
+      bonus_points: 0,
+      enabled: packageDraft.enabled,
+      sort_order: index,
+    };
+  });
+}
+
+async function saveRechargePackages() {
+  let packagesPayload: ReturnType<typeof buildRechargePackagePayload>;
+  try {
+    packagesPayload = buildRechargePackagePayload();
+  } catch (error) {
+    globalMessage.value = error instanceof Error ? error.message : '充值套餐配置不合法';
+    return;
+  }
+
+  const schemaItem = runtimeConfigSchema.value.find((item) => item.config_key === RECHARGE_PACKAGES_CONFIG_KEY);
+  const entry: RuntimeConfigEntryUpsertRequest = {
+    scope_type: schemaItem?.scope_type || 'global',
+    scope_key: schemaItem?.scope_key || 'default',
+    config_key: RECHARGE_PACKAGES_CONFIG_KEY,
+    value: packagesPayload,
+  };
+
+  rechargePackagesSaving.value = true;
+  try {
+    const result = await updateInternalRuntimeConfig(adminToken.value, [entry]);
+    mergeRuntimeConfigEntries(result.items);
+    rechargePackageDrafts.value = parsePackageDrafts(packagesPayload);
+    rechargePackagesDirty.value = false;
+    globalMessage.value = '充值套餐已保存';
+  } catch (error) {
+    globalMessage.value = resolveError(error);
+  } finally {
+    rechargePackagesSaving.value = false;
+  }
+}
+
+function runtimeConfigSchemaItemForKey(configKey: string, fallbackLabel: string): RuntimeConfigSchemaItemResponse {
+  const existing = runtimeConfigSchema.value.find((item) => item.config_key === configKey);
+  if (existing) return existing;
+  return {
+    config_key: configKey,
+    label: fallbackLabel,
+    value_type: 'string',
+    default_value: null,
+    scope_type: 'global',
+    scope_key: 'default',
+    group: '系统配置',
+    high_risk: false,
+    description: null,
+  };
+}
+
+async function saveCustomerServiceConfig() {
+  const editableItems = [
+    ...customerServiceBaseConfigItems.value,
+    ...customerServiceCopyConfigItems.value,
+  ];
+  await saveRuntimeConfig(editableItems, '客服配置已保存');
+}
+
+function openCustomerServiceQrUploader() {
+  customerServiceQrError.value = '';
+  customerServiceQrInputRef.value?.click();
+}
+
+async function handleCustomerServiceQrFileChange(event: Event) {
+  if (customerServiceQrUploading.value) return;
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  if (!/^image\/(jpeg|png|webp)$/u.test(file.type)) {
+    customerServiceQrError.value = '请上传 JPG、PNG 或 WebP 格式的客服二维码。';
+    return;
+  }
+  if (file.size > 1_500_000) {
+    customerServiceQrError.value = '客服二维码文件请控制在 1.5MB 以内。';
+    return;
+  }
+
+  customerServiceQrUploading.value = true;
+  customerServiceQrError.value = '';
+  try {
+    const imageDataUrl = await readFileAsDataUrl(file);
+    const entry = await uploadInternalCustomerServiceQrCode(adminToken.value, {image_data_url: imageDataUrl});
+    mergeRuntimeConfigEntries([entry]);
+    globalMessage.value = '客服二维码已上传';
+  } catch (error) {
+    customerServiceQrError.value = resolveError(error);
+  } finally {
+    customerServiceQrUploading.value = false;
+  }
+}
+
+async function deleteCustomerServiceQrCode() {
+  if (
+    customerServiceQrPreviewUrl.value
+    && typeof window !== 'undefined'
+    && !window.confirm('确认删除当前客服二维码？删除后前台将展示未配置占位。')
+  ) {
+    return;
+  }
+  customerServiceQrDeleting.value = true;
+  customerServiceQrError.value = '';
+  try {
+    const entry = await deleteInternalCustomerServiceQrCode(adminToken.value);
+    mergeRuntimeConfigEntries([entry]);
+    globalMessage.value = '客服二维码已删除';
+  } catch (error) {
+    customerServiceQrError.value = resolveError(error);
+  } finally {
+    customerServiceQrDeleting.value = false;
+  }
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('图片读取失败，请重新选择文件。'));
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.readAsDataURL(file);
+  });
 }
 
 function beginCreateLlmKey() {
@@ -1597,6 +2477,10 @@ function isPaidOrder(order: RechargeOrderResponse) {
   return order.status === 'paid' || order.status === 'completed';
 }
 
+function canManualCompleteOrder(order: RechargeOrderResponse) {
+  return order.status === 'unpaid' || order.raw_status === 'pending';
+}
+
 function formatAmount(cents: number) {
   return `¥${(cents / 100).toFixed(2)}`;
 }
@@ -1606,6 +2490,103 @@ function formatRate(rate: number | null | undefined) {
     return '--';
   }
   return `${(rate * 100).toFixed(1)}%`;
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+    return '0%';
+  }
+  return `${Number(value).toFixed(1)}%`;
+}
+
+function formatDuration(seconds: number | null | undefined) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) {
+    return '--';
+  }
+  const normalizedSeconds = Math.max(0, Math.round(Number(seconds)));
+  if (normalizedSeconds < 60) {
+    return `${normalizedSeconds}s`;
+  }
+  const minutes = Math.floor(normalizedSeconds / 60);
+  const restSeconds = normalizedSeconds % 60;
+  return `${minutes}m ${restSeconds}s`;
+}
+
+function genderLabel(gender: string | null | undefined) {
+  if (gender === 'male') return '男';
+  if (gender === 'female') return '女';
+  return gender || '--';
+}
+
+function reviewStatusLabel(status: string) {
+  const map: Record<string, string> = {
+    processing: '生成中',
+    completed: '已完成',
+    failed: '生成失败',
+  };
+  return map[status] || status;
+}
+
+function voiceSceneLabel(record: UsageRecordResponse) {
+  const result = record.result_summary || {};
+  const request = record.request_payload_summary || {};
+  const scene = String(result.scene || request.scene || '');
+  const aspectKey = String(result.aspect_key || request.aspect_key || '');
+  if (scene === 'phone_summary') return '听综评';
+  if (scene === 'phone_stability') return '听建议';
+  if (scene === 'phone_aspect') return `听${aspectLabel(aspectKey)}`;
+  return record.feature_name || '语音播报';
+}
+
+function usageSummaryValue(record: UsageRecordResponse, key: string) {
+  const result = record.result_summary || {};
+  const request = record.request_payload_summary || {};
+  return result[key] ?? request[key];
+}
+
+function displayUnknownValue(value: unknown) {
+  if (value === null || value === undefined || value === '') return '--';
+  if (typeof value === 'boolean') return value ? '是' : '否';
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  return JSON.stringify(value);
+}
+
+function voiceRecordField(record: UsageRecordResponse, key: string) {
+  return displayUnknownValue(usageSummaryValue(record, key));
+}
+
+function voiceCachedLabel(record: UsageRecordResponse) {
+  const value = usageSummaryValue(record, 'cached');
+  if (value === true || value === 'true') return '命中缓存';
+  if (value === false || value === 'false') return '未命中';
+  return '--';
+}
+
+function voiceFailureText(record: UsageRecordResponse) {
+  const keys = ['failure_reason', 'error_message', 'error', 'detail'];
+  for (const key of keys) {
+    const value = usageSummaryValue(record, key);
+    if (value) return displayUnknownValue(value);
+  }
+  return '--';
+}
+
+function aspectLabel(aspectKey: string | null | undefined) {
+  const map: Record<string, string> = {
+    career: '事业',
+    wealth: '财富',
+    love: '感情',
+    health: '健康',
+    acad: '学业',
+    fortune: '运势',
+    investment: '投资',
+    travel: '出行',
+    social: '社交',
+    family: '家庭',
+    personality: '性格',
+    fengshui: '风水',
+  };
+  return map[aspectKey || ''] || aspectKey || '--';
 }
 
 function formatTime(value: string | null | undefined) {
@@ -1707,6 +2688,16 @@ function shortText(value: string | null | undefined, head = 8, tail = 4) {
   if (!value) return '--';
   if (value.length <= head + tail + 3) return value;
   return `${value.slice(0, head)}...${value.slice(-tail)}`;
+}
+
+async function copyText(value: string | null | undefined, label = '内容') {
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    globalMessage.value = `${label}已复制`;
+  } catch {
+    globalMessage.value = `${label}复制失败，请手动选中复制`;
+  }
 }
 
 function promotionStatusLabel(status: string) {
@@ -1902,17 +2893,34 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <button
-              v-if="settingsNavItem"
-              @click="switchPrimary('settings')"
-              class="w-full flex items-center justify-between p-3 rounded-lg text-xs font-bold transition-all outline-none cursor-pointer"
-              :class="activePrimary === 'settings' ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/15' : 'text-brand-ink/70 hover:bg-brand-paper hover:text-brand-ink-strong'"
-            >
-              <div class="flex items-center gap-2.5">
-                <Settings :size="15" />
-                <span>6. {{ settingsNavItem.label }}</span>
+            <div v-if="settingsNavItem" class="block">
+              <button
+                @click="toggleSettingsPrimary"
+                class="w-full flex items-center justify-between p-3 rounded-lg text-xs font-bold transition-all outline-none cursor-pointer"
+                :class="activePrimary === 'settings' ? 'bg-brand-paper border-l-4 border-brand-primary text-brand-primary' : 'text-brand-ink/70 hover:bg-brand-paper hover:text-brand-ink-strong'"
+              >
+                <div class="flex items-center gap-2.5">
+                  <Settings :size="15" />
+                  <span>6. {{ settingsNavItem.label }}</span>
+                </div>
+                <span class="text-[9px] font-mono select-none text-brand-secondary">{{ isSettingsMenuOpen ? '▼' : '▶' }}</span>
+              </button>
+
+              <div v-show="isSettingsMenuOpen" class="pl-3.5 pr-1 py-1 space-y-1 block ml-4 border-l border-gray-100">
+                <button
+                  v-for="(item, index) in settingsNavItems"
+                  :key="item.key"
+                  @click="selectSettings(item.key)"
+                  class="w-full flex items-center justify-between px-2 py-1.5 rounded-md text-[10.5px] font-semibold transition-all outline-none cursor-pointer"
+                  :class="activePrimary === 'settings' && activeSettings === item.key ? 'bg-brand-paper/80 text-brand-primary font-bold' : 'text-brand-ink/60 hover:text-brand-ink-strong hover:bg-brand-paper/30'"
+                >
+                  <div class="flex items-center gap-2">
+                    <component :is="settingsNavIcons[item.key]" :size="13" />
+                    <span>6.{{ index + 1 }} {{ item.label }}</span>
+                  </div>
+                </button>
               </div>
-            </button>
+            </div>
           </nav>
         </div>
 
@@ -2303,7 +3311,7 @@ onBeforeUnmount(() => {
                     <input
                       v-model="userQuery"
                       placeholder="按 UID、昵称、手机号或 UnionID 检索..."
-                      @keyup.enter="loadUsers"
+                      @keyup.enter="searchUsers"
                       class="w-full bg-gray-50 border border-gray-100 p-2.5 pl-9 rounded-xl text-xs text-brand-ink-strong placeholder-brand-secondary focus:border-brand-primary focus:bg-white outline-none"
                     />
                   </div>
@@ -2324,7 +3332,7 @@ onBeforeUnmount(() => {
                   <button @click="resetUserFilters(); loadUsers()" class="bg-white border border-gray-100 text-brand-secondary px-4 py-2 rounded-xl text-xs font-bold hover:bg-gray-50 transition-colors outline-none cursor-pointer">
                     重置
                   </button>
-                  <button @click="loadUsers" class="bg-brand-primary text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-brand-primary-strong transition-colors outline-none cursor-pointer">
+                  <button @click="searchUsers" class="bg-brand-primary text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-brand-primary-strong transition-colors outline-none cursor-pointer">
                     {{ userLoading ? '搜索中...' : '搜索用户' }}
                   </button>
                 </div>
@@ -2401,6 +3409,31 @@ onBeforeUnmount(() => {
                   </tbody>
                 </table>
               </div>
+
+              <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-100 text-xs text-brand-secondary">
+                <div class="font-mono">
+                  显示 {{ userPageStart }}-{{ userPageEnd }} / {{ userTotal }}，每页 {{ userPageSize }} 条
+                </div>
+                <div class="flex items-center gap-2">
+                  <button
+                    @click="changeUserPage(-1)"
+                    :disabled="!canGoPrevUserPage"
+                    class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[10.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-paper"
+                  >
+                    上一页
+                  </button>
+                  <span class="font-mono text-[11px] text-brand-secondary px-2">
+                    第 {{ userCurrentPage }} / {{ userTotalPages }} 页
+                  </span>
+                  <button
+                    @click="changeUserPage(1)"
+                    :disabled="!canGoNextUserPage"
+                    class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[10.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-paper"
+                  >
+                    下一页
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -2429,87 +3462,111 @@ onBeforeUnmount(() => {
                     <Smartphone :size="20" />
                     <span>手算五行 · 手机号数字测算规则策略</span>
                   </h3>
-                  <p class="text-xs text-brand-secondary">设定手机号评测积分规则、维度解锁策略，并查看统一功能使用记录。</p>
+                  <p class="text-xs text-brand-secondary">查看手机号评测运营数据，维护评测积分与专项解锁规则。</p>
                 </div>
                 <button
-                  @click="loadUsageRecords"
+                  @click="refreshPhoneQimenPage"
                   class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10 flex items-center gap-1.5"
                 >
-                  {{ usageLoading ? '查询中...' : '查询使用记录' }}
+                  {{ phoneReviewLoading || phoneQimenSummaryLoading ? '刷新中...' : '刷新评测数据' }}
                 </button>
               </div>
 
-              <div class="bg-red-50/20 p-5 rounded-2xl border border-red-100 space-y-4">
-                <div class="flex items-start justify-between">
-                  <div class="space-y-1 block">
-                    <span class="text-xs bg-red-100/80 text-red-700 font-mono px-2 py-0.5 rounded border border-red-200 mr-1.5 uppercase font-bold">STAGE LAYER 1: GLOBAL COMPLIANCE</span>
-                    <h4 class="font-serif text-base font-bold text-brand-ink-strong inline-block">渠道总开关与单功能开关配置区</h4>
-                    <p class="text-[11.5px] text-brand-secondary leading-relaxed max-w-4xl">
-                      页面保留设计稿的配置承载区。后续接入真实配置后，渠道总开关关闭时将同步隐藏玄学功能入口及历史使用记录。
-                    </p>
-                  </div>
-                  <span class="text-[10px] bg-brand-paper border border-gray-100 text-brand-secondary px-2.5 py-1 rounded-full font-bold">待接入</span>
-                </div>
-              </div>
-
-              <div class="bg-brand-paper/30 border border-gray-100 rounded-2xl p-5 space-y-4">
-                <div class="flex items-center justify-between gap-3">
-                  <div class="space-y-0.5">
-                    <h4 class="font-serif text-base font-bold text-brand-ink-strong">功能管理配置</h4>
-                    <p class="text-[11.5px] text-brand-secondary leading-relaxed">
-                      这里承载功能开关、积分消耗、智能体玄学技能控制等后台配置，修改后会影响后续新记录。
-                    </p>
-                  </div>
-                  <button
-                    @click="saveRuntimeConfig"
-                    class="bg-brand-primary hover:bg-brand-primary-strong text-white px-4 py-2 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10"
-                  >
-                    {{ runtimeConfigLoading ? '保存中...' : '保存功能配置' }}
-                  </button>
-                </div>
-
-                <div v-if="featureConfigItems.length" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div v-for="item in featureConfigItems" :key="item.config_key" class="bg-white border border-gray-100 rounded-xl p-4 space-y-2">
-                    <div class="flex items-center justify-between gap-2">
-                      <div>
-                        <div class="text-sm font-bold text-brand-ink-strong">{{ item.label }}</div>
-                        <div class="text-[10px] text-brand-secondary font-mono">{{ item.config_key }}</div>
-                      </div>
-                      <span class="text-[10px] px-2 py-0.5 rounded-full border" :class="item.high_risk ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'">
-                        {{ item.high_risk ? '高风险' : '常规' }}
-                      </span>
+              <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)] gap-5 items-stretch">
+                <section class="h-full bg-brand-paper/35 border border-gray-100 rounded-2xl p-5 space-y-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 class="font-serif text-base font-bold text-brand-ink-strong">手机号评测数据大盘</h4>
+                      <p class="text-[11.5px] text-brand-secondary">以评测主记录为统计口径，专项解锁和语音播报只作为关联指标。</p>
                     </div>
-                    <template v-if="item.value_type === 'bool'">
-                      <AdminSelect
-                        v-model="runtimeConfigDrafts[item.config_key]"
-                        @change="runtimeConfigDirty = true"
-                        :options="booleanToggleSelectOptions"
-                        min-width-class="w-full"
-                        panel-width-class="w-full"
-                      />
-                    </template>
-                    <template v-else-if="item.value_type === 'json'">
-                      <textarea
-                        v-model="runtimeConfigDrafts[item.config_key]"
-                        @input="runtimeConfigDirty = true"
-                        class="w-full bg-gray-50 border border-gray-100 rounded-lg p-2 text-xs outline-none min-h-24 font-mono"
-                      ></textarea>
-                    </template>
-                    <template v-else>
-                      <input
-                        v-model="runtimeConfigDrafts[item.config_key]"
-                        @input="runtimeConfigDirty = true"
-                        :type="item.value_type === 'int' || item.value_type === 'float' ? 'number' : 'text'"
-                        class="w-full bg-gray-50 border border-gray-100 rounded-lg p-2 text-xs outline-none"
-                      />
-                    </template>
-                    <div class="text-[11px] text-brand-secondary">默认值：{{ runtimeInputText(item) }}</div>
+                    <span class="text-[10px] text-brand-secondary font-mono">{{ formatTime(phoneQimenSummary?.generated_at) }}</span>
                   </div>
-                </div>
+                  <div v-if="phoneQimenSummaryError" class="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                    {{ phoneQimenSummaryError }}
+                  </div>
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div v-for="item in phoneQimenSummaryCards" :key="item.label" class="bg-white border border-gray-100 rounded-xl p-3">
+                      <div class="text-[10px] text-brand-secondary">{{ item.label }}</div>
+                      <div class="text-lg font-bold font-mono mt-1" :class="item.tone">{{ item.value }}</div>
+                      <div class="text-[10px] text-brand-secondary">{{ item.sub }}</div>
+                    </div>
+                  </div>
+                </section>
 
-                <div v-else class="h-32 rounded-xl border border-dashed border-gray-200 bg-white/70 flex items-center justify-center text-xs text-brand-secondary font-mono">
-                  暂无功能管理配置项
-                </div>
+                <section class="h-full bg-white border border-gray-100 rounded-2xl p-5 space-y-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 class="font-serif text-base font-bold text-brand-ink-strong">手机号评测配置</h4>
+                      <p class="text-[11.5px] text-brand-secondary">基础消耗、专项消耗、免费专项和专项展示顺序。</p>
+                    </div>
+                    <button
+                      @click="saveRuntimeConfig(featureConfigItems, '手机号评测配置已保存')"
+                      class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10"
+                    >
+                      {{ runtimeConfigLoading ? '保存中...' : '保存配置' }}
+                    </button>
+                  </div>
+
+                  <div v-if="featureConfigItems.length" class="space-y-3">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <label v-if="phoneReviewBaseCostItem" class="bg-brand-paper/40 border border-gray-100 rounded-xl px-3.5 py-3 space-y-1.5 block">
+                        <span class="text-[10.5px] font-bold text-brand-secondary">{{ phoneReviewBaseCostItem.label }}</span>
+                        <input
+                          v-model="runtimeConfigDrafts[phoneReviewBaseCostItem.config_key]"
+                          @input="runtimeConfigDirty = true"
+                          type="number"
+                          class="w-full bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs font-mono outline-none focus:border-brand-primary"
+                          :placeholder="String(phoneReviewBaseCostItem.default_value ?? '')"
+                        />
+                        <span class="block text-[10px] text-brand-secondary font-mono">{{ phoneReviewBaseCostItem.config_key }}</span>
+                      </label>
+
+                      <label v-if="phoneReviewAspectUnlockCostItem" class="bg-brand-paper/40 border border-gray-100 rounded-xl px-3.5 py-3 space-y-1.5 block">
+                        <span class="text-[10.5px] font-bold text-brand-secondary">{{ phoneReviewAspectUnlockCostItem.label }}</span>
+                        <input
+                          v-model="runtimeConfigDrafts[phoneReviewAspectUnlockCostItem.config_key]"
+                          @input="runtimeConfigDirty = true"
+                          type="number"
+                          class="w-full bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs font-mono outline-none focus:border-brand-primary"
+                          :placeholder="String(phoneReviewAspectUnlockCostItem.default_value ?? '')"
+                        />
+                        <span class="block text-[10px] text-brand-secondary font-mono">{{ phoneReviewAspectUnlockCostItem.config_key }}</span>
+                      </label>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <button
+                        v-if="phoneReviewFreeAspectsItem"
+                        type="button"
+                        @click="openPhoneReviewAspectConfigModal('free')"
+                        class="text-left bg-white border border-gray-100 hover:bg-brand-paper/60 rounded-xl px-3.5 py-3 transition-colors min-h-[74px]"
+                      >
+                        <span class="flex items-center justify-between gap-3">
+                          <span class="text-xs font-bold text-brand-ink-strong">{{ phoneReviewFreeAspectsItem.label }}</span>
+                          <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">{{ runtimeConfigStringList(PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY).length }} 项</span>
+                        </span>
+                        <span class="block text-[11px] text-brand-secondary mt-1 truncate">{{ phoneReviewFreeAspectSummary }}</span>
+                      </button>
+
+                      <button
+                        v-if="phoneReviewAspectOrderItem"
+                        type="button"
+                        @click="openPhoneReviewAspectConfigModal('order')"
+                        class="text-left bg-white border border-gray-100 hover:bg-brand-paper/60 rounded-xl px-3.5 py-3 transition-colors min-h-[74px]"
+                      >
+                        <span class="flex items-center justify-between gap-3">
+                          <span class="text-xs font-bold text-brand-ink-strong">{{ phoneReviewAspectOrderItem.label }}</span>
+                          <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-primary/5 text-brand-primary border border-brand-primary/10">{{ phoneReviewOrderedAspectOptions.length }} 项</span>
+                        </span>
+                        <span class="block text-[11px] text-brand-secondary mt-1 truncate">{{ phoneReviewAspectOrderSummary }}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-else class="h-32 rounded-xl border border-dashed border-gray-200 bg-white/70 flex items-center justify-center text-xs text-brand-secondary font-mono">
+                    暂无手机号评测配置项
+                  </div>
+                </section>
               </div>
 
               <div class="bg-gray-50/50 border border-gray-100 p-5 rounded-xl space-y-4 shadow-xs text-left">
@@ -2518,7 +3575,7 @@ onBeforeUnmount(() => {
                   class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-primary/10 bg-brand-primary/5 px-4 py-3 text-xs"
                 >
                   <div class="min-w-0">
-                    <p class="font-bold text-brand-ink-strong">正在查看用户「{{ activeUsageReturnContext.userLabel }}」的功能使用记录</p>
+                    <p class="font-bold text-brand-ink-strong">正在查看用户「{{ activeUsageReturnContext.userLabel }}」的手机号评测记录</p>
                     <p class="font-mono text-[10px] text-brand-secondary truncate">{{ activeUsageReturnContext.userId }}</p>
                   </div>
                   <div class="flex items-center gap-2">
@@ -2531,54 +3588,125 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
 
-                <div class="flex flex-wrap gap-3">
-                  <input v-model="usageFilters.keyword" class="bg-white border border-gray-200 p-2.5 rounded-lg text-xs text-brand-ink-strong outline-none focus:border-brand-primary w-64" placeholder="用户 / 昵称 / 手机号 / 业务 ID" />
-                  <AdminSelect
-                    v-model="usageFilters.scene"
-                    :options="usageSceneSelectOptions"
-                    min-width-class="min-w-[160px]"
-                    panel-width-class="w-56"
-                  />
-                  <input v-model="usageFilters.channel" class="bg-white border border-gray-200 p-2.5 rounded-lg text-xs text-brand-ink-strong outline-none focus:border-brand-primary" placeholder="渠道" />
-                  <input v-model="usageFilters.status" class="bg-white border border-gray-200 p-2.5 rounded-lg text-xs text-brand-ink-strong outline-none focus:border-brand-primary" placeholder="状态" />
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div class="flex flex-wrap gap-3">
+                    <input v-model="phoneReviewFilters.keyword" class="bg-white border border-gray-200 p-2.5 rounded-lg text-xs text-brand-ink-strong outline-none focus:border-brand-primary w-64" placeholder="用户 / 昵称 / 手机号 / 评测 ID" />
+                    <AdminSelect
+                      v-model="phoneReviewFilters.status"
+                      :options="reviewStatusSelectOptions"
+                      min-width-class="min-w-[132px]"
+                      panel-width-class="w-44"
+                    />
+                    <AdminSelect
+                      v-model="phoneReviewFilters.gender"
+                      :options="genderSelectOptions"
+                      min-width-class="min-w-[120px]"
+                      panel-width-class="w-40"
+                    />
+                    <input v-model="phoneReviewFilters.channel" class="bg-white border border-gray-200 p-2.5 rounded-lg text-xs text-brand-ink-strong outline-none focus:border-brand-primary w-28" placeholder="渠道" />
+                    <input v-model="phoneReviewFilters.date_from" class="bg-white border border-gray-200 p-2.5 rounded-lg text-xs text-brand-ink-strong outline-none focus:border-brand-primary w-36" placeholder="开始时间" />
+                    <input v-model="phoneReviewFilters.date_to" class="bg-white border border-gray-200 p-2.5 rounded-lg text-xs text-brand-ink-strong outline-none focus:border-brand-primary w-36" placeholder="结束时间" />
+                  </div>
+                  <div class="flex gap-2">
+                    <button @click="resetPhoneReviewFilters(); loadPhoneReviewRecords({resetPage: true})" class="bg-white border border-gray-100 text-brand-secondary px-4 py-2 rounded-xl text-xs font-bold hover:bg-gray-50">
+                      重置
+                    </button>
+                    <button @click="searchPhoneReviewRecords" class="bg-brand-primary text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-brand-primary-strong">
+                      {{ phoneReviewLoading ? '查询中...' : '查询评测' }}
+                    </button>
+                  </div>
                 </div>
 
-                <div v-if="usageError" class="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
-                  {{ usageError }}
+                <div v-if="phoneReviewError" class="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                  {{ phoneReviewError }}
                 </div>
 
                 <div class="overflow-x-auto border border-gray-100 rounded-xl bg-white">
-                  <table class="w-full text-xs font-sans text-left">
+                  <table class="w-full table-fixed text-xs font-sans text-left">
+                    <colgroup>
+                      <col class="w-[136px]" />
+                      <col class="w-[124px]" />
+                      <col class="w-[58px]" />
+                      <col class="w-[104px]" />
+                      <col class="w-[78px]" />
+                      <col class="w-[78px]" />
+                      <col class="w-[76px]" />
+                      <col class="w-[88px]" />
+                      <col class="w-[142px]" />
+                      <col class="w-[92px]" />
+                    </colgroup>
                     <thead>
                       <tr class="bg-gray-50 border-b border-gray-100 text-brand-secondary uppercase font-mono text-[10px] tracking-wider">
-                        <th class="p-3">记录ID</th>
-                        <th class="p-3">功能名称</th>
-                        <th class="p-3">用户标识</th>
-                        <th class="p-3">渠道</th>
-                        <th class="p-3">状态</th>
-                        <th class="p-3 text-right">消耗积分</th>
-                        <th class="p-3">业务ID</th>
-                        <th class="p-3 text-right">操作</th>
+                        <th class="px-3 py-2.5">用户</th>
+                        <th class="px-3 py-2.5">测评手机号</th>
+                        <th class="px-2 py-2.5">性别</th>
+                        <th class="px-3 py-2.5">状态</th>
+                        <th class="px-2 py-2.5 text-right">基础消耗</th>
+                        <th class="px-2 py-2.5 text-right">专项解锁</th>
+                        <th class="px-2 py-2.5 text-right">语音次数</th>
+                        <th class="px-3 py-2.5">生成耗时</th>
+                        <th class="px-3 py-2.5">提交时间</th>
+                        <th class="px-3 py-2.5 text-center">操作</th>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100 font-medium">
-                      <tr v-for="record in usageRecords" :key="record.usage_record_id" class="hover:bg-brand-paper/50">
-                        <td class="p-3 font-mono text-brand-ink-strong select-all">{{ record.usage_record_id }}</td>
-                        <td class="p-3 font-bold text-brand-ink-strong">{{ record.feature_name || record.feature_key }}</td>
-                        <td class="p-3 text-brand-secondary">{{ record.user_nickname || record.user_phone || record.user_id }}</td>
-                        <td class="p-3 font-mono text-brand-secondary">{{ record.channel || '--' }}</td>
-                        <td class="p-3"><span class="px-2 py-0.5 rounded text-[9px] font-bold inline-block border" :class="usageStatusClass(record.status)">{{ record.status }}</span></td>
-                        <td class="p-3 text-right font-mono text-brand-primary font-bold">{{ record.normal_points_cost }}</td>
-                        <td class="p-3 font-mono text-brand-secondary">{{ record.target_id || '--' }}</td>
-                        <td class="p-3 text-right">
-                          <button @click="openUsageDetail(record)" class="text-brand-primary font-bold hover:underline outline-none cursor-pointer">详情</button>
+                      <tr v-for="record in phoneReviewRecords" :key="record.review_id" class="hover:bg-brand-paper/50">
+                        <td class="px-3 py-2.5 align-top">
+                          <div class="font-bold text-brand-ink-strong leading-snug break-words" :title="record.user_nickname || record.user_phone || record.user_uid || '未命名用户'">{{ record.user_nickname || record.user_phone || record.user_uid || '未命名用户' }}</div>
+                          <div class="text-[10px] text-brand-secondary font-mono leading-snug break-words" :title="record.user_uid ? `UID ${record.user_uid}` : record.user_id || '--'">{{ record.user_uid ? `UID ${record.user_uid}` : shortText(record.user_id, 8, 4) }}</div>
+                        </td>
+                        <td class="px-3 py-2.5 align-top font-mono text-brand-ink-strong whitespace-nowrap">{{ record.phone }}</td>
+                        <td class="px-2 py-2.5 align-top text-brand-secondary">{{ genderLabel(record.gender) }}</td>
+                        <td class="px-3 py-2.5 align-top">
+                          <span class="px-2 py-0.5 rounded text-[9px] font-bold inline-block border" :class="usageStatusClass(record.status)">
+                            {{ reviewStatusLabel(record.status) }}
+                          </span>
+                          <div v-if="record.error_message" class="text-[10px] text-red-500 mt-1 leading-snug break-words" :title="record.error_message">{{ record.error_message }}</div>
+                        </td>
+                        <td class="px-2 py-2.5 align-top text-right font-mono text-brand-primary font-bold">{{ record.base_points_cost }}</td>
+                        <td class="px-2 py-2.5 align-top text-right font-mono text-emerald-600 font-bold">{{ record.unlock_count }}</td>
+                        <td class="px-2 py-2.5 align-top text-right font-mono text-amber-700 font-bold">{{ record.voice_count }}</td>
+                        <td class="px-3 py-2.5 align-top font-mono text-brand-secondary break-words" :title="formatDuration(record.generation_duration_seconds)">{{ formatDuration(record.generation_duration_seconds) }}</td>
+                        <td class="px-3 py-2.5 align-top font-mono text-brand-secondary whitespace-normal leading-snug" :title="formatTime(record.created_at)">{{ formatTime(record.created_at) }}</td>
+                        <td class="px-3 py-2.5 align-top text-center">
+                          <button
+                            @click="openPhoneReviewDetail(record)"
+                            class="inline-flex items-center justify-center rounded-lg border border-brand-primary/15 bg-brand-primary/5 px-3 py-1.5 text-[10.5px] font-bold text-brand-primary shadow-sm shadow-brand-primary/5 outline-none transition-colors hover:bg-brand-primary hover:text-white cursor-pointer"
+                          >
+                            详情
+                          </button>
                         </td>
                       </tr>
-                      <tr v-if="!usageLoading && usageRecords.length === 0">
-                        <td colspan="8" class="p-8 text-center text-brand-secondary font-mono">暂无使用记录</td>
+                      <tr v-if="!phoneReviewLoading && phoneReviewRecords.length === 0">
+                        <td colspan="10" class="p-8 text-center text-brand-secondary font-mono">暂无手机号评测记录</td>
                       </tr>
                     </tbody>
                   </table>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-100 text-xs text-brand-secondary">
+                  <div class="font-mono">
+                    显示 {{ phoneReviewPageStart }}-{{ phoneReviewPageEnd }} / {{ phoneReviewTotal }}，每页 {{ phoneReviewPageSize }} 条
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button
+                      @click="changePhoneReviewPage(-1)"
+                      :disabled="!canGoPrevPhoneReviewPage"
+                      class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[10.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-paper"
+                    >
+                      上一页
+                    </button>
+                    <span class="font-mono text-[11px] text-brand-secondary px-2">
+                      第 {{ phoneReviewCurrentPage }} / {{ phoneReviewTotalPages }} 页
+                    </span>
+                    <button
+                      @click="changePhoneReviewPage(1)"
+                      :disabled="!canGoNextPhoneReviewPage"
+                      class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[10.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-paper"
+                    >
+                      下一页
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2771,15 +3899,19 @@ onBeforeUnmount(() => {
           <div v-else-if="activePrimary === 'settings'" class="space-y-6 text-left">
             <div class="bg-white border border-gray-100 rounded-2xl p-6 space-y-6 shadow-sm">
               <div class="flex justify-between items-center pb-3 border-b border-gray-100">
-	                <div class="space-y-0.5">
-	                  <h3 class="font-bold text-brand-ink-strong">易如反掌系统参数与运营设置</h3>
-	                  <p class="text-xs text-brand-secondary">套餐、积分规则、DeepSeek / 阿里云密钥与客服联系方式配置。</p>
-	                </div>
+                <div class="space-y-0.5">
+                  <h3 class="font-bold text-brand-ink-strong">
+                    {{ activeSettingsTitle }}
+                  </h3>
+                  <p class="text-xs text-brand-secondary">
+                    {{ activeSettingsDescription }}
+                  </p>
+                </div>
                 <div class="flex gap-2">
-                  <button @click="loadRuntimeConfig" class="bg-white border border-gray-100 text-brand-secondary px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-gray-50">
+                  <button v-if="activeSettings !== 'service-keys'" @click="loadRuntimeConfig" class="bg-white border border-gray-100 text-brand-secondary px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-gray-50">
                     {{ runtimeConfigLoading ? '刷新中...' : '刷新配置' }}
                   </button>
-                  <button @click="loadLlmKeys" class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10">
+                  <button v-if="activeSettings === 'service-keys'" @click="loadLlmKeys" class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10">
                     刷新密钥
                   </button>
                 </div>
@@ -2789,10 +3921,252 @@ onBeforeUnmount(() => {
                 {{ runtimeConfigError }}
               </div>
 
-              <div class="space-y-4">
-                <h4 class="text-xs font-bold text-brand-secondary font-mono uppercase pb-2 border-b border-gray-100">1. 系统配置</h4>
-                <div v-if="systemConfigItems.length" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div v-for="item in systemConfigItems" :key="item.config_key" class="bg-brand-paper/40 border border-gray-100 rounded-xl p-4 space-y-2">
+              <div v-if="activeSettings === 'basic-config'" class="grid grid-cols-1 xl:grid-cols-[minmax(300px,0.78fr)_minmax(0,1.22fr)] gap-4 items-stretch">
+                <section class="bg-brand-paper/40 border border-gray-100 rounded-2xl p-4 space-y-3 h-full">
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <h4 class="font-serif text-sm font-bold text-brand-ink-strong">初始积分设置</h4>
+                      <p class="text-[11px] text-brand-secondary mt-0.5 leading-snug">保存初始积分，可只影响新用户，也可按差额同步全部正式用户。</p>
+                    </div>
+                    <div class="text-right shrink-0">
+                      <p class="text-[9px] text-brand-secondary font-mono uppercase">Current</p>
+                      <b class="text-lg font-mono text-brand-primary">{{ runtimeConfigDrafts[INITIAL_POINTS_CONFIG_KEY] ?? initialPointsDraft }}</b>
+                    </div>
+                  </div>
+
+                  <label class="space-y-1 block">
+                    <span class="text-[10.5px] font-bold text-brand-secondary">新注册初始积分</span>
+                    <input
+                      v-model.number="initialPointsDraft"
+                      type="number"
+                      min="0"
+                      class="w-full bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs font-mono text-brand-ink-strong outline-none focus:border-brand-primary"
+                    />
+                  </label>
+
+                  <div class="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      @click="initialPointsScope = 'future_users'"
+                      class="text-left rounded-xl border px-3 py-2 transition-colors min-h-[58px]"
+                      :class="initialPointsScope === 'future_users' ? 'bg-white border-brand-primary/30 shadow-sm text-brand-ink-strong' : 'bg-white/60 border-gray-100 text-brand-secondary hover:bg-white'"
+                    >
+                      <span class="block text-xs font-bold">影响新用户</span>
+                      <span class="block text-[10px] mt-0.5 leading-snug">老用户余额不变。</span>
+                    </button>
+                    <button
+                      type="button"
+                      @click="initialPointsScope = 'all_users'"
+                      class="text-left rounded-xl border px-3 py-2 transition-colors min-h-[58px]"
+                      :class="initialPointsScope === 'all_users' ? 'bg-red-50 border-red-100 shadow-sm text-red-700' : 'bg-white/60 border-gray-100 text-brand-secondary hover:bg-white'"
+                    >
+                      <span class="block text-xs font-bold">影响全部用户</span>
+                      <span class="block text-[10px] mt-0.5 leading-snug">按差额写入流水。</span>
+                    </button>
+                  </div>
+
+                  <textarea
+                    v-model="initialPointsReason"
+                    class="w-full bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs outline-none min-h-14"
+                    placeholder="操作原因，可选"
+                  ></textarea>
+
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div v-if="initialPointsResult" class="text-[10.5px] text-brand-secondary leading-snug">
+                      上次：{{ initialPointsResult.previous_initial_grant }} → {{ initialPointsResult.initial_grant }}，调整 {{ initialPointsResult.affected_user_count }} 人。
+                    </div>
+                    <button
+                      @click="saveInitialPointsSettings"
+                      class="ml-auto bg-brand-primary hover:bg-brand-primary-strong text-white px-3.5 py-2 rounded-lg text-[11px] font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10"
+                    >
+                      {{ initialPointsSaving ? '保存中...' : '保存初始积分' }}
+                    </button>
+                  </div>
+                </section>
+
+                <section class="bg-white border border-gray-100 rounded-2xl p-4 space-y-3 h-full flex flex-col">
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <h4 class="font-serif text-sm font-bold text-brand-ink-strong">充值套餐设置</h4>
+                      <p class="text-[11px] text-brand-secondary mt-0.5 leading-snug">最多 6 个展示卡片，点击卡片进入编辑。</p>
+                    </div>
+                    <button
+                      @click="addRechargePackageDraft"
+                      :disabled="!canAddRechargePackage"
+                      class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[11px] font-bold hover:bg-brand-paper disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                    >
+                      新增套餐
+                    </button>
+                  </div>
+
+                  <div v-if="rechargePackageDrafts.length === 0" class="flex-1 min-h-[176px] rounded-xl border border-dashed border-gray-200 bg-brand-paper/40 flex items-center justify-center text-xs text-brand-secondary font-mono">
+                    暂无充值套餐，可点击“新增套餐”开始配置
+                  </div>
+
+                  <div v-else :class="rechargePackageGridClass">
+                    <button
+                      v-for="(packageDraft, index) in rechargePackageDrafts"
+                      :key="packageDraft.package_key || index"
+                      type="button"
+                      @click="openRechargePackageEditor(index)"
+                      class="relative h-full rounded-xl border p-3 text-left transition-colors hover:bg-brand-paper/70 flex flex-col justify-center"
+                      :class="[rechargePackageCardLayoutClass(index), packageDraft.enabled ? 'bg-brand-paper/45 border-gray-100 text-brand-ink-strong' : 'bg-gray-50 border-gray-100 text-brand-secondary opacity-70']"
+                    >
+                      <span class="absolute right-2 top-2 text-[9px] font-mono text-brand-secondary">{{ index + 1 }}</span>
+                      <span class="block text-[10px] text-brand-secondary font-bold">金额</span>
+                      <span class="block mt-1 font-mono font-bold text-brand-primary" :class="rechargePackageAmountClass()">¥{{ Number(packageDraft.price_yuan || 0).toFixed(2) }}</span>
+                      <span class="block mt-2 text-[10px] text-brand-secondary font-bold">积分</span>
+                      <span class="block mt-0.5 font-mono font-bold" :class="rechargePackagePointsClass()">{{ packageDraft.points_amount }}</span>
+                    </button>
+                  </div>
+
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <p class="text-[10.5px] text-brand-secondary leading-snug">
+                      {{ rechargePackageDrafts.length }} / {{ MAX_RECHARGE_PACKAGE_COUNT }} 个套餐。{{ rechargePackagesDirty ? '有未保存修改。' : '已同步。' }}
+                    </p>
+                    <button
+                      @click="saveRechargePackages"
+                      class="bg-brand-primary hover:bg-brand-primary-strong text-white px-3.5 py-2 rounded-lg text-[11px] font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10"
+                    >
+                      {{ rechargePackagesSaving ? '保存中...' : '保存充值套餐' }}
+                    </button>
+                  </div>
+                </section>
+              </div>
+
+              <div v-if="activeSettings === 'customer-service'" class="space-y-4">
+                <section class="bg-white border border-gray-100 rounded-2xl p-4 space-y-4">
+                  <div class="flex flex-wrap items-start justify-between gap-3 pb-2 border-b border-gray-100">
+                    <div>
+                      <h4 class="font-serif text-sm font-bold text-brand-ink-strong">基础联系方式</h4>
+                      <p class="text-[11px] text-brand-secondary mt-0.5 leading-snug">控制统一客服弹窗里的微信号、二维码、复制按钮和未配置提示。</p>
+                    </div>
+                    <button
+                      @click="saveCustomerServiceConfig"
+                      class="bg-brand-primary hover:bg-brand-primary-strong text-white px-4 py-2 rounded-xl text-[11px] font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10"
+                    >
+                      {{ runtimeConfigLoading ? '保存中...' : '保存客服配置' }}
+                    </button>
+                  </div>
+
+                  <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_260px] gap-4 items-start">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <label
+                        v-for="item in customerServiceBaseConfigItems"
+                        :key="item.config_key"
+                        class="space-y-1.5 block"
+                      >
+                        <span class="text-[10.5px] font-bold text-brand-secondary">{{ item.label }}</span>
+                        <textarea
+                          v-if="item.config_key === CUSTOMER_SERVICE_UNCONFIGURED_TEXT_CONFIG_KEY || item.config_key === CUSTOMER_SERVICE_QR_GUIDANCE_TEXT_CONFIG_KEY"
+                          v-model="runtimeConfigDrafts[item.config_key]"
+                          @input="runtimeConfigDirty = true"
+                          class="w-full min-h-[72px] bg-brand-paper border border-gray-100 rounded-lg px-2.5 py-2 text-xs text-brand-ink-strong outline-none focus:border-brand-primary"
+                          :placeholder="String(item.default_value || '')"
+                        ></textarea>
+                        <input
+                          v-else
+                          v-model="runtimeConfigDrafts[item.config_key]"
+                          @input="runtimeConfigDirty = true"
+                          type="text"
+                          class="w-full bg-brand-paper border border-gray-100 rounded-lg px-2.5 py-2 text-xs font-mono text-brand-ink-strong outline-none focus:border-brand-primary"
+                          :placeholder="String(item.default_value || '')"
+                        />
+                        <span
+                          v-if="item.config_key === CUSTOMER_SERVICE_WECHAT_ID_CONFIG_KEY && !runtimeConfigDrafts[CUSTOMER_SERVICE_WECHAT_ID_CONFIG_KEY] && runtimeConfigDrafts[CUSTOMER_SERVICE_CONTACT_URL_CONFIG_KEY]"
+                          class="block text-[10px] text-amber-700"
+                        >
+                          当前将兼容使用旧字段：{{ runtimeConfigDrafts[CUSTOMER_SERVICE_CONTACT_URL_CONFIG_KEY] }}
+                        </span>
+                        <span v-else class="block text-[10px] text-brand-secondary leading-snug">{{ item.description || '用于前台统一联系客服弹窗。' }}</span>
+                      </label>
+                    </div>
+
+                    <div class="rounded-2xl border border-gray-100 bg-brand-paper/45 p-3 space-y-2">
+                      <div class="h-48 rounded-xl border border-dashed border-gray-200 bg-white flex items-center justify-center overflow-hidden">
+                        <img
+                          v-if="customerServiceQrPreviewUrl"
+                          :src="customerServiceQrPreviewUrl"
+                          alt="客服二维码预览"
+                          class="h-full w-full object-contain"
+                        />
+                        <span v-else class="text-[11px] text-brand-secondary">客服二维码暂未配置</span>
+                      </div>
+                      <input
+                        ref="customerServiceQrInputRef"
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        class="hidden"
+                        @change="handleCustomerServiceQrFileChange"
+                      />
+                      <div class="grid grid-cols-2 gap-2">
+                        <button
+                          @click="openCustomerServiceQrUploader"
+                          class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-2 rounded-lg text-[10.5px] font-bold hover:bg-brand-paper disabled:opacity-60"
+                          :disabled="customerServiceQrUploading"
+                        >
+                          {{ customerServiceQrUploading ? '上传中...' : '上传二维码' }}
+                        </button>
+                        <button
+                          @click="deleteCustomerServiceQrCode"
+                          class="bg-red-50 border border-red-100 text-red-600 px-3 py-2 rounded-lg text-[10.5px] font-bold hover:bg-red-100 disabled:opacity-60"
+                          :disabled="customerServiceQrDeleting || !customerServiceQrPreviewUrl"
+                        >
+                          {{ customerServiceQrDeleting ? '删除中...' : '删除二维码' }}
+                        </button>
+                      </div>
+                      <p v-if="customerServiceQrError" class="text-[10.5px] text-red-600 leading-snug">{{ customerServiceQrError }}</p>
+                      <p v-else class="text-[10px] text-brand-secondary leading-snug">支持 JPG / PNG / WebP，大小不超过 1.5MB。</p>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="bg-white border border-gray-100 rounded-2xl p-4 space-y-4">
+                  <div class="flex flex-wrap items-start justify-between gap-3 pb-2 border-b border-gray-100">
+                    <div>
+                      <h4 class="font-serif text-sm font-bold text-brand-ink-strong">业务场景文案</h4>
+                      <p class="text-[11px] text-brand-secondary mt-0.5 leading-snug">不同“联系客服”入口会读取对应文案；未命中时使用默认客服文案。</p>
+                    </div>
+                    <span class="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">7 个场景</span>
+                  </div>
+
+                  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    <label
+                      v-for="item in CUSTOMER_SERVICE_COPY_CONFIGS"
+                      :key="item.key"
+                      class="block rounded-xl border border-gray-100 bg-brand-paper/35 p-3 space-y-2"
+                    >
+                      <span class="flex items-start justify-between gap-3">
+                        <span>
+                          <span class="block text-xs font-bold text-brand-ink-strong">{{ item.label }}</span>
+                          <span class="mt-0.5 block text-[10px] text-brand-secondary">{{ item.scene }}</span>
+                        </span>
+                        <span class="shrink-0 rounded-full bg-white px-2 py-0.5 text-[9px] font-mono text-brand-secondary border border-gray-100">{{ item.key.replace('customer_service.copy.', '') }}</span>
+                      </span>
+                      <textarea
+                        v-model="runtimeConfigDrafts[item.key]"
+                        @input="runtimeConfigDirty = true"
+                        class="w-full min-h-[88px] bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs text-brand-ink-strong outline-none focus:border-brand-primary"
+                        :placeholder="item.placeholder"
+                      ></textarea>
+                    </label>
+                  </div>
+
+                  <div class="flex justify-end">
+                    <button
+                      @click="saveCustomerServiceConfig"
+                      class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10"
+                    >
+                      {{ runtimeConfigLoading ? '保存中...' : '保存客服配置' }}
+                    </button>
+                  </div>
+                </section>
+              </div>
+
+              <div v-if="activeSettings === 'basic-config'" class="space-y-4">
+                <h4 class="text-xs font-bold text-brand-secondary font-mono uppercase pb-2 border-b border-gray-100">基础系统配置</h4>
+                <div v-if="basicSystemConfigItems.length" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div v-for="item in basicSystemConfigItems" :key="item.config_key" class="bg-brand-paper/40 border border-gray-100 rounded-xl p-4 space-y-2">
                     <div class="flex items-center justify-between gap-2">
                       <div>
                         <div class="text-sm font-bold text-brand-ink-strong">{{ item.label }}</div>
@@ -2821,13 +4195,165 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
 
-                <button @click="saveRuntimeConfig" class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10">
-                  {{ runtimeConfigLoading ? '保存中...' : '保存系统配置' }}
+                <div v-else class="h-32 rounded-xl border border-dashed border-gray-200 bg-white/70 flex items-center justify-center text-xs text-brand-secondary font-mono">
+                  暂无基础系统配置项
+                </div>
+
+                <button @click="saveRuntimeConfig(basicSystemConfigItems, '基础系统配置已保存')" class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10">
+                  {{ runtimeConfigLoading ? '保存中...' : '保存基础系统配置' }}
                 </button>
               </div>
 
-              <div class="space-y-4">
-                <h4 class="text-xs font-bold text-brand-secondary font-mono uppercase pb-2 border-b border-gray-100">2. 第三方服务密钥管理</h4>
+              <div v-if="activeSettings === 'voice'" class="space-y-4">
+                <div class="flex flex-wrap items-start justify-between gap-3 pb-2 border-b border-gray-100">
+                  <div>
+                    <h4 class="text-xs font-bold text-brand-secondary font-mono uppercase">语音播报配置</h4>
+                    <p class="text-[11px] text-brand-secondary mt-1">控制 H5 与小程序共用的 TTS 模式、默认自动播报、供应商、音色、缓存和文本长度限制。</p>
+                  </div>
+                  <button
+                    @click="saveRuntimeConfig(voiceSystemConfigItems, '语音播报配置已保存')"
+                    class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10"
+                  >
+                    {{ runtimeConfigLoading ? '保存中...' : '保存语音配置' }}
+                  </button>
+                </div>
+
+                <div v-if="voiceSystemConfigItems.length" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div v-for="item in voiceSystemConfigItems" :key="item.config_key" class="bg-brand-paper/40 border border-gray-100 rounded-xl p-4 space-y-2">
+                    <div class="flex items-start justify-between gap-2">
+                      <div>
+                        <div class="text-sm font-bold text-brand-ink-strong">{{ item.label }}</div>
+                        <div class="text-[10px] text-brand-secondary font-mono">{{ item.config_key }}</div>
+                      </div>
+                      <span class="text-[10px] px-2 py-0.5 rounded-full border" :class="item.advanced ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'">
+                        {{ item.advanced ? '高级' : '常用' }}
+                      </span>
+                    </div>
+                    <p class="text-[11px] text-brand-secondary leading-relaxed">{{ item.help_text || item.description || '暂无说明' }}</p>
+                    <template v-if="item.value_type === 'bool'">
+                      <AdminSelect
+                        v-model="runtimeConfigDrafts[item.config_key]"
+                        @change="runtimeConfigDirty = true"
+                        :options="booleanToggleSelectOptions"
+                        min-width-class="w-full"
+                        panel-width-class="w-full"
+                      />
+                    </template>
+                    <template v-else-if="item.input_options?.length">
+                      <div class="grid grid-cols-2 gap-2">
+                        <button
+                          v-for="option in item.input_options"
+                          :key="option.value"
+                          type="button"
+                          @click="runtimeConfigDrafts[item.config_key] = option.value; runtimeConfigDirty = true"
+                          class="text-left rounded-xl border px-3 py-2 text-xs font-bold transition-colors"
+                          :class="runtimeConfigDrafts[item.config_key] === option.value ? 'bg-brand-primary text-white border-brand-primary shadow-sm shadow-brand-primary/10' : 'bg-white text-brand-ink-strong border-gray-100 hover:bg-brand-paper'"
+                        >
+                          {{ option.label }}
+                        </button>
+                      </div>
+                    </template>
+                    <template v-else-if="item.value_type === 'json'">
+                      <textarea
+                        v-model="runtimeConfigDrafts[item.config_key]"
+                        @input="runtimeConfigDirty = true"
+                        class="w-full bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none min-h-24 font-mono"
+                      ></textarea>
+                    </template>
+                    <template v-else>
+                      <input
+                        v-model="runtimeConfigDrafts[item.config_key]"
+                        @input="runtimeConfigDirty = true"
+                        :type="item.value_type === 'int' || item.value_type === 'float' ? 'number' : 'text'"
+                        class="w-full bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none"
+                      />
+                    </template>
+                    <div class="text-[11px] text-brand-secondary">当前值：{{ runtimeInputText(item) }}</div>
+                  </div>
+                </div>
+
+                <div v-else class="h-32 rounded-xl border border-dashed border-gray-200 bg-white/70 flex items-center justify-center text-xs text-brand-secondary font-mono">
+                  暂无语音播报配置项
+                </div>
+              </div>
+
+              <div v-if="activeSettings === 'safety'" class="space-y-4">
+                <div class="flex flex-wrap items-start justify-between gap-3 pb-2 border-b border-gray-100">
+                  <div>
+                    <h4 class="text-xs font-bold text-brand-secondary font-mono uppercase">安全与合规</h4>
+                    <p class="text-[11px] text-brand-secondary mt-1">安全模式用于紧急收敛前台能力。允许功能和强制隐藏功能使用勾选方式维护，不再直接编辑 JSON。</p>
+                  </div>
+                  <button
+                    @click="saveRuntimeConfig(safetySystemConfigItems, '安全与合规配置已保存')"
+                    class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10"
+                  >
+                    {{ runtimeConfigLoading ? '保存中...' : '保存安全配置' }}
+                  </button>
+                </div>
+
+                <div v-if="safetySystemConfigItems.length" class="grid grid-cols-1 gap-4">
+                  <div v-for="item in safetySystemConfigItems" :key="item.config_key" class="bg-brand-paper/40 border border-gray-100 rounded-xl p-4 space-y-3">
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div class="text-sm font-bold text-brand-ink-strong">{{ item.label }}</div>
+                        <div class="text-[10px] text-brand-secondary font-mono">{{ item.config_key }}</div>
+                      </div>
+                      <span class="text-[10px] px-2 py-0.5 rounded-full border" :class="item.high_risk ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'">
+                        {{ item.high_risk ? '高风险' : '常规' }}
+                      </span>
+                    </div>
+                    <p class="text-[11px] text-brand-secondary leading-relaxed">{{ item.help_text || item.description || '暂无说明' }}</p>
+
+                    <template v-if="item.value_type === 'bool'">
+                      <AdminSelect
+                        v-model="runtimeConfigDrafts[item.config_key]"
+                        @change="runtimeConfigDirty = true"
+                        :options="booleanToggleSelectOptions"
+                        min-width-class="w-full"
+                        panel-width-class="w-full"
+                      />
+                    </template>
+                    <template v-else-if="item.input_options?.length">
+                      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        <button
+                          v-for="option in item.input_options"
+                          :key="option.value"
+                          type="button"
+                          @click="toggleRuntimeConfigStringListValue(item.config_key, option.value)"
+                          class="rounded-xl border px-3 py-2 text-left transition-colors"
+                          :class="runtimeConfigStringList(item.config_key).includes(option.value) ? 'bg-brand-primary text-white border-brand-primary shadow-sm shadow-brand-primary/10' : 'bg-white text-brand-ink-strong border-gray-100 hover:bg-brand-paper'"
+                        >
+                          <span class="block text-xs font-bold">{{ option.label }}</span>
+                          <span class="block text-[9.5px] font-mono opacity-70">{{ option.value }}</span>
+                        </button>
+                      </div>
+                    </template>
+                    <template v-else-if="item.value_type === 'json'">
+                      <textarea
+                        v-model="runtimeConfigDrafts[item.config_key]"
+                        @input="runtimeConfigDirty = true"
+                        class="w-full bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none min-h-24 font-mono"
+                      ></textarea>
+                    </template>
+                    <template v-else>
+                      <input
+                        v-model="runtimeConfigDrafts[item.config_key]"
+                        @input="runtimeConfigDirty = true"
+                        :type="item.value_type === 'int' || item.value_type === 'float' ? 'number' : 'text'"
+                        class="w-full bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none"
+                      />
+                    </template>
+                    <div class="text-[11px] text-brand-secondary">当前值：{{ runtimeInputText(item) }}</div>
+                  </div>
+                </div>
+
+                <div v-else class="h-32 rounded-xl border border-dashed border-gray-200 bg-white/70 flex items-center justify-center text-xs text-brand-secondary font-mono">
+                  暂无安全与合规配置项
+                </div>
+              </div>
+
+              <div v-if="activeSettings === 'service-keys'" class="space-y-4">
+                <h4 class="text-xs font-bold text-brand-secondary font-mono uppercase pb-2 border-b border-gray-100">服务密钥管理</h4>
                 <div class="bg-brand-paper/50 border border-gray-100 rounded-xl p-4 text-xs text-brand-secondary leading-relaxed">
                   可在这里配置 DeepSeek 与阿里云服务密钥。保存后系统只展示脱敏值，真实 Key 不会在列表或编辑表单中回显；运行时优先使用已启用的后台配置，未配置时继续读取服务器环境变量。
                 </div>
@@ -2947,6 +4473,205 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </main>
+
+      <div v-if="selectedRechargePackageDraft && rechargePackageEditIndex !== null" class="fixed inset-0 z-[60] bg-slate-950/35 backdrop-blur-sm px-4 py-6 flex items-center justify-center">
+        <div class="w-full max-w-md bg-white border border-gray-100 rounded-2xl shadow-2xl overflow-hidden flex flex-col text-left">
+          <div class="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-4">
+            <div>
+              <p class="text-[10px] font-mono text-brand-secondary uppercase font-bold">Recharge Package</p>
+              <h2 class="font-serif text-lg font-bold text-brand-ink-strong">编辑充值套餐 {{ rechargePackageEditIndex + 1 }}</h2>
+            </div>
+            <button
+              type="button"
+              @click="closeRechargePackageEditor"
+              class="w-8 h-8 rounded-lg bg-brand-paper hover:bg-gray-100 text-brand-ink-strong border border-gray-100 flex items-center justify-center shrink-0"
+              title="关闭"
+            >
+              <X :size="15" />
+            </button>
+          </div>
+
+          <div class="p-5 space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+              <label class="space-y-1 block">
+                <span class="text-[10.5px] font-bold text-brand-secondary">人民币金额</span>
+                <input
+                  v-model.number="selectedRechargePackageDraft.price_yuan"
+                  @input="rechargePackagesDirty = true"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  class="w-full bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-2 text-xs font-mono outline-none focus:border-brand-primary"
+                  placeholder="9.9"
+                />
+              </label>
+              <label class="space-y-1 block">
+                <span class="text-[10.5px] font-bold text-brand-secondary">积分数量</span>
+                <input
+                  v-model.number="selectedRechargePackageDraft.points_amount"
+                  @input="rechargePackagesDirty = true"
+                  type="number"
+                  min="1"
+                  class="w-full bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-2 text-xs font-mono outline-none focus:border-brand-primary"
+                  placeholder="1000"
+                />
+              </label>
+            </div>
+
+            <label class="space-y-1 block">
+              <span class="text-[10.5px] font-bold text-brand-secondary">启用状态</span>
+              <AdminSelect
+                v-model="selectedRechargePackageDraft.enabled"
+                @change="rechargePackagesDirty = true"
+                :options="booleanToggleSelectOptions"
+                min-width-class="w-full"
+                panel-width-class="w-full"
+              />
+            </label>
+
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                @click="moveRechargePackageDraft(rechargePackageEditIndex, rechargePackageEditIndex - 1)"
+                :disabled="rechargePackageEditIndex === 0"
+                class="bg-white border border-gray-100 text-brand-secondary px-3 py-2 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-paper"
+              >
+                <ArrowUp :size="13" />
+                <span>上移</span>
+              </button>
+              <button
+                type="button"
+                @click="moveRechargePackageDraft(rechargePackageEditIndex, rechargePackageEditIndex + 1)"
+                :disabled="rechargePackageEditIndex >= rechargePackageDrafts.length - 1"
+                class="bg-white border border-gray-100 text-brand-secondary px-3 py-2 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-paper"
+              >
+                <ArrowDown :size="13" />
+                <span>下移</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/60 flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              @click="removeRechargePackageDraft(rechargePackageEditIndex)"
+              class="bg-red-50 border border-red-100 text-red-600 px-3 py-2 rounded-lg text-[11px] font-bold"
+            >
+              删除套餐
+            </button>
+            <button
+              type="button"
+              @click="closeRechargePackageEditor"
+              class="ml-auto bg-brand-primary hover:bg-brand-primary-strong text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm shadow-brand-primary/10"
+            >
+              完成
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="phoneReviewAspectConfigModal" class="fixed inset-0 z-[60] bg-slate-950/35 backdrop-blur-sm px-4 py-6 flex items-center justify-center">
+        <div class="w-full max-w-2xl max-h-[88vh] bg-white border border-gray-100 rounded-2xl shadow-2xl overflow-hidden flex flex-col text-left">
+          <div class="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-4">
+            <div>
+              <p class="text-[10px] font-mono text-brand-secondary uppercase font-bold">Phone Review Aspect Config</p>
+              <h2 class="font-serif text-lg font-bold text-brand-ink-strong">
+                {{ phoneReviewAspectConfigModal === 'free' ? '免费专项' : '专项顺序' }}
+              </h2>
+            </div>
+            <button
+              type="button"
+              @click="closePhoneReviewAspectConfigModal"
+              class="w-8 h-8 rounded-lg bg-brand-paper hover:bg-gray-100 text-brand-ink-strong border border-gray-100 flex items-center justify-center shrink-0"
+              title="关闭"
+            >
+              <X :size="15" />
+            </button>
+          </div>
+
+          <div class="p-5 overflow-y-auto">
+            <div v-if="phoneReviewAspectConfigModal === 'free'" class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <button
+                v-for="aspect in PHONE_REVIEW_ASPECT_OPTIONS"
+                :key="aspect.key"
+                type="button"
+                @click="togglePhoneReviewFreeAspect(aspect.key)"
+                class="rounded-xl border px-3 py-2.5 text-left transition-colors min-h-[58px]"
+                :class="isPhoneReviewFreeAspect(aspect.key) ? 'bg-emerald-50 border-emerald-100 text-emerald-700 shadow-sm' : 'bg-white border-gray-100 text-brand-ink-strong hover:bg-brand-paper/60'"
+              >
+                <span class="block text-sm font-bold">{{ aspect.label }}</span>
+                <span class="block text-[10px] mt-1 font-mono">{{ isPhoneReviewFreeAspect(aspect.key) ? '免费' : '收费' }}</span>
+              </button>
+            </div>
+
+            <div v-else class="space-y-2">
+              <div
+                v-for="aspect in phoneReviewOrderedAspectOptions"
+                :key="aspect.key"
+                class="grid grid-cols-[minmax(0,1fr)_36px_36px] gap-2 items-center"
+              >
+                <button
+                  type="button"
+                  @click="togglePhoneReviewFreeAspect(aspect.key)"
+                  class="rounded-xl border px-3 py-2 text-left transition-colors"
+                  :class="aspect.is_free ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-white border-gray-100 text-brand-ink-strong hover:bg-brand-paper/60'"
+                >
+                  <span class="flex items-center justify-between gap-3">
+                    <span class="text-sm font-bold">{{ aspect.index + 1 }}. {{ aspect.label }}</span>
+                    <span class="text-[10px] font-mono">{{ aspect.is_free ? '免费' : '收费' }}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  @click="movePhoneReviewAspectOrder(aspect.key, -1)"
+                  :disabled="aspect.index === 0"
+                  class="w-9 h-9 rounded-xl border border-gray-100 bg-white text-brand-secondary flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:bg-brand-paper"
+                  title="上移"
+                >
+                  <ArrowUp :size="14" />
+                </button>
+                <button
+                  type="button"
+                  @click="movePhoneReviewAspectOrder(aspect.key, 1)"
+                  :disabled="aspect.index === phoneReviewOrderedAspectOptions.length - 1"
+                  class="w-9 h-9 rounded-xl border border-gray-100 bg-white text-brand-secondary flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:bg-brand-paper"
+                  title="下移"
+                >
+                  <ArrowDown :size="14" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="px-5 py-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-gray-50/60">
+            <button
+              v-if="phoneReviewAspectConfigModal === 'free'"
+              type="button"
+              @click="resetPhoneReviewFreeAspects"
+              class="bg-white border border-gray-100 text-brand-secondary px-3 py-2 rounded-lg text-[11px] font-bold flex items-center gap-1.5"
+            >
+              <RotateCcw :size="13" />
+              <span>清空免费</span>
+            </button>
+            <button
+              v-else
+              type="button"
+              @click="resetPhoneReviewAspectOrder"
+              class="bg-white border border-gray-100 text-brand-secondary px-3 py-2 rounded-lg text-[11px] font-bold flex items-center gap-1.5"
+            >
+              <RotateCcw :size="13" />
+              <span>恢复默认顺序</span>
+            </button>
+            <button
+              type="button"
+              @click="closePhoneReviewAspectConfigModal"
+              class="ml-auto bg-brand-primary hover:bg-brand-primary-strong text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm shadow-brand-primary/10"
+            >
+              完成
+            </button>
+          </div>
+        </div>
+      </div>
 
       <div v-if="selectedUser" class="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-sm px-4 py-6 flex items-center justify-center">
         <div class="w-full max-w-6xl max-h-[92vh] bg-white border border-gray-100 rounded-3xl shadow-2xl overflow-hidden flex flex-col text-left">
@@ -3155,6 +4880,152 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <aside v-if="selectedPhoneReview" class="fixed top-0 right-0 w-full max-w-3xl bg-white border-l border-gray-100 h-full flex flex-col p-6 shadow-2xl text-left overflow-y-auto z-50">
+        <div class="flex items-start justify-between gap-4 pb-4 border-b border-gray-100">
+          <div class="min-w-0">
+            <p class="text-[10px] font-mono text-brand-secondary uppercase font-bold">Phone Qimen Review Detail</p>
+            <h2 class="font-serif text-lg font-bold text-brand-ink-strong">
+              {{ selectedPhoneReview.review.phone }} · {{ genderLabel(selectedPhoneReview.review.gender) }}
+            </h2>
+            <p class="font-mono text-[11px] text-brand-secondary select-all truncate">{{ selectedPhoneReview.review.review_id }}</p>
+          </div>
+          <button @click="selectedPhoneReview = null" class="bg-brand-paper hover:bg-gray-100 text-brand-ink-strong text-xs px-3 py-1.5 rounded-lg border border-gray-100 shrink-0">关闭</button>
+        </div>
+
+        <div class="space-y-6 py-5 text-xs text-brand-secondary">
+          <section class="space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <h3 class="font-bold text-brand-ink-strong">本次评测基本信息</h3>
+              <span class="px-2 py-0.5 rounded text-[9px] font-bold inline-block border" :class="usageStatusClass(selectedPhoneReview.review.status)">
+                {{ reviewStatusLabel(selectedPhoneReview.review.status) }}
+              </span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
+                <span class="block text-[10px] uppercase font-bold">用户</span>
+                <span class="font-semibold text-brand-ink-strong">{{ selectedPhoneReview.review.user_nickname || selectedPhoneReview.review.user_phone || selectedPhoneReview.review.user_uid || '--' }}</span>
+                <button
+                  v-if="selectedPhoneReview.review.user_id"
+                  @click="jumpToNullableUser(selectedPhoneReview.review.user_id)"
+                  class="block mt-1 text-[10.5px] text-brand-primary font-bold"
+                >
+                  打开用户管理
+                </button>
+              </div>
+              <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
+                <span class="block text-[10px] uppercase font-bold">基础积分消耗</span>
+                <span class="font-semibold text-brand-primary font-mono">{{ selectedPhoneReview.review.base_points_cost }} pt</span>
+              </div>
+              <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
+                <span class="block text-[10px] uppercase font-bold">生成耗时</span>
+                <span class="font-semibold text-brand-ink-strong font-mono">{{ formatDuration(selectedPhoneReview.review.generation_duration_seconds) }}</span>
+              </div>
+              <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
+                <span class="block text-[10px] uppercase font-bold">提交时间</span>
+                <span class="font-semibold text-brand-ink-strong font-mono">{{ formatTime(selectedPhoneReview.review.created_at) }}</span>
+              </div>
+              <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
+                <span class="block text-[10px] uppercase font-bold">完成 / 更新时间</span>
+                <span class="font-semibold text-brand-ink-strong font-mono">{{ formatTime(selectedPhoneReview.review.updated_at) }}</span>
+              </div>
+              <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
+                <span class="block text-[10px] uppercase font-bold">渠道</span>
+                <span class="font-semibold text-brand-ink-strong">{{ selectedPhoneReview.review.channel || '--' }}</span>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div class="bg-white rounded-xl border border-gray-100 p-3">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-[10px] uppercase font-bold">评测 ID</span>
+                  <button @click="copyText(selectedPhoneReview.review.review_id, '评测 ID')" class="text-[10.5px] text-brand-primary font-bold">复制</button>
+                </div>
+                <p class="font-mono text-brand-ink-strong break-all mt-1 select-all">{{ selectedPhoneReview.review.review_id }}</p>
+              </div>
+              <div class="bg-white rounded-xl border border-gray-100 p-3">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-[10px] uppercase font-bold">用户 ID</span>
+                  <button v-if="selectedPhoneReview.review.user_id" @click="copyText(selectedPhoneReview.review.user_id, '用户 ID')" class="text-[10.5px] text-brand-primary font-bold">复制</button>
+                </div>
+                <p class="font-mono text-brand-ink-strong break-all mt-1 select-all">{{ selectedPhoneReview.review.user_id || '--' }}</p>
+              </div>
+            </div>
+            <div v-if="selectedPhoneReview.review.error_message" class="bg-red-50 border border-red-100 rounded-xl p-3 text-red-600">
+              失败原因：{{ selectedPhoneReview.review.error_message }}
+            </div>
+          </section>
+
+          <section class="space-y-3 border-t border-gray-100 pt-5">
+            <div class="flex items-center justify-between gap-3">
+              <h3 class="font-bold text-brand-ink-strong">专项解锁记录</h3>
+              <span class="font-mono text-[10px] text-brand-secondary">{{ selectedPhoneReview.unlock_records.length }} 条</span>
+            </div>
+            <div class="overflow-x-auto border border-gray-100 rounded-xl bg-white">
+              <table class="w-full text-xs">
+                <thead class="bg-gray-50 text-brand-secondary font-mono text-[10px] uppercase">
+                  <tr>
+                    <th class="p-3 text-left">专项</th>
+                    <th class="p-3 text-right">消耗积分</th>
+                    <th class="p-3 text-left">解锁时间</th>
+                    <th class="p-3 text-left">流水</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                  <tr v-for="unlock in selectedPhoneReview.unlock_records" :key="unlock.unlock_id">
+                    <td class="p-3 font-bold text-brand-ink-strong">{{ unlock.aspect_name || aspectLabel(unlock.aspect_key) }}</td>
+                    <td class="p-3 text-right font-mono text-brand-primary">{{ unlock.points_cost }}</td>
+                    <td class="p-3 font-mono text-brand-secondary">{{ formatTime(unlock.unlocked_at) }}</td>
+                    <td class="p-3 font-mono text-brand-secondary" :title="unlock.usage_record_id || '--'">{{ shortText(unlock.usage_record_id, 8, 4) }}</td>
+                  </tr>
+                  <tr v-if="selectedPhoneReview.unlock_records.length === 0">
+                    <td colspan="4" class="p-6 text-center text-brand-secondary font-mono">暂无专项解锁记录</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="space-y-3 border-t border-gray-100 pt-5">
+            <div class="flex items-center justify-between gap-3">
+              <h3 class="font-bold text-brand-ink-strong">语音播报记录</h3>
+              <span class="font-mono text-[10px] text-brand-secondary">{{ selectedPhoneReview.voice_records.length }} 条</span>
+            </div>
+            <div class="overflow-x-auto border border-gray-100 rounded-xl bg-white">
+              <table class="w-full text-xs">
+                <thead class="bg-gray-50 text-brand-secondary font-mono text-[10px] uppercase">
+                  <tr>
+                    <th class="p-3 text-left">场景</th>
+                    <th class="p-3 text-left">状态</th>
+                    <th class="p-3 text-left">供应商</th>
+                    <th class="p-3 text-left">音色</th>
+                    <th class="p-3 text-left">缓存</th>
+                    <th class="p-3 text-left">失败原因</th>
+                    <th class="p-3 text-left">生成时间</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                  <tr v-for="record in selectedPhoneReview.voice_records" :key="record.usage_record_id">
+                    <td class="p-3 font-bold text-brand-ink-strong">{{ voiceSceneLabel(record) }}</td>
+                    <td class="p-3">
+                      <span class="px-2 py-0.5 rounded text-[9px] font-bold inline-block border" :class="usageStatusClass(record.status)">
+                        {{ record.status }}
+                      </span>
+                    </td>
+                    <td class="p-3 font-mono text-brand-secondary">{{ voiceRecordField(record, 'provider') }}</td>
+                    <td class="p-3 font-mono text-brand-secondary">{{ voiceRecordField(record, 'voice_key') }}</td>
+                    <td class="p-3 text-brand-secondary">{{ voiceCachedLabel(record) }}</td>
+                    <td class="p-3 text-red-500 max-w-44 truncate" :title="voiceFailureText(record)">{{ voiceFailureText(record) }}</td>
+                    <td class="p-3 font-mono text-brand-secondary">{{ formatTime(record.created_at) }}</td>
+                  </tr>
+                  <tr v-if="selectedPhoneReview.voice_records.length === 0">
+                    <td colspan="7" class="p-6 text-center text-brand-secondary font-mono">暂无语音播报记录</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </aside>
+
       <aside v-if="selectedUsage" class="fixed top-0 right-0 w-full max-w-lg bg-white border-l border-gray-100 h-full flex flex-col p-6 shadow-2xl text-left overflow-y-auto z-50">
         <div class="flex items-start justify-between pb-4 border-b border-gray-100">
           <div>
@@ -3243,11 +5114,12 @@ onBeforeUnmount(() => {
 
           <section class="space-y-3 border-t border-gray-100 pt-4">
             <h3 class="font-bold text-brand-ink-strong">订单操作</h3>
-            <textarea v-model="orderReviewNote" class="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 text-xs outline-none min-h-20" placeholder="审核备注 / 操作说明"></textarea>
+            <textarea v-model="orderReviewNote" class="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 text-xs outline-none min-h-20" placeholder="操作说明（线下收款确认 / 退款备注）"></textarea>
             <input v-model="orderRefundReason" class="w-full bg-gray-50 border border-gray-100 rounded-xl p-2.5 text-xs outline-none" placeholder="退款原因（创建退款请求时使用）" />
             <div class="flex flex-wrap gap-2">
-              <button @click="reviewSelectedOrder('approve')" class="bg-brand-primary text-white px-3 py-1.5 rounded-lg text-[10.5px] font-bold">通过订单</button>
-              <button @click="reviewSelectedOrder('reject')" class="bg-white border border-gray-100 text-brand-secondary px-3 py-1.5 rounded-lg text-[10.5px] font-bold">拒绝订单</button>
+              <button v-if="canManualCompleteOrder(selectedOrder)" @click="manualCompleteSelectedOrder" class="bg-brand-primary text-white px-3 py-1.5 rounded-lg text-[10.5px] font-bold">确认已线下收款并完成订单</button>
+              <button v-if="canManualCompleteOrder(selectedOrder)" @click="reviewSelectedOrder('reject')" class="bg-white border border-gray-100 text-brand-secondary px-3 py-1.5 rounded-lg text-[10.5px] font-bold">拒绝订单</button>
+              <span v-else class="bg-gray-50 border border-gray-100 text-brand-secondary px-3 py-1.5 rounded-lg text-[10.5px] font-bold">当前状态不可手动完成</span>
               <button @click="createRefundFromSelectedOrder" class="bg-amber-50 border border-amber-100 text-amber-700 px-3 py-1.5 rounded-lg text-[10.5px] font-bold">发起退款</button>
             </div>
             <p v-if="orderActionMessage" class="text-[11px] text-brand-secondary">{{ orderActionMessage }}</p>

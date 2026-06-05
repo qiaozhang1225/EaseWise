@@ -10,6 +10,7 @@ from .config import (
     get_customer_service_contact_url,
     get_customer_service_guidance_text,
     get_customer_service_qr_code_url,
+    get_customer_service_wechat_id,
     get_initial_points,
     get_phone_review_base_points_cost,
     get_recharge_packages,
@@ -50,8 +51,12 @@ CONFIG_KEY_PHONE_REVIEW_FREE_ASPECT_KEYS = "phone_review.free_aspect_keys"
 CONFIG_KEY_PHONE_REVIEW_ASPECT_ORDER = "phone_review.aspect_order"
 CONFIG_KEY_PHONE_REVIEW_UNLOCK_ENFORCEMENT_ENABLED = "phone_review.unlock_enforcement_enabled"
 CONFIG_KEY_CUSTOMER_SERVICE_CONTACT_URL = "customer_service.contact_url"
+CONFIG_KEY_CUSTOMER_SERVICE_WECHAT_ID = "customer_service.wechat_id"
 CONFIG_KEY_CUSTOMER_SERVICE_QR_CODE_URL = "customer_service.qr_code_url"
 CONFIG_KEY_CUSTOMER_SERVICE_GUIDANCE_TEXT = "customer_service.guidance_text"
+CONFIG_KEY_CUSTOMER_SERVICE_QR_GUIDANCE_TEXT = "customer_service.qr_guidance_text"
+CONFIG_KEY_CUSTOMER_SERVICE_COPY_BUTTON_TEXT = "customer_service.copy_button_text"
+CONFIG_KEY_CUSTOMER_SERVICE_UNCONFIGURED_TEXT = "customer_service.unconfigured_text"
 CONFIG_KEY_COMPLIANCE_SAFE_MODE_ENABLED = "compliance.safe_mode_enabled"
 CONFIG_KEY_COMPLIANCE_SAFE_MODULES = "compliance.safe_modules"
 CONFIG_KEY_COMPLIANCE_HIDDEN_MODULES = "compliance.hidden_modules"
@@ -70,6 +75,19 @@ CONFIG_KEY_PROMOTION_NORMAL_COMMISSION_RATE = "promotion.normal_commission_rate"
 CONFIG_KEY_PROMOTION_SENIOR_COMMISSION_RATE = "promotion.senior_commission_rate"
 CONFIG_KEY_PROMOTION_MIN_WITHDRAW_CENTS = "promotion.min_withdraw_cents"
 CONFIG_KEY_PROMOTION_ORDER_COMPLETION_DAYS = "promotion.order_completion_days"
+
+CUSTOMER_SERVICE_COPY_DEFAULTS: dict[str, str] = {
+    "default": "请添加客服微信，客服会协助你处理相关问题。",
+    "recharge_help": "充值订单与手机号、微信 ID 绑定，可跨平台使用。如需协助，请添加客服。",
+    "payment_issue": "如果已经扣款或支付状态异常，请添加客服协助核查订单。",
+    "points_insufficient": "当前积分不足时，可添加客服协助确认充值或套餐配置。",
+    "account_security": "账号密码相关问题需要人工核验，请添加客服协助处理。",
+    "promotion_consulting": "推广合作申请、身份开通和规则咨询，可添加客服进一步确认。",
+    "review_support": "评测后的后续支持、报告疑问和服务说明，可添加客服咨询。",
+}
+DEFAULT_CUSTOMER_SERVICE_QR_GUIDANCE_TEXT = "截图或长按保存二维码后，前往微信添加客服。"
+DEFAULT_CUSTOMER_SERVICE_COPY_BUTTON_TEXT = "复制微信"
+DEFAULT_CUSTOMER_SERVICE_UNCONFIGURED_TEXT = "请先在后台客服配置中填写客服微信号。"
 
 
 def normalize_scope_type(scope_type: str) -> str:
@@ -167,8 +185,7 @@ def get_runtime_agent_metaphysics_skill_enabled(channel_key: str | None = None) 
 
 
 def get_runtime_phone_review_unlock_enforcement_enabled(channel_key: str | None = None) -> bool:
-    config_bundle = resolve_runtime_config_bundle(channel_key)
-    return _coerce_bool(config_bundle.get(CONFIG_KEY_PHONE_REVIEW_UNLOCK_ENFORCEMENT_ENABLED), fallback=True)
+    return True
 
 
 def get_runtime_voice_mode(channel_key: str | None = None) -> str:
@@ -204,10 +221,32 @@ def get_runtime_voice_max_chars_per_request(channel_key: str | None = None) -> i
 
 def get_runtime_customer_service_config(channel_key: str | None = None) -> dict[str, Any]:
     config_bundle = resolve_runtime_config_bundle(channel_key)
+    legacy_contact = _coerce_optional_text(
+        config_bundle.get(CONFIG_KEY_CUSTOMER_SERVICE_CONTACT_URL),
+        fallback=get_customer_service_contact_url(),
+    )
+    guidance_text = _coerce_text(config_bundle.get(CONFIG_KEY_CUSTOMER_SERVICE_GUIDANCE_TEXT), fallback=get_customer_service_guidance_text())
+    copy_texts = {
+        scene_key: _coerce_text(
+            config_bundle.get(f"customer_service.copy.{scene_key}"),
+            fallback=default_text if scene_key != "default" else guidance_text,
+        )
+        for scene_key, default_text in CUSTOMER_SERVICE_COPY_DEFAULTS.items()
+    }
+    if not copy_texts.get("default"):
+        copy_texts["default"] = guidance_text or CUSTOMER_SERVICE_COPY_DEFAULTS["default"]
     return {
-        "contact_url": _coerce_optional_text(config_bundle.get(CONFIG_KEY_CUSTOMER_SERVICE_CONTACT_URL), fallback=get_customer_service_contact_url()),
+        "wechat_id": _coerce_optional_text(
+            config_bundle.get(CONFIG_KEY_CUSTOMER_SERVICE_WECHAT_ID),
+            fallback=get_customer_service_wechat_id(),
+        ),
+        "contact_url": legacy_contact,
         "qr_code_url": _coerce_optional_text(config_bundle.get(CONFIG_KEY_CUSTOMER_SERVICE_QR_CODE_URL), fallback=get_customer_service_qr_code_url()),
-        "guidance_text": _coerce_text(config_bundle.get(CONFIG_KEY_CUSTOMER_SERVICE_GUIDANCE_TEXT), fallback=get_customer_service_guidance_text()),
+        "guidance_text": guidance_text,
+        "qr_guidance_text": _coerce_text(config_bundle.get(CONFIG_KEY_CUSTOMER_SERVICE_QR_GUIDANCE_TEXT), fallback=DEFAULT_CUSTOMER_SERVICE_QR_GUIDANCE_TEXT),
+        "copy_button_text": _coerce_text(config_bundle.get(CONFIG_KEY_CUSTOMER_SERVICE_COPY_BUTTON_TEXT), fallback=DEFAULT_CUSTOMER_SERVICE_COPY_BUTTON_TEXT),
+        "unconfigured_text": _coerce_text(config_bundle.get(CONFIG_KEY_CUSTOMER_SERVICE_UNCONFIGURED_TEXT), fallback=DEFAULT_CUSTOMER_SERVICE_UNCONFIGURED_TEXT),
+        "copy": copy_texts,
     }
 
 

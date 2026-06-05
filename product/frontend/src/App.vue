@@ -7,6 +7,7 @@ import AIAgent from './components/ai-agent/AIAgent.vue';
 import Profile from './components/profile/Profile.vue';
 import RechargePage from './components/recharge/RechargePage.vue';
 import AuthModal from './components/auth/AuthModal.vue';
+import ContactServiceModal from './components/support/ContactServiceModal.vue';
 import AdminWorkspace from './components/admin/AdminWorkspace.vue';
 import { useEaseWiseApp } from './composables/useEaseWiseApp';
 
@@ -183,6 +184,7 @@ watch(title, (value) => {
       />
     </div>
     <AuthModal v-if="!isAdminRoute" />
+    <ContactServiceModal v-if="!isAdminRoute" />
   </div>
   <AdminWorkspace v-else />
 </template>

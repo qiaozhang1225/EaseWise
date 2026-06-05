@@ -33,9 +33,9 @@ const {
   refreshPoints,
   isRegisteredUser,
   displayNickname,
-  customerServiceContact,
-  customerServiceGuidance,
+  customerServiceCopyForScene,
   requestRegisteredUser,
+  openCustomerServiceModal,
   humanizeError,
 } = useEaseWiseApp();
 
@@ -47,7 +47,6 @@ const currentPayment = ref<PaymentTransactionResponse | null>(null);
 const loadingPackages = ref(false);
 const creatingOrder = ref(false);
 const refreshingStatus = ref(false);
-const copiedCustomer = ref(false);
 const actionError = ref('');
 
 const routeQuery = computed(() => props.routeQuery || {});
@@ -71,13 +70,21 @@ const packageGridClass = computed(() => {
   return 'grid grid-cols-1 gap-2 pt-1';
 });
 const pageStatusMessage = computed(() => {
+  if (currentPayment.value?.status === 'provider_unconfigured') {
+    return '已创建订单，请联系客服完成支付；后台确认收款后，积分会自动到账。';
+  }
   if (currentPayment.value?.client_message) {
     return currentPayment.value.client_message;
   }
-  if (currentPayment.value?.status === 'provider_unconfigured') {
-    return '支付交易已经创建，但真实支付渠道尚未接入。当前不会发起扣款。';
-  }
   return '请根据支付渠道返回的状态继续处理。';
+});
+const paymentContactReason = computed(() => {
+  const order = currentOrder.value;
+  const packageTitle = order?.package_title || selectedPackage.value?.title || '充值套餐';
+  const amount = order ? `￥${formatMoney(order.amount_cents)}` : '';
+  const points = order?.total_points || selectedPackage.value?.total_points || 0;
+  const orderText = order?.order_id ? `订单 ${order.order_id}` : '充值订单';
+  return `${orderText}，${packageTitle}，${amount}，${points} 积分，用户 ${userNickname.value}`;
 });
 
 onMounted(async () => {
@@ -267,25 +274,8 @@ async function openUnifiedAuth(): Promise<void> {
   }
 }
 
-async function copyCustomerContact(): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(customerServiceContact.value);
-    copiedCustomer.value = true;
-    window.setTimeout(() => {
-      copiedCustomer.value = false;
-    }, 2000);
-  } catch {
-    actionError.value = '客服联系方式复制失败，请手动记录。';
-  }
-}
-
-function openCustomerService(): void {
-  const contact = customerServiceContact.value.trim();
-  if (/^https?:\/\//i.test(contact)) {
-    window.open(contact, '_blank', 'noopener,noreferrer');
-    return;
-  }
-  actionError.value = `${customerServiceGuidance.value}：${contact}`;
+function openCustomerService(scene: string | Event = 'recharge_help', context?: string): void {
+  openCustomerServiceModal(typeof scene === 'string' ? scene : 'recharge_help', context);
 }
 
 function updateOrderInUrl(orderId: string): void {
@@ -313,7 +303,7 @@ function formatMoney(cents: number): string {
 function getPaymentStatusLabel(value: string | undefined): string {
   const statusMap: Record<string, string> = {
     pending: '待支付',
-    provider_unconfigured: '支付渠道待接入',
+    provider_unconfigured: '待联系客服支付',
     paid: '已支付',
     failed: '支付失败',
     cancelled: '已取消',
@@ -441,7 +431,7 @@ function sleep(ms: number): Promise<void> {
             <button
               type="button"
               class="w-full py-2.5 bg-brand-primary/[0.01] border border-brand-primary/5 text-brand-secondary font-medium rounded-lg text-[10.5px] flex items-center justify-center cursor-pointer transition-colors outline-none"
-              @click="copyCustomerContact"
+              @click="openCustomerService('recharge_help')"
             >
               <span>联系客服获取协助</span>
             </button>
@@ -574,7 +564,7 @@ function sleep(ms: number): Promise<void> {
         <div class="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 text-left flex gap-3">
           <Loader2 class="text-indigo-600 shrink-0 mt-0.5 animate-spin" :size="16" />
           <div class="space-y-0.5 min-w-0">
-            <h4 class="text-xs font-bold text-indigo-950 font-serif">充值账单已经创建，等待支付结果</h4>
+            <h4 class="text-xs font-bold text-indigo-950 font-serif">充值账单已经创建，等待客服确认收款</h4>
             <p class="text-[10.5px] text-indigo-900/90 leading-relaxed font-sans font-mono break-all">
               单号：{{ currentOrder?.order_id }}
             </p>
@@ -610,7 +600,7 @@ function sleep(ms: number): Promise<void> {
 
           <div class="p-3.5 rounded-lg bg-amber-500/[0.02] border border-amber-300/30 text-[10px] leading-relaxed text-amber-900 font-sans">
             <p class="font-bold text-amber-950 pb-1 mb-1 border-b border-amber-200/40 select-none">
-              ⚠️ 当前支付渠道说明
+              当前支付说明
             </p>
             <p>{{ pageStatusMessage }}</p>
           </div>
@@ -628,10 +618,10 @@ function sleep(ms: number): Promise<void> {
 
             <button
               type="button"
-              class="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-100 font-bold rounded-lg text-center text-xs cursor-pointer select-none transition-all outline-none flex items-center justify-center gap-1"
-              @click="copyCustomerContact"
+              class="w-full py-2.5 bg-amber-400 hover:bg-amber-500 text-amber-950 border border-amber-300 font-bold rounded-lg text-center text-xs cursor-pointer select-none transition-all outline-none flex items-center justify-center gap-1"
+              @click="openCustomerService('payment_issue', paymentContactReason)"
             >
-              <span>{{ copiedCustomer ? '已复制客服微信' : '支付异常，联系客服核查' }}</span>
+              <span>联系客服进行支付</span>
             </button>
 
             <button
@@ -705,10 +695,9 @@ function sleep(ms: number): Promise<void> {
             <button
               type="button"
               class="w-full py-2.5 bg-brand-primary hover:bg-brand-primary/95 text-white font-serif font-bold rounded-lg text-center text-xs cursor-pointer select-none transition-colors outline-none flex items-center justify-center gap-1.5"
-              @click="copyCustomerContact"
+              @click="openCustomerService('payment_issue')"
             >
-              <Check v-if="copiedCustomer" :size="12" class="text-emerald-400" />
-              <span>{{ copiedCustomer ? '已复制客服微信，请去添加' : '联系客服（复制微信号码）' }}</span>
+              <span>联系客服核查</span>
             </button>
             <button
               type="button"
@@ -735,7 +724,7 @@ function sleep(ms: number): Promise<void> {
           <div class="space-y-1 flex-1 min-w-0">
             <h4 class="text-xs font-bold text-brand-ink-strong font-serif">需要充值协助？</h4>
             <p class="text-[10px] text-brand-secondary leading-relaxed font-sans">
-              {{ customerServiceGuidance }}
+              {{ customerServiceCopyForScene('recharge_help') }}
             </p>
           </div>
           <button

@@ -5,6 +5,9 @@ import type {
   CurrentUserResponse,
   DashboardResponse,
   Gender,
+  InternalPhoneQimenReviewDetailResponse,
+  InternalPhoneQimenReviewListResponse,
+  InternalPhoneQimenSummaryResponse,
   PointsAccountResponse,
   PointsLedgerListResponse,
   PromotionApplicationListResponse,
@@ -30,6 +33,7 @@ import type {
   RebatePointsAdjustResponse,
   RefundRequestResponse,
   RechargeOrderListResponse,
+  RechargeOrderManualCompleteResponse,
   RechargeOrderPaymentStatusResponse,
   RechargeOrderResponse,
   RechargeOrderReviewResponse,
@@ -37,8 +41,11 @@ import type {
   ReviewAspectUnlockResponse,
   ReviewListResponse,
   ReviewRecord,
+  RuntimeConfigEntryResponse,
   RuntimeConfigListResponse,
   RuntimeConfigEntryUpsertRequest,
+  RuntimeInitialPointsUpdateRequest,
+  RuntimeInitialPointsUpdateResponse,
   RuntimeConfigSchemaResponse,
   UsageRecordDetailResponse,
   UsageRecordListResponse,
@@ -385,6 +392,24 @@ export function getInternalUsageRecord(adminToken: string, usageRecordId: string
   });
 }
 
+export function getInternalPhoneQimenSummary(adminToken: string): Promise<InternalPhoneQimenSummaryResponse> {
+  return requestJson<InternalPhoneQimenSummaryResponse>('/api/v1/internal/phone-qimen/summary', {
+    adminToken,
+  });
+}
+
+export function listInternalPhoneQimenReviews(adminToken: string, params: Record<string, QueryValue> = {}): Promise<InternalPhoneQimenReviewListResponse> {
+  return requestJson<InternalPhoneQimenReviewListResponse>(`/api/v1/internal/phone-qimen/reviews${toQueryString(params)}`, {
+    adminToken,
+  });
+}
+
+export function getInternalPhoneQimenReview(adminToken: string, reviewId: string): Promise<InternalPhoneQimenReviewDetailResponse> {
+  return requestJson<InternalPhoneQimenReviewDetailResponse>(`/api/v1/internal/phone-qimen/reviews/${encodeURIComponent(reviewId)}`, {
+    adminToken,
+  });
+}
+
 export function listInternalUsers(adminToken: string, queryOrParams?: string | Record<string, QueryValue>): Promise<InternalUserListResponse> {
   const params = typeof queryOrParams === 'string' ? {query: queryOrParams} : (queryOrParams || {});
   return requestJson<InternalUserListResponse>(`/api/v1/internal/users${toQueryString(params)}`, {
@@ -418,6 +443,14 @@ export function reviewInternalRechargeOrder(adminToken: string, orderId: string,
   });
 }
 
+export function manualCompleteInternalRechargeOrder(adminToken: string, orderId: string, payload: {payment_method?: string | null; payment_reference?: string | null; operator_note?: string | null}): Promise<RechargeOrderManualCompleteResponse> {
+  return requestJson<RechargeOrderManualCompleteResponse>(`/api/v1/internal/billing/recharge-orders/${encodeURIComponent(orderId)}/manual-complete`, {
+    method: 'POST',
+    adminToken,
+    body: payload,
+  });
+}
+
 export function createInternalRechargeOrderRefund(adminToken: string, orderId: string, payload: {reason?: string | null; operator_note?: string | null}): Promise<RefundRequestResponse> {
   return requestJson<RefundRequestResponse>(`/api/v1/internal/billing/recharge-orders/${encodeURIComponent(orderId)}/refunds`, {
     method: 'POST',
@@ -439,18 +472,6 @@ export function retryInternalRefund(adminToken: string, refundId: string, payloa
     method: 'POST',
     adminToken,
     body: payload,
-  });
-}
-
-export function listInternalReviews(adminToken: string, params: Record<string, QueryValue> = {}): Promise<ReviewListResponse> {
-  return requestJson<ReviewListResponse>(`/api/v1/internal/phone-qimen/reviews${toQueryString(params)}`, {
-    adminToken,
-  });
-}
-
-export function getInternalReview(adminToken: string, reviewId: string): Promise<ReviewRecord> {
-  return requestJson<ReviewRecord>(`/api/v1/internal/phone-qimen/reviews/${encodeURIComponent(reviewId)}`, {
-    adminToken,
   });
 }
 
@@ -595,8 +616,31 @@ export function updateInternalRuntimeConfig(adminToken: string, entries: Runtime
   });
 }
 
+export function updateInternalInitialPointsConfig(adminToken: string, payload: RuntimeInitialPointsUpdateRequest): Promise<RuntimeInitialPointsUpdateResponse> {
+  return requestJson<RuntimeInitialPointsUpdateResponse>('/api/v1/internal/runtime-config/initial-points', {
+    method: 'POST',
+    adminToken,
+    body: payload,
+  });
+}
+
 export function getInternalRuntimeConfigSchema(adminToken: string): Promise<RuntimeConfigSchemaResponse> {
   return requestJson<RuntimeConfigSchemaResponse>('/api/v1/internal/runtime-config/schema', {
+    adminToken,
+  });
+}
+
+export function uploadInternalCustomerServiceQrCode(adminToken: string, payload: {image_data_url: string}): Promise<RuntimeConfigEntryResponse> {
+  return requestJson<RuntimeConfigEntryResponse>('/api/v1/internal/customer-service/qr-code', {
+    method: 'POST',
+    adminToken,
+    body: payload,
+  });
+}
+
+export function deleteInternalCustomerServiceQrCode(adminToken: string): Promise<RuntimeConfigEntryResponse> {
+  return requestJson<RuntimeConfigEntryResponse>('/api/v1/internal/customer-service/qr-code', {
+    method: 'DELETE',
     adminToken,
   });
 }

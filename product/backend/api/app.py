@@ -12,6 +12,7 @@ from .routers import account, agent, almanac, auth, billing, phone_qimen, public
 from .routers.internal import (
     almanac as internal_almanac,
     billing as internal_billing,
+    customer_service as internal_customer_service,
     dashboard as internal_dashboard,
     llm as internal_llm,
     platform as internal_platform,
@@ -57,6 +58,7 @@ app.include_router(internal_phone_qimen.router)
 app.include_router(internal_almanac.router)
 app.include_router(internal_platform.router)
 app.include_router(internal_runtime_config.router)
+app.include_router(internal_customer_service.router)
 app.include_router(internal_billing.router)
 app.include_router(internal_llm.router)
 app.include_router(internal_promotion.router)

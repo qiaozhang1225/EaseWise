@@ -14,6 +14,7 @@ import {
   listMyPointsLedger,
   listPhoneReviews,
   logoutCurrentUser,
+  resolveApiAssetUrl,
   changeMyPassword,
   registerPhoneWithPassword,
   uploadMyAvatar,
@@ -49,7 +50,29 @@ type AppState = {
   currentReview: ReviewRecord | null;
   authPromptVisible: boolean;
   authPromptReason: string | null;
+  contactServiceModalVisible: boolean;
+  contactServiceScene: CustomerServiceScene;
+  contactServiceContext: string | null;
 };
+
+type CustomerServiceScene =
+  | 'default'
+  | 'recharge_help'
+  | 'payment_issue'
+  | 'points_insufficient'
+  | 'account_security'
+  | 'promotion_consulting'
+  | 'review_support';
+
+const CUSTOMER_SERVICE_SCENES = new Set<CustomerServiceScene>([
+  'default',
+  'recharge_help',
+  'payment_issue',
+  'points_insufficient',
+  'account_security',
+  'promotion_consulting',
+  'review_support',
+]);
 
 const state = reactive<AppState>({
   initialized: false,
@@ -65,6 +88,9 @@ const state = reactive<AppState>({
   currentReview: null,
   authPromptVisible: false,
   authPromptReason: null,
+  contactServiceModalVisible: false,
+  contactServiceScene: 'default',
+  contactServiceContext: null,
 });
 
 let bootstrapPromise: Promise<void> | null = null;
@@ -85,12 +111,40 @@ const reviewBasePointsCost = computed(
 const aspectUnlockPointsCost = computed(
   () => state.runtimeConfig?.modules.phone_review.aspect_unlock_points_cost ?? DEFAULT_ASPECT_UNLOCK_POINTS,
 );
-const customerServiceGuidance = computed(
-  () => state.runtimeConfig?.customer_service.guidance_text || '联系客服获取充值与服务支持',
+const customerServiceCopy = computed(() => state.runtimeConfig?.customer_service.copy || {});
+const customerServiceGuidance = computed(() => customerServiceCopyForScene('default'));
+const customerServiceWechatId = computed(
+  () => state.runtimeConfig?.customer_service.wechat_id || state.runtimeConfig?.customer_service.contact_url || '',
 );
-const customerServiceContact = computed(
-  () => state.runtimeConfig?.customer_service.contact_url || 'yirufanzhang888',
+const customerServiceContact = computed(() => customerServiceWechatId.value || 'yirufanzhang888');
+const customerServiceQrCodeUrl = computed(
+  () => resolveApiAssetUrl(state.runtimeConfig?.customer_service.qr_code_url),
 );
+const customerServiceQrGuidanceText = computed(
+  () => state.runtimeConfig?.customer_service.qr_guidance_text || '截图或长按保存二维码后，前往微信添加客服。',
+);
+const customerServiceCopyButtonText = computed(
+  () => state.runtimeConfig?.customer_service.copy_button_text || '复制微信',
+);
+const customerServiceUnconfiguredText = computed(
+  () => state.runtimeConfig?.customer_service.unconfigured_text || '请先在后台客服配置中填写客服微信号。',
+);
+
+function normalizeCustomerServiceScene(value: unknown): CustomerServiceScene {
+  const scene = typeof value === 'string' ? value.trim() : '';
+  return CUSTOMER_SERVICE_SCENES.has(scene as CustomerServiceScene) ? (scene as CustomerServiceScene) : 'default';
+}
+
+function customerServiceCopyForScene(scene: unknown = 'default'): string {
+  const normalizedScene = normalizeCustomerServiceScene(scene);
+  const copyMap = customerServiceCopy.value;
+  return (
+    copyMap[normalizedScene]?.trim()
+    || copyMap.default?.trim()
+    || state.runtimeConfig?.customer_service.guidance_text?.trim()
+    || '请添加客服微信，客服会协助你处理相关问题。'
+  );
+}
 
 function readStorage(key: string): string | null {
   if (typeof window === 'undefined') {
@@ -517,6 +571,22 @@ async function changePassword(currentPassword: string, newPassword: string, conf
   });
 }
 
+function openCustomerServiceModal(sceneOrReason?: unknown, context?: unknown): void {
+  const normalizedScene = normalizeCustomerServiceScene(sceneOrReason);
+  const trimmedText = typeof sceneOrReason === 'string' ? sceneOrReason.trim() : '';
+  state.contactServiceScene = normalizedScene;
+  state.contactServiceContext = normalizedScene === 'default' && trimmedText && !CUSTOMER_SERVICE_SCENES.has(trimmedText as CustomerServiceScene)
+    ? trimmedText
+    : (typeof context === 'string' ? context.trim() || null : null);
+  state.contactServiceModalVisible = true;
+}
+
+function closeCustomerServiceModal(): void {
+  state.contactServiceModalVisible = false;
+  state.contactServiceScene = 'default';
+  state.contactServiceContext = null;
+}
+
 function humanizeError(error: unknown): string {
   if (error instanceof ApiError) {
     const messageMap: Record<string, string> = {
@@ -554,6 +624,12 @@ export function useEaseWiseApp() {
     aspectUnlockPointsCost,
     customerServiceGuidance,
     customerServiceContact,
+    customerServiceWechatId,
+    customerServiceQrCodeUrl,
+    customerServiceQrGuidanceText,
+    customerServiceCopyButtonText,
+    customerServiceUnconfiguredText,
+    customerServiceCopyForScene,
     bootstrapApp,
     refreshAppData,
     refreshRuntimeConfig,
@@ -574,6 +650,8 @@ export function useEaseWiseApp() {
     updateProfile,
     uploadAvatar,
     changePassword,
+    openCustomerServiceModal,
+    closeCustomerServiceModal,
     humanizeError,
   };
 }

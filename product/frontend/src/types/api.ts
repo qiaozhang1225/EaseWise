@@ -262,9 +262,14 @@ export interface PublicRuntimeConfigResponse {
     packages: RechargePackageResponse[];
   };
   customer_service: {
+    wechat_id: string | null;
     contact_url: string | null;
     qr_code_url: string | null;
     guidance_text: string;
+    qr_guidance_text: string;
+    copy_button_text: string;
+    unconfigured_text: string;
+    copy: Record<string, string>;
   };
   compliance: {
     safe_mode_enabled: boolean;
@@ -505,6 +510,12 @@ export interface RechargeOrderReviewResponse {
   ledger: PointsLedgerEntryResponse | null;
 }
 
+export interface RechargeOrderManualCompleteResponse {
+  order: RechargeOrderResponse;
+  points: PointsAccountResponse;
+  ledger: PointsLedgerEntryResponse | null;
+}
+
 export interface RechargeOrderSummaryResponse {
   order_id: string;
   package_title: string;
@@ -564,6 +575,66 @@ export interface UsageRecordDetailResponse {
   recent_orders: RechargeOrderSummaryResponse[];
 }
 
+export interface InternalPhoneQimenSummaryResponse {
+  generated_at: string;
+  today_review_count: number;
+  week_review_count: number;
+  total_review_count: number;
+  completed_review_count: number;
+  failed_review_count: number;
+  success_rate: number;
+  average_generation_seconds: number | null;
+  aspect_unlock_count: number;
+  aspect_unlock_rate: number;
+  review_points_cost: number;
+  voice_request_count: number;
+}
+
+export interface InternalPhoneQimenReviewItemResponse {
+  review_id: string;
+  user_id: string | null;
+  user_uid: string | null;
+  user_nickname: string | null;
+  user_phone: string | null;
+  phone: string;
+  gender: Gender;
+  status: ReviewStatus;
+  progress_stage: ReviewProgressStage | null;
+  progress_message: string | null;
+  error_message: string | null;
+  channel: string | null;
+  base_points_cost: number;
+  unlock_count: number;
+  voice_count: number;
+  generation_duration_seconds: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InternalPhoneQimenReviewListResponse {
+  items: InternalPhoneQimenReviewItemResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface InternalPhoneQimenAspectUnlockRecordResponse {
+  unlock_id: string;
+  review_id: string;
+  user_id: string;
+  aspect_key: string;
+  aspect_name: string;
+  points_cost: number;
+  usage_record_id: string | null;
+  unlocked_at: string;
+}
+
+export interface InternalPhoneQimenReviewDetailResponse {
+  review: InternalPhoneQimenReviewItemResponse;
+  unlock_records: InternalPhoneQimenAspectUnlockRecordResponse[];
+  voice_records: UsageRecordResponse[];
+}
+
 export interface LlmApiKeyResponse {
   key_id: string;
   provider: string;
@@ -607,6 +678,25 @@ export interface RuntimeConfigEntryUpsertRequest {
   value: unknown;
 }
 
+export interface RuntimeInitialPointsUpdateRequest {
+  initial_grant: number;
+  apply_scope: 'future_users' | 'all_users';
+  reason?: string | null;
+}
+
+export interface RuntimeInitialPointsUpdateResponse {
+  previous_initial_grant: number;
+  initial_grant: number;
+  delta: number;
+  apply_scope: 'future_users' | 'all_users';
+  target_user_count: number;
+  affected_user_count: number;
+  adjusted_points_total: number;
+  zeroed_user_count: number;
+  operation_id: string;
+  entry: RuntimeConfigEntryResponse;
+}
+
 export interface RuntimeConfigSchemaItemResponse {
   config_key: string;
   label: string;
@@ -617,6 +707,13 @@ export interface RuntimeConfigSchemaItemResponse {
   group: string;
   high_risk: boolean;
   description: string | null;
+  admin_group?: string | null;
+  admin_section?: string | null;
+  advanced?: boolean;
+  sort_order?: number;
+  input_options?: Array<{value: string; label: string}>;
+  help_text?: string | null;
+  admin_hidden?: boolean;
 }
 
 export interface RuntimeConfigSchemaResponse {

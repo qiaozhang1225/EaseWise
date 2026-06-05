@@ -22,12 +22,12 @@ from features.phone_qimen.scoring.total_score.bundle import build_scoring_bundle
 from .agent import build_agent_reply
 from .auth import build_session_expiry, exchange_wechat_code, hash_access_token, hash_password, issue_access_token, require_authenticated_user, require_authenticated_user_with_token_hash, require_internal_admin_access, require_registered_user, resolve_authenticated_user, verify_password
 from .config import APP_TITLE, APP_VERSION, allow_mock_wechat_login, get_cors_origins, get_database_path, get_public_base_url, get_uploads_dir, get_wechat_oa_app_id
-from .database import InsufficientPointsError, adjust_points, adjust_rebate_points, complete_review, complete_review_with_message, complete_usage_record, create_payment_transaction, create_phone_user, create_recharge_order, create_refund_request, create_review_aspect_unlock, create_review_with_charge, create_session, create_usage_record, delete_llm_api_key, ensure_schema, fail_review, fail_usage_record, get_dashboard_summary, get_internal_user, get_latest_payment_transaction_for_order, get_llm_api_key, get_phone_identity_by_normalized_phone, get_points_account, get_primary_phone_identity_by_user_id, get_promotion_application, get_promotion_commission, get_promotion_rules, get_promotion_withdrawal, get_recharge_order, get_review, get_usage_record, get_user, list_llm_api_keys, list_payment_transactions_for_order, list_points_ledger, list_promotion_applications, list_promotion_commissions, list_promotion_withdrawals, list_recharge_orders, list_recent_recharge_orders_for_user, list_refund_requests_for_order, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, mark_phone_identity_login, mark_promotion_withdrawal_paid, refund_points, revoke_session_by_token_hash, retry_promotion_withdrawal_payout, retry_refund_request, review_promotion_application, review_promotion_withdrawal, review_recharge_order, review_refund_request, settle_payment_transaction, update_phone_identity_password, update_review_generation_payload, update_review_progress, update_review_score_template, update_user_identity, update_user_profile, update_user_promoter_parent, update_user_status, upsert_llm_api_key, upsert_runtime_config_entry, upsert_wechat_user
+from .database import InsufficientPointsError, adjust_points, adjust_rebate_points, complete_recharge_order_manually, complete_review, complete_review_with_message, complete_usage_record, count_internal_phone_qimen_reviews, count_users, create_payment_transaction, create_phone_user, create_recharge_order, create_refund_request, create_review_aspect_unlock, create_review_with_charge, create_session, create_usage_record, delete_llm_api_key, ensure_schema, fail_review, fail_usage_record, get_dashboard_summary, get_internal_phone_qimen_review, get_internal_phone_qimen_summary as get_internal_phone_qimen_summary_data, get_internal_user, get_latest_payment_transaction_for_order, get_llm_api_key, get_phone_identity_by_normalized_phone, get_points_account, get_primary_phone_identity_by_user_id, get_promotion_application, get_promotion_commission, get_promotion_rules, get_promotion_withdrawal, get_recharge_order, get_review, get_usage_record, get_user, list_internal_phone_qimen_reviews, list_llm_api_keys, list_payment_transactions_for_order, list_points_ledger, list_promotion_applications, list_promotion_commissions, list_promotion_withdrawals, list_recharge_orders, list_recent_recharge_orders_for_user, list_refund_requests_for_order, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, list_voice_usage_records_for_review, mark_phone_identity_login, mark_promotion_withdrawal_paid, refund_points, revoke_session_by_token_hash, retry_promotion_withdrawal_payout, retry_refund_request, review_promotion_application, review_promotion_withdrawal, review_recharge_order, review_refund_request, settle_payment_transaction, update_initial_points_config, update_phone_identity_password, update_review_generation_payload, update_review_progress, update_review_score_template, update_user_identity, update_user_profile, update_user_promoter_parent, update_user_status, upsert_llm_api_key, upsert_runtime_config_entry, upsert_wechat_user
 from .phone_review_view import PUBLIC_ASPECT_ORDER, build_phone_review_product_view
 from .payments import create_payment_request
 from .product_review import build_product_review_aspects_render, build_product_review_core_render
 from .runtime_config import get_runtime_agent_metaphysics_skill_enabled, get_runtime_available_recharge_packages, get_runtime_initial_points, get_runtime_phone_review_aspect_order, get_runtime_phone_review_aspect_unlock_points_cost, get_runtime_phone_review_base_points_cost, get_runtime_phone_review_free_aspect_keys, get_runtime_phone_review_unlock_enforcement_enabled, get_runtime_voice_cache_enabled, get_runtime_voice_default_voice_key, get_runtime_voice_max_chars_per_request, get_runtime_voice_provider, is_module_enabled, normalize_channel_key, normalize_config_key, normalize_scope_key, normalize_scope_type, resolve_public_runtime_config
-from .schemas import AdminReviewRequest, AgentReplyRequest, AgentReplyResponse, AlmanacResponse, AuthLoginResponse, AvatarUploadRequest, ComplianceConfigResponse, CurrentUserResponse, CustomerServiceConfigResponse, DashboardResponse, DashboardMetricResponse, DashboardSectionResponse, InternalUserAdminSummaryResponse, InternalUserListResponse, InternalUserResponse, LlmApiKeyListResponse, LlmApiKeyResponse, LlmApiKeyUpsertRequest, ManualPointsAdjustRequest, ManualPointsAdjustResponse, ModuleRuntimeConfigResponse, PasswordChangeRequest, PasswordChangeResponse, PaymentNotifyResponse, PaymentTransactionCreateRequest, PaymentTransactionResponse, PhonePasswordLoginRequest, PhonePasswordRegisterRequest, PhoneStatusRequest, PhoneStatusResponse, PointsAccountResponse, PointsLedgerEntryResponse, PointsLedgerListResponse, PublicRuntimeConfigResponse, PromotionApplicationListResponse, PromotionApplicationResponse, PromotionCommissionListResponse, PromotionCommissionResponse, PromotionRulesResponse, PromotionRulesUpdateRequest, PromotionWithdrawalListResponse, PromotionWithdrawalPayoutRequest, PromotionWithdrawalResponse, RebatePointsAdjustRequest, RebatePointsAdjustResponse, RebatePointsAccountResponse, RefundCreateRequest, RefundRequestResponse, RefundRetryRequest, RechargeOrderCreateRequest, RechargeOrderListResponse, RechargeOrderPaymentStatusResponse, RechargeOrderResponse, RechargeOrderReviewRequest, RechargeOrderReviewResponse, RechargeOrderSummaryResponse, RechargePackageListResponse, RechargePackageResponse, ReviewAspectResponse, ReviewAspectUnlockListResponse, ReviewAspectUnlockRequest, ReviewAspectUnlockResponse, ReviewBoardResponse, ReviewCreateRequest, ReviewListResponse, ReviewPhoneSummaryResponse, ReviewRecordResponse, ReviewStabilityDetailResponse, ReviewSummaryResponse, RuntimeConfigEntryResponse, RuntimeConfigListResponse, RuntimeConfigSchemaItemResponse, RuntimeConfigSchemaResponse, RuntimeConfigUpsertRequest, RuntimeModulesConfigResponse, RuntimePointsConfigResponse, RuntimeRechargeConfigResponse, UsageRecordDetailResponse, UsageRecordListResponse, UsageRecordResponse, UserIdentityUpdateRequest, UserPromoterParentUpdateRequest, UserProfileUpdateRequest, UserResponse, UserStatusUpdateRequest, VoiceNarrationRequest, VoiceNarrationResponse, VoiceRuntimeConfigResponse, WeChatLoginRequest
+from .schemas import AdminReviewRequest, AgentReplyRequest, AgentReplyResponse, AlmanacResponse, AuthLoginResponse, AvatarUploadRequest, ComplianceConfigResponse, CurrentUserResponse, CustomerServiceConfigResponse, CustomerServiceQrCodeUploadRequest, DashboardResponse, DashboardMetricResponse, DashboardSectionResponse, InternalPhoneQimenAspectUnlockRecordResponse, InternalPhoneQimenReviewDetailResponse, InternalPhoneQimenReviewItemResponse, InternalPhoneQimenReviewListResponse, InternalPhoneQimenSummaryResponse, InternalUserAdminSummaryResponse, InternalUserListResponse, InternalUserResponse, LlmApiKeyListResponse, LlmApiKeyResponse, LlmApiKeyUpsertRequest, ManualPointsAdjustRequest, ManualPointsAdjustResponse, ModuleRuntimeConfigResponse, PasswordChangeRequest, PasswordChangeResponse, PaymentNotifyResponse, PaymentTransactionCreateRequest, PaymentTransactionResponse, PhonePasswordLoginRequest, PhonePasswordRegisterRequest, PhoneStatusRequest, PhoneStatusResponse, PointsAccountResponse, PointsLedgerEntryResponse, PointsLedgerListResponse, PublicRuntimeConfigResponse, PromotionApplicationListResponse, PromotionApplicationResponse, PromotionCommissionListResponse, PromotionCommissionResponse, PromotionRulesResponse, PromotionRulesUpdateRequest, PromotionWithdrawalListResponse, PromotionWithdrawalPayoutRequest, PromotionWithdrawalResponse, RebatePointsAdjustRequest, RebatePointsAdjustResponse, RebatePointsAccountResponse, RefundCreateRequest, RefundRequestResponse, RefundRetryRequest, RechargeOrderCreateRequest, RechargeOrderListResponse, RechargeOrderManualCompleteRequest, RechargeOrderManualCompleteResponse, RechargeOrderPaymentStatusResponse, RechargeOrderResponse, RechargeOrderReviewRequest, RechargeOrderReviewResponse, RechargeOrderSummaryResponse, RechargePackageListResponse, RechargePackageResponse, ReviewAspectResponse, ReviewAspectUnlockListResponse, ReviewAspectUnlockRequest, ReviewAspectUnlockResponse, ReviewBoardResponse, ReviewCreateRequest, ReviewListResponse, ReviewPhoneSummaryResponse, ReviewRecordResponse, ReviewStabilityDetailResponse, ReviewSummaryResponse, RuntimeConfigEntryResponse, RuntimeConfigListResponse, RuntimeConfigSchemaItemResponse, RuntimeConfigSchemaResponse, RuntimeConfigUpsertRequest, RuntimeInitialPointsUpdateRequest, RuntimeInitialPointsUpdateResponse, RuntimeModulesConfigResponse, RuntimePointsConfigResponse, RuntimeRechargeConfigResponse, UsageRecordDetailResponse, UsageRecordListResponse, UsageRecordResponse, UserIdentityUpdateRequest, UserPromoterParentUpdateRequest, UserProfileUpdateRequest, UserResponse, UserStatusUpdateRequest, VoiceNarrationRequest, VoiceNarrationResponse, VoiceRuntimeConfigResponse, WeChatLoginRequest
 from .tts import VoiceProviderUnavailableError, VoiceSynthesisError, synthesize_voice_audio
 from .wechat_h5 import STATE_COOKIE_NAME, build_oauth_state, build_wechat_oauth_authorize_url, exchange_h5_oauth_code, h5_oauth_is_configured, is_wechat_browser
 
@@ -43,29 +43,54 @@ PHONE_REVIEW_BASE_REFUND_BIZ_TYPE = "phone_review_base_refund"
 PHONE_REVIEW_ASPECT_UNLOCK_SCENE = "phone_review_aspect_unlock"
 VOICE_TTS_SCENE = "voice_tts"
 REVIEW_PREVIEW_ASPECT_THRESHOLD = 4
+PHONE_QIMEN_ASPECT_LABELS = {
+    "career": "事业",
+    "wealth": "财富",
+    "love": "感情",
+    "health": "健康",
+    "acad": "学业",
+    "fortune": "运势",
+    "investment": "投资",
+    "travel": "出行",
+    "social": "社交",
+    "family": "家庭",
+    "personality": "性格",
+    "fengshui": "风水",
+}
 _RUNTIME_CONFIG_SCHEMA_ITEMS: list[dict[str, object]] = [
     {"config_key": "recharge.packages", "label": "充值套餐", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": True, "description": "充值金额与积分套餐列表"},
     {"config_key": "points.initial_grant", "label": "注册初始积分", "value_type": "int", "default_value": 10000, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "注册用户默认发放积分"},
-    {"config_key": "customer_service.contact_url", "label": "客服联系方式", "value_type": "string", "default_value": None, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "客服跳转链接"},
-    {"config_key": "customer_service.qr_code_url", "label": "客服二维码", "value_type": "string", "default_value": None, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "客服二维码图片地址"},
-    {"config_key": "customer_service.guidance_text", "label": "客服说明文案", "value_type": "string", "default_value": "联系客服获取充值与服务支持", "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": False, "description": "前台客服说明"},
+    {"config_key": "customer_service.wechat_id", "label": "客服微信号", "value_type": "string", "default_value": None, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 10, "high_risk": False, "description": "前台联系客服弹窗复制的客服微信号"},
+    {"config_key": "customer_service.contact_url", "label": "旧客服联系方式", "value_type": "string", "default_value": None, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 20, "advanced": True, "admin_hidden": True, "high_risk": False, "description": "历史兼容字段，仅作为客服微信号 fallback"},
+    {"config_key": "customer_service.qr_code_url", "label": "客服二维码", "value_type": "string", "default_value": None, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 30, "admin_hidden": True, "high_risk": False, "description": "客服二维码图片地址"},
+    {"config_key": "customer_service.guidance_text", "label": "旧客服说明文案", "value_type": "string", "default_value": "联系客服获取充值与服务支持", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 40, "advanced": True, "admin_hidden": True, "high_risk": False, "description": "历史兼容字段，仅作为默认客服说明 fallback"},
+    {"config_key": "customer_service.qr_guidance_text", "label": "二维码提示文案", "value_type": "string", "default_value": "截图或长按保存二维码后，前往微信添加客服。", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 50, "high_risk": False, "description": "客服二维码下方的操作提示"},
+    {"config_key": "customer_service.copy_button_text", "label": "复制按钮文案", "value_type": "string", "default_value": "复制微信", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 60, "high_risk": False, "description": "客服微信号复制按钮文案"},
+    {"config_key": "customer_service.unconfigured_text", "label": "未配置提示", "value_type": "string", "default_value": "请先在后台客服配置中填写客服微信号。", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 70, "high_risk": False, "description": "客服微信号为空时展示的提示"},
+    {"config_key": "customer_service.copy.default", "label": "默认客服文案", "value_type": "string", "default_value": "请添加客服微信，客服会协助你处理相关问题。", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 100, "high_risk": False, "description": "未指定业务场景时的客服弹窗说明"},
+    {"config_key": "customer_service.copy.recharge_help", "label": "充值协助文案", "value_type": "string", "default_value": "充值订单与手机号、微信 ID 绑定，可跨平台使用。如需协助，请添加客服。", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 110, "high_risk": False, "description": "充值身份协助、充值页底部客服入口文案"},
+    {"config_key": "customer_service.copy.payment_issue", "label": "支付异常文案", "value_type": "string", "default_value": "如果已经扣款或支付状态异常，请添加客服协助核查订单。", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 120, "high_risk": False, "description": "支付处理中、支付异常、扣款疑问入口文案"},
+    {"config_key": "customer_service.copy.points_insufficient", "label": "积分不足文案", "value_type": "string", "default_value": "当前积分不足时，可添加客服协助确认充值或套餐配置。", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 130, "high_risk": False, "description": "评测积分不足、专项解锁积分不足入口文案"},
+    {"config_key": "customer_service.copy.account_security", "label": "账号安全文案", "value_type": "string", "default_value": "账号密码相关问题需要人工核验，请添加客服协助处理。", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 140, "high_risk": False, "description": "忘记密码、修改密码人工核验入口文案"},
+    {"config_key": "customer_service.copy.promotion_consulting", "label": "推广咨询文案", "value_type": "string", "default_value": "推广合作申请、身份开通和规则咨询，可添加客服进一步确认。", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 150, "high_risk": False, "description": "推广合作咨询入口文案"},
+    {"config_key": "customer_service.copy.review_support", "label": "评测后续支持文案", "value_type": "string", "default_value": "评测后的后续支持、报告疑问和服务说明，可添加客服咨询。", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "客服配置", "sort_order": 160, "high_risk": False, "description": "评测结果页后续支持入口文案"},
     {"config_key": "platform.recharge_enabled", "label": "充值总开关", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "系统配置", "high_risk": True, "description": "控制前台是否开放充值入口"},
-    {"config_key": "compliance.safe_mode_enabled", "label": "渠道总开关", "value_type": "bool", "default_value": False, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "控制玄学功能是否整体可用"},
-    {"config_key": "compliance.safe_modules", "label": "合规白名单模块", "value_type": "json", "default_value": ["almanac", "five_elements"], "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "总开关开启时允许的模块"},
-    {"config_key": "compliance.hidden_modules", "label": "隐藏模块列表", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "被隐藏的功能模块"},
-    {"config_key": "compliance.hidden_pages", "label": "隐藏页面列表", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "被隐藏的页面"},
-    {"config_key": "phone_review.base_points_cost", "label": "手机号评测基础消耗", "value_type": "int", "default_value": 100, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "手机号评测基础积分消耗"},
-    {"config_key": "phone_review.aspect_unlock_points_cost", "label": "维度解锁消耗", "value_type": "int", "default_value": 50, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "单个维度解锁积分"},
-    {"config_key": "phone_review.free_aspect_keys", "label": "免费维度列表", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "不消耗积分的维度"},
-    {"config_key": "phone_review.aspect_order", "label": "维度顺序", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "手机号评测维度展示顺序"},
-    {"config_key": "phone_review.unlock_enforcement_enabled", "label": "维度解锁限制", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "是否强制未解锁维度隐藏内容"},
-    {"config_key": "agent.metaphysics_skill_enabled", "label": "智能体玄学技能开关", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": True, "description": "仅控制智能体的玄学技能"},
-    {"config_key": "voice.mode", "label": "语音播报模式", "value_type": "string", "default_value": "hybrid", "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "hybrid / browser / cloud"},
-    {"config_key": "voice.autoplay_default_enabled", "label": "语音默认自动播报", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "控制前台新用户是否默认自动播报"},
-    {"config_key": "voice.provider", "label": "语音合成供应商", "value_type": "string", "default_value": "aliyun", "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "当前支持 aliyun / bailian，检测到百炼 API Key 时优先走百炼语音"},
-    {"config_key": "voice.default_voice_key", "label": "默认音色", "value_type": "string", "default_value": "zhiyan_emo", "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "云 TTS 默认 voice key，知燕多情感对应 zhiyan_emo"},
-    {"config_key": "voice.cache_enabled", "label": "语音缓存", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "同文案同音色复用已生成音频"},
-    {"config_key": "voice.max_chars_per_request", "label": "单次播报最大字数", "value_type": "int", "default_value": 1800, "scope_type": "global", "scope_key": "default", "group": "功能管理", "high_risk": False, "description": "超过后服务端会拒绝生成语音"},
+    {"config_key": "compliance.safe_mode_enabled", "label": "安全模式", "value_type": "bool", "default_value": False, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "安全与合规", "sort_order": 10, "high_risk": True, "description": "开启后仅允许安全模式允许功能继续可用"},
+    {"config_key": "compliance.safe_modules", "label": "安全模式允许功能", "value_type": "json", "default_value": ["almanac", "five_elements"], "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "安全与合规", "sort_order": 20, "high_risk": True, "description": "安全模式开启时仍允许访问的功能", "input_options": [{"value": "phone_review", "label": "手机号评测"}, {"value": "voice", "label": "语音播报"}, {"value": "almanac", "label": "黄历"}, {"value": "agent", "label": "智能体"}, {"value": "five_elements", "label": "五行查询"}]},
+    {"config_key": "compliance.hidden_modules", "label": "强制隐藏功能", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "安全与合规", "sort_order": 30, "high_risk": True, "description": "无论安全模式是否开启，都强制隐藏的功能", "input_options": [{"value": "phone_review", "label": "手机号评测"}, {"value": "voice", "label": "语音播报"}, {"value": "almanac", "label": "黄历"}, {"value": "agent", "label": "智能体"}, {"value": "five_elements", "label": "五行查询"}]},
+    {"config_key": "compliance.hidden_pages", "label": "隐藏页面列表", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "安全与合规", "high_risk": True, "description": "被隐藏的页面", "admin_hidden": True},
+    {"config_key": "phone_review.base_points_cost", "label": "基础评测消耗", "value_type": "int", "default_value": 100, "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "数字奇门手机号评测", "sort_order": 10, "high_risk": False, "description": "手机号评测基础积分消耗"},
+    {"config_key": "phone_review.aspect_unlock_points_cost", "label": "专项解锁消耗", "value_type": "int", "default_value": 50, "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "数字奇门手机号评测", "sort_order": 20, "high_risk": False, "description": "单个专项解锁积分"},
+    {"config_key": "phone_review.free_aspect_keys", "label": "免费专项", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "数字奇门手机号评测", "sort_order": 30, "high_risk": False, "description": "不消耗积分的专项"},
+    {"config_key": "phone_review.aspect_order", "label": "专项顺序", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "数字奇门手机号评测", "sort_order": 40, "high_risk": False, "description": "手机号评测专项展示顺序"},
+    {"config_key": "phone_review.unlock_enforcement_enabled", "label": "未解锁内容隐藏", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "数字奇门手机号评测", "sort_order": 50, "high_risk": True, "description": "是否强制未解锁专项隐藏内容", "admin_hidden": True},
+    {"config_key": "agent.metaphysics_skill_enabled", "label": "智能体玄学技能开关", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "智能体", "high_risk": True, "description": "仅控制智能体的玄学技能", "admin_hidden": True},
+    {"config_key": "voice.mode", "label": "语音播报模式", "value_type": "string", "default_value": "hybrid", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "语音播报", "sort_order": 10, "advanced": True, "high_risk": False, "description": "hybrid / browser / cloud"},
+    {"config_key": "voice.autoplay_default_enabled", "label": "语音默认自动播报", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "语音播报", "sort_order": 20, "high_risk": False, "description": "控制前台新用户是否默认自动播报"},
+    {"config_key": "voice.provider", "label": "语音合成供应商", "value_type": "string", "default_value": "aliyun", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "语音播报", "sort_order": 30, "advanced": True, "high_risk": False, "description": "当前支持 aliyun / bailian，检测到百炼 API Key 时优先走百炼语音"},
+    {"config_key": "voice.default_voice_key", "label": "默认音色", "value_type": "string", "default_value": "zhiyan_emo", "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "语音播报", "sort_order": 40, "high_risk": False, "description": "云 TTS 默认 voice key，知燕多情感对应 zhiyan_emo"},
+    {"config_key": "voice.cache_enabled", "label": "语音缓存", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "语音播报", "sort_order": 50, "advanced": True, "high_risk": False, "description": "同文案同音色复用已生成音频"},
+    {"config_key": "voice.max_chars_per_request", "label": "单次播报最大字数", "value_type": "int", "default_value": 1800, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "语音播报", "sort_order": 60, "advanced": True, "high_risk": False, "description": "超过后服务端会拒绝生成语音"},
     {"config_key": "promotion.normal_threshold_cents", "label": "推广大使门槛", "value_type": "int", "default_value": 39800, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "推广大使申请门槛"},
     {"config_key": "promotion.senior_threshold_cents", "label": "VIP 推广大使门槛", "value_type": "int", "default_value": 398000, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "VIP 推广大使申请门槛"},
     {"config_key": "promotion.normal_commission_rate", "label": "推广大使返佣比例", "value_type": "float", "default_value": 0.1, "scope_type": "global", "scope_key": "default", "group": "推广合作", "high_risk": False, "description": "推广大使返佣比例"},
@@ -262,6 +287,10 @@ def upload_my_avatar(payload: AvatarUploadRequest, current_user: dict[str, objec
 
 def _get_avatar_upload_dir() -> Path:
     return get_uploads_dir() / "avatars"
+
+
+def _get_customer_service_qr_upload_dir() -> Path:
+    return get_uploads_dir() / "customer-service"
 
 
 def change_my_password(payload: PasswordChangeRequest, current_user: dict[str, object] = Depends(require_registered_user)) -> PasswordChangeResponse:
@@ -515,8 +544,72 @@ def put_internal_runtime_config(payload: RuntimeConfigUpsertRequest, _: None = D
     return RuntimeConfigListResponse(items=items)
 
 
+def post_internal_initial_points_config(payload: RuntimeInitialPointsUpdateRequest, _: None = Depends(require_internal_admin_access)) -> RuntimeInitialPointsUpdateResponse:
+    try:
+        result = update_initial_points_config(
+            old_initial_grant=get_runtime_initial_points(),
+            new_initial_grant=payload.initial_grant,
+            apply_scope=payload.apply_scope,
+            reason=payload.reason,
+            updated_at=_utc_now(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return RuntimeInitialPointsUpdateResponse(
+        previous_initial_grant=int(result["previous_initial_grant"]),
+        initial_grant=int(result["initial_grant"]),
+        delta=int(result["delta"]),
+        apply_scope=result["apply_scope"],
+        target_user_count=int(result["target_user_count"]),
+        affected_user_count=int(result["affected_user_count"]),
+        adjusted_points_total=int(result["adjusted_points_total"]),
+        zeroed_user_count=int(result["zeroed_user_count"]),
+        operation_id=str(result["operation_id"]),
+        entry=RuntimeConfigEntryResponse(**result["entry"]),
+    )
+
+
 def get_internal_runtime_config_schema(_: None = Depends(require_internal_admin_access)) -> RuntimeConfigSchemaResponse:
     return RuntimeConfigSchemaResponse(items=[RuntimeConfigSchemaItemResponse(**item) for item in _RUNTIME_CONFIG_SCHEMA_ITEMS])
+
+
+def post_internal_customer_service_qr_code(
+    payload: CustomerServiceQrCodeUploadRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> RuntimeConfigEntryResponse:
+    image_bytes, extension = _decode_customer_service_qr_data_url(payload.image_data_url)
+    qr_upload_dir = _get_customer_service_qr_upload_dir()
+    qr_upload_dir.mkdir(parents=True, exist_ok=True)
+    file_name = f"qr-{uuid4().hex}.{extension}"
+    file_path = qr_upload_dir / file_name
+    file_path.write_bytes(image_bytes)
+
+    qr_code_url = f"/api/v1/static/uploads/customer-service/{file_name}"
+    saved_entry = upsert_runtime_config_entry(
+        scope_type="global",
+        scope_key="default",
+        config_key="customer_service.qr_code_url",
+        value=qr_code_url,
+        updated_at=_utc_now(),
+    )
+    return RuntimeConfigEntryResponse(**saved_entry)
+
+
+def delete_internal_customer_service_qr_code(_: None = Depends(require_internal_admin_access)) -> RuntimeConfigEntryResponse:
+    current_qr_code_url = None
+    for entry in list_runtime_config_entries(scope_type="global", scope_key="default"):
+        if entry.get("config_key") == "customer_service.qr_code_url":
+            current_qr_code_url = entry.get("value")
+            break
+    _delete_local_customer_service_qr_code(current_qr_code_url)
+    saved_entry = upsert_runtime_config_entry(
+        scope_type="global",
+        scope_key="default",
+        config_key="customer_service.qr_code_url",
+        value=None,
+        updated_at=_utc_now(),
+    )
+    return RuntimeConfigEntryResponse(**saved_entry)
 
 
 def get_internal_users(
@@ -531,6 +624,14 @@ def get_internal_users(
     date_to: str | None = Query(default=None, max_length=64),
     _: None = Depends(require_internal_admin_access),
 ) -> InternalUserListResponse:
+    total = count_users(
+        keyword=keyword or query,
+        status=status,
+        identity_level=identity_level,
+        channel=channel,
+        date_from=date_from,
+        date_to=date_to,
+    )
     items = [
         _build_internal_user_response(item)
         for item in list_users(
@@ -544,7 +645,7 @@ def get_internal_users(
             date_to=date_to,
         )
     ]
-    return InternalUserListResponse(items=items, total=len(items), limit=limit, offset=offset)
+    return InternalUserListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 def get_internal_user_detail(user_id: str, _: None = Depends(require_internal_admin_access)) -> InternalUserResponse:
@@ -815,6 +916,40 @@ def post_internal_recharge_order_review(
     )
 
 
+def post_internal_recharge_order_manual_complete(
+    order_id: str,
+    payload: RechargeOrderManualCompleteRequest,
+    _: None = Depends(require_internal_admin_access),
+) -> RechargeOrderManualCompleteResponse:
+    try:
+        order, ledger = complete_recharge_order_manually(
+            order_id=order_id,
+            payment_method=payload.payment_method,
+            payment_reference=payload.payment_reference,
+            operator_note=payload.operator_note,
+            operator="internal_admin",
+            now_text=_utc_now(),
+        )
+    except RuntimeError as exc:
+        if str(exc) == "recharge_order_not_found":
+            raise HTTPException(status_code=404, detail="recharge_order_not_found") from exc
+        raise HTTPException(status_code=500, detail="recharge_order_manual_complete_failed") from exc
+    except ValueError as exc:
+        if str(exc) in {"recharge_order_already_completed", "recharge_order_not_manual_completable"}:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    points_account = get_points_account(str(order["user_id"]))
+    if points_account is None:
+        raise HTTPException(status_code=500, detail="recharge_order_manual_complete_failed")
+
+    return RechargeOrderManualCompleteResponse(
+        order=_build_recharge_order_response(order),
+        points=_build_points_account_response(points_account),
+        ledger=_build_points_ledger_entry_response(ledger),
+    )
+
+
 def post_internal_recharge_order_refund(
     order_id: str,
     payload: RefundCreateRequest,
@@ -866,6 +1001,65 @@ def post_internal_refund_retry(
             raise HTTPException(status_code=404, detail="refund_request_not_found") from exc
         raise HTTPException(status_code=500, detail="refund_request_retry_failed") from exc
     return RefundRequestResponse(**refund)
+
+
+def get_internal_phone_qimen_summary(_: None = Depends(require_internal_admin_access)) -> InternalPhoneQimenSummaryResponse:
+    return InternalPhoneQimenSummaryResponse(**get_internal_phone_qimen_summary_data())
+
+
+def get_internal_phone_qimen_reviews(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    keyword: str | None = Query(default=None, max_length=128),
+    status: str | None = Query(default=None, max_length=32),
+    gender: str | None = Query(default=None, max_length=16),
+    channel: str | None = Query(default=None, max_length=64),
+    user_id: str | None = Query(default=None, max_length=64),
+    date_from: str | None = Query(default=None, max_length=64),
+    date_to: str | None = Query(default=None, max_length=64),
+    _: None = Depends(require_internal_admin_access),
+) -> InternalPhoneQimenReviewListResponse:
+    items = [
+        InternalPhoneQimenReviewItemResponse(**item)
+        for item in list_internal_phone_qimen_reviews(
+            limit=limit,
+            offset=offset,
+            keyword=keyword,
+            status=status,
+            gender=gender,
+            channel=channel,
+            user_id=user_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+    ]
+    total = count_internal_phone_qimen_reviews(
+        keyword=keyword,
+        status=status,
+        gender=gender,
+        channel=channel,
+        user_id=user_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    return InternalPhoneQimenReviewListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+def get_internal_phone_qimen_review_detail(review_id: str, _: None = Depends(require_internal_admin_access)) -> InternalPhoneQimenReviewDetailResponse:
+    review = get_internal_phone_qimen_review(review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="review_not_found")
+    user_id = str(review.get("user_id") or "")
+    unlock_records = [
+        _build_internal_phone_qimen_unlock_response(item)
+        for item in (list_review_aspect_unlocks(review_id=review_id, user_id=user_id) if user_id else [])
+    ]
+    voice_records = [_build_usage_record_response(item) for item in list_voice_usage_records_for_review(review_id)]
+    return InternalPhoneQimenReviewDetailResponse(
+        review=InternalPhoneQimenReviewItemResponse(**review),
+        unlock_records=unlock_records,
+        voice_records=voice_records,
+    )
 
 
 def get_internal_reviews(
@@ -1618,6 +1812,20 @@ def _build_review_aspect_unlock_response(
     )
 
 
+def _build_internal_phone_qimen_unlock_response(item: dict[str, object]) -> InternalPhoneQimenAspectUnlockRecordResponse:
+    aspect_key = str(item["aspect_key"])
+    return InternalPhoneQimenAspectUnlockRecordResponse(
+        unlock_id=str(item["unlock_id"]),
+        review_id=str(item["review_id"]),
+        user_id=str(item["user_id"]),
+        aspect_key=aspect_key,
+        aspect_name=PHONE_QIMEN_ASPECT_LABELS.get(aspect_key, aspect_key),
+        points_cost=int(item["points_cost"]),
+        usage_record_id=str(item["usage_record_id"]) if item.get("usage_record_id") else None,
+        unlocked_at=str(item["unlocked_at"]),
+    )
+
+
 def _build_voice_narration_text(payload: VoiceNarrationRequest, public_view: dict[str, Any]) -> str:
     if payload.scene == "phone_summary":
         phone_summary = _build_review_phone_summary(public_view.get("phone_summary"))
@@ -2219,25 +2427,67 @@ def _run_review_aspect_prefetch(*, review_id: str) -> None:
 
 
 def _decode_avatar_data_url(image_data_url: str) -> tuple[bytes, str]:
+    return _decode_image_data_url(
+        image_data_url,
+        invalid_data_detail="invalid_avatar_data",
+        empty_file_detail="empty_avatar_file",
+        too_large_detail="avatar_file_too_large",
+        invalid_image_detail="invalid_avatar_image",
+    )
+
+
+def _decode_customer_service_qr_data_url(image_data_url: str) -> tuple[bytes, str]:
+    return _decode_image_data_url(
+        image_data_url,
+        invalid_data_detail="invalid_customer_service_qr_data",
+        empty_file_detail="empty_customer_service_qr_file",
+        too_large_detail="customer_service_qr_file_too_large",
+        invalid_image_detail="invalid_customer_service_qr_image",
+    )
+
+
+def _decode_image_data_url(
+    image_data_url: str,
+    *,
+    invalid_data_detail: str,
+    empty_file_detail: str,
+    too_large_detail: str,
+    invalid_image_detail: str,
+) -> tuple[bytes, str]:
     match = AVATAR_DATA_URL_PATTERN.match(image_data_url.strip())
     if match is None:
-        raise HTTPException(status_code=422, detail="invalid_avatar_data")
+        raise HTTPException(status_code=422, detail=invalid_data_detail)
 
     kind = match.group("kind").lower()
     extension = "jpg" if kind in {"jpg", "jpeg"} else kind
     try:
         image_bytes = base64.b64decode(match.group("data"), validate=True)
     except (binascii.Error, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="invalid_avatar_data") from exc
+        raise HTTPException(status_code=422, detail=invalid_data_detail) from exc
 
     if not image_bytes:
-        raise HTTPException(status_code=422, detail="empty_avatar_file")
+        raise HTTPException(status_code=422, detail=empty_file_detail)
     if len(image_bytes) > MAX_AVATAR_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="avatar_file_too_large")
+        raise HTTPException(status_code=413, detail=too_large_detail)
     if not _avatar_file_signature_matches(extension, image_bytes):
-        raise HTTPException(status_code=422, detail="invalid_avatar_image")
+        raise HTTPException(status_code=422, detail=invalid_image_detail)
 
     return image_bytes, extension
+
+
+def _delete_local_customer_service_qr_code(qr_code_url: object) -> None:
+    if not isinstance(qr_code_url, str):
+        return
+    local_prefix = "/api/v1/static/uploads/customer-service/"
+    if not qr_code_url.startswith(local_prefix):
+        return
+    file_name = qr_code_url.removeprefix(local_prefix).strip()
+    if not file_name or "/" in file_name or "\\" in file_name:
+        return
+    try:
+        (_get_customer_service_qr_upload_dir() / file_name).unlink(missing_ok=True)
+    except OSError:
+        return
 
 
 def _avatar_file_signature_matches(extension: str, image_bytes: bytes) -> bool:
