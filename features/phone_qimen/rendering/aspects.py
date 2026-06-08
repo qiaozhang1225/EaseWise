@@ -157,6 +157,8 @@ def render_aspect_from_package(
             thinking_enabled=thinking_enabled,
             temperature=0.25,
             max_tokens=max_tokens,
+            llm_scene=f"phone_qimen.aspect.{aspect_key}",
+            priority_class="background_prefetch",
         )
         model_output = response.json_object()
         model_name = response.model or model

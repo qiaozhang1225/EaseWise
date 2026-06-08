@@ -86,6 +86,32 @@ const paymentContactReason = computed(() => {
   const orderText = order?.order_id ? `订单 ${order.order_id}` : '充值订单';
   return `${orderText}，${packageTitle}，${amount}，${points} 积分，用户 ${userNickname.value}`;
 });
+const unsuccessfulOrderState = computed(() => {
+  const orderStatus = currentOrder.value?.status || '';
+  const rawOrderStatus = currentOrder.value?.raw_status || '';
+  if (rawOrderStatus === 'rejected' || orderStatus === 'refunded') {
+    return {
+      title: '订单未完成',
+      message: '后台已拒绝该充值订单，积分不会到账。请重新选择套餐，或联系客服确认原因。',
+    };
+  }
+  if (orderStatus === 'closed') {
+    return {
+      title: '订单已关闭',
+      message: '该充值订单已关闭，无法继续支付或到账。请重新选择套餐后再次下单。',
+    };
+  }
+  if (orderStatus === 'refund_pending') {
+    return {
+      title: '订单退款处理中',
+      message: '该订单已进入退款处理流程，暂不能继续作为充值订单支付。',
+    };
+  }
+  return null;
+});
+const paymentErrorTitle = computed(() => unsuccessfulOrderState.value?.title || '账单未能成功结付');
+const paymentErrorMessage = computed(() => unsuccessfulOrderState.value?.message || '如果已经扣款或对支付结果有疑问，请联系客服协助核查。');
+const paymentErrorContactContext = computed(() => unsuccessfulOrderState.value ? paymentContactReason.value : undefined);
 
 onMounted(async () => {
   await Promise.all([bootstrapApp(), sleep(400)]);
@@ -239,8 +265,18 @@ async function refreshPaymentStatus(): Promise<void> {
 
 function applyPaymentState(): void {
   const orderStatus = currentOrder.value?.status;
+  const rawOrderStatus = currentOrder.value?.raw_status;
   const paymentStatus = currentPayment.value?.status;
-  if (orderStatus === 'paid' || orderStatus === 'completed' || paymentStatus === 'paid') {
+  if (orderStatus === 'paid' || orderStatus === 'completed') {
+    pageState.value = 'payment_success';
+    void refreshPoints().catch(() => undefined);
+    return;
+  }
+  if (isUnsuccessfulOrderStatus(orderStatus, rawOrderStatus)) {
+    pageState.value = 'payment_error';
+    return;
+  }
+  if (paymentStatus === 'paid') {
     pageState.value = 'payment_success';
     void refreshPoints().catch(() => undefined);
     return;
@@ -250,6 +286,10 @@ function applyPaymentState(): void {
     return;
   }
   pageState.value = 'pending_payment';
+}
+
+function isUnsuccessfulOrderStatus(orderStatus: string | undefined, rawOrderStatus: string | null | undefined): boolean {
+  return rawOrderStatus === 'rejected' || orderStatus === 'refunded' || orderStatus === 'closed' || orderStatus === 'refund_pending';
 }
 
 function goToProfile(): void {
@@ -285,6 +325,24 @@ function updateOrderInUrl(orderId: string): void {
   const url = new URL(window.location.href);
   url.searchParams.set('order_id', orderId);
   window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function clearOrderInUrl(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.delete('order_id');
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function resetToRechargePanel(): void {
+  currentOrder.value = null;
+  currentPayment.value = null;
+  actionError.value = '';
+  clearOrderInUrl();
+  recommendPackage();
+  pageState.value = 'recharge_panel';
 }
 
 function packageSpanClass(index: number): string {
@@ -627,7 +685,7 @@ function sleep(ms: number): Promise<void> {
             <button
               type="button"
               class="w-full py-2 bg-brand-primary/[0.01] border border-brand-primary/5 hover:bg-brand-primary/[0.03] text-brand-secondary font-medium rounded-lg text-center text-[10.5px] cursor-pointer outline-none transition-all"
-              @click="pageState = 'recharge_panel'"
+              @click="resetToRechargePanel"
             >
               重新挑选其他套餐
             </button>
@@ -674,7 +732,7 @@ function sleep(ms: number): Promise<void> {
             <button
               type="button"
               class="w-full py-2 bg-brand-primary/[0.01] border border-brand-primary/5 hover:bg-brand-primary/[0.03] text-brand-secondary font-medium rounded-lg text-center text-[10.5px] cursor-pointer outline-none transition-colors"
-              @click="pageState = 'recharge_panel'"
+              @click="resetToRechargePanel"
             >
               继续购买积分
             </button>
@@ -686,23 +744,23 @@ function sleep(ms: number): Promise<void> {
             <AlertTriangle :size="18" />
           </div>
           <div class="space-y-1">
-            <h3 class="font-serif font-bold text-brand-ink-strong text-xs">账单未能成功结付</h3>
+            <h3 class="font-serif font-bold text-brand-ink-strong text-xs">{{ paymentErrorTitle }}</h3>
             <p class="text-[11px] text-brand-secondary px-4 leading-relaxed">
-              如果已经扣款或对支付结果有疑问，请联系客服协助核查。
+              {{ paymentErrorMessage }}
             </p>
           </div>
           <div class="flex flex-col gap-2 pt-1">
             <button
               type="button"
               class="w-full py-2.5 bg-brand-primary hover:bg-brand-primary/95 text-white font-serif font-bold rounded-lg text-center text-xs cursor-pointer select-none transition-colors outline-none flex items-center justify-center gap-1.5"
-              @click="openCustomerService('payment_issue')"
+              @click="openCustomerService('payment_issue', paymentErrorContactContext)"
             >
               <span>联系客服核查</span>
             </button>
             <button
               type="button"
               class="w-full py-2 bg-brand-primary/[0.01] border border-brand-primary/5 hover:bg-brand-primary/[0.03] text-brand-secondary font-medium rounded-lg text-center text-[10.5px] cursor-pointer outline-none transition-colors"
-              @click="pageState = 'recharge_panel'"
+              @click="resetToRechargePanel"
             >
               返回重新挑选套餐
             </button>

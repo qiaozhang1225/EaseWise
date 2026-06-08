@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 Gender = Literal['male', 'female']
-ReviewStatus = Literal['processing', 'completed', 'failed']
+ReviewStatus = Literal['processing', 'completed', 'failed', 'retryable']
 ReviewProgressStage = Literal['queued', 'scoring', 'rendering', 'finalizing', 'completed', 'failed']
 AgentMessageRole = Literal['user', 'assistant']
 RuntimeConfigScopeType = Literal['global', 'channel']
@@ -40,6 +40,7 @@ class DashboardResponse(BaseModel):
     users: dict[str, Any] = Field(default_factory=dict)
     orders: dict[str, Any] = Field(default_factory=dict)
     promotion: dict[str, Any] = Field(default_factory=dict)
+    llm: dict[str, Any] = Field(default_factory=dict)
     sections: list[DashboardSectionResponse] = Field(default_factory=list)
 
 
@@ -166,6 +167,156 @@ class ReviewSummaryResponse(BaseModel):
 
 class ReviewListResponse(BaseModel):
     items: list[ReviewSummaryResponse]
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+
+
+class FourPillarsReviewCreateRequest(BaseModel):
+    gender: Gender
+    birth_date: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}$')
+    birth_time: str = Field(pattern=r'^\d{2}:\d{2}$')
+    timezone: str | None = Field(default='Asia/Shanghai', max_length=64)
+    birth_place: str | None = Field(default=None, max_length=128)
+    name: str | None = Field(default=None, max_length=64)
+    include_markdown: bool = True
+
+
+class FourPillarsSummaryResponse(BaseModel):
+    title: str = ""
+    risk: str = ""
+    usage_guidance: str = ""
+    elements_check: dict[str, str] = Field(default_factory=dict)
+
+
+class FourPillarsAspectResponse(BaseModel):
+    aspect_key: str
+    title: str
+    short_title: str | None = None
+    score: int | None = None
+    is_unlocked: bool = False
+    unlock_points: int = 0
+    content: str | None = None
+    risk: str | None = None
+    elements_check: dict[str, str] = Field(default_factory=dict)
+
+
+class FourPillarsLuckRenderRecordResponse(BaseModel):
+    id: str
+    render_id: str
+    review_id: str
+    user_id: str
+    render_type: Literal['dayun', 'liunian']
+    cycle_key: str
+    year: int | None = None
+    status: ReviewStatus
+    progress_message: str | None = None
+    facts: dict[str, Any] | None = None
+    result: dict[str, Any] | None = None
+    points_cost: int = 0
+    error_message: str | None = None
+    retry_count: int = 0
+    last_attempt_at: str | None = None
+    next_retry_available_at: str | None = None
+    is_retryable: bool = False
+    created_at: str
+    updated_at: str
+
+
+class FourPillarsLuckYearItemResponse(BaseModel):
+    year: int
+    age: int | None = None
+    ganzhi: str
+    stem: str | None = None
+    branch: str | None = None
+    stem_ten_god: str | None = None
+    stem_element: str | None = None
+    branch_element: str | None = None
+    is_current: bool = False
+    render_status: str = "not_generated"
+    render: FourPillarsLuckRenderRecordResponse | None = None
+
+
+class FourPillarsLuckCycleResponse(BaseModel):
+    cycle_key: str
+    start_year: int
+    end_year: int
+    start_age: int | None = None
+    end_age: int | None = None
+    ganzhi: str | None = None
+    display_ganzhi: str | None = None
+    is_current: bool = False
+    stem: str | None = None
+    branch: str | None = None
+    stem_ten_god: str | None = None
+    stem_element: str | None = None
+    branch_element: str | None = None
+    render_status: str = "not_generated"
+    render: FourPillarsLuckRenderRecordResponse | None = None
+    year_items: list[FourPillarsLuckYearItemResponse] = Field(default_factory=list)
+
+
+class FourPillarsLuckAnalysisResponse(BaseModel):
+    enabled: bool = True
+    cycle_points_cost: int = 0
+    year_points_cost: int = 0
+    current_cycle_key: str | None = None
+    cycles: list[FourPillarsLuckCycleResponse] = Field(default_factory=list)
+
+
+class FourPillarsLuckCycleListResponse(BaseModel):
+    luck_analysis: FourPillarsLuckAnalysisResponse
+
+
+class FourPillarsReviewRecordResponse(BaseModel):
+    id: str
+    report_id: str
+    gender: Gender
+    birth_date: str
+    birth_time: str
+    timezone: str
+    birth_place: str | None = None
+    name: str | None = None
+    status: ReviewStatus
+    progress_stage: ReviewProgressStage | None = None
+    progress_message: str | None = None
+    score: int | None = None
+    input_profile: dict[str, Any] = Field(default_factory=dict)
+    chart: dict[str, Any] | None = None
+    summary: FourPillarsSummaryResponse | None = None
+    deterministic_facts: dict[str, Any] = Field(default_factory=dict)
+    aspects: list[FourPillarsAspectResponse] = Field(default_factory=list)
+    analysis_branches: dict[str, Any] = Field(default_factory=dict)
+    luck_analysis: FourPillarsLuckAnalysisResponse | None = None
+    aspect_unlock_points: int | None = None
+    free_aspect_keys: list[str] = Field(default_factory=list)
+    unlock_enforcement_enabled: bool | None = None
+    score_markdown: str | None = None
+    error_message: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class FourPillarsReviewSummaryResponse(BaseModel):
+    id: str
+    report_id: str
+    gender: Gender
+    birth_date: str
+    birth_time: str
+    timezone: str
+    birth_place: str | None = None
+    name: str | None = None
+    status: ReviewStatus
+    progress_stage: ReviewProgressStage | None = None
+    progress_message: str | None = None
+    score: int | None = None
+    error_message: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class FourPillarsReviewListResponse(BaseModel):
+    items: list[FourPillarsReviewSummaryResponse]
     total: int = 0
     limit: int = 20
     offset: int = 0
@@ -372,6 +523,99 @@ class PointsLedgerListResponse(BaseModel):
     items: list[PointsLedgerEntryResponse]
 
 
+class PointsClaimLinkCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=128)
+    points_amount: int = Field(gt=0)
+    display_value_cents: int = Field(default=0, ge=0)
+    expires_in_hours: int | None = Field(default=None, gt=0, le=24 * 30)
+    expires_at: str | None = Field(default=None, max_length=64)
+    operator_note: str | None = Field(default=None, max_length=512)
+
+
+class PointsClaimLinkDisableRequest(BaseModel):
+    operator_note: str | None = Field(default=None, max_length=512)
+
+
+class PointsClaimLinkResponse(BaseModel):
+    claim_link_id: str
+    claim_code: str
+    claim_url: str
+    title: str
+    points_amount: int
+    display_value_cents: int
+    status: str
+    effective_status: str
+    valid_from: str
+    expires_at: str
+    claimed_user_count: int = 0
+    granted_points_total: int = 0
+    duplicate_attempt_count: int = 0
+    created_by: str | None = None
+    disabled_by: str | None = None
+    disabled_at: str | None = None
+    operator_note: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class PointsClaimLinkListResponse(BaseModel):
+    items: list[PointsClaimLinkResponse]
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+
+
+class PointsClaimRecordResponse(BaseModel):
+    claim_record_id: str
+    claim_link_id: str
+    claim_code: str | None = None
+    claim_title: str | None = None
+    user_id: str
+    user_uid: str | None = None
+    user_nickname: str | None = None
+    user_phone: str | None = None
+    week_key: str
+    week_starts_at: str
+    status: str
+    points_amount_snapshot: int
+    display_value_cents_snapshot: int = 0
+    ledger_id: str | None = None
+    failure_reason: str | None = None
+    request_ip: str | None = None
+    user_agent: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class PointsClaimRecordListResponse(BaseModel):
+    items: list[PointsClaimRecordResponse]
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+
+
+class PublicPointsClaimLinkResponse(BaseModel):
+    claim_code: str
+    title: str
+    points_amount: int
+    display_value_cents: int
+    status: str
+    effective_status: str
+    valid_from: str
+    expires_at: str
+    current_user_claim_status: str | None = None
+    current_user_claim_record: PointsClaimRecordResponse | None = None
+
+
+class PointsClaimSubmitResponse(BaseModel):
+    claim_status: str
+    message: str
+    points: PointsAccountResponse | None = None
+    ledger: PointsLedgerEntryResponse | None = None
+    record: PointsClaimRecordResponse | None = None
+    already_claimed_record: PointsClaimRecordResponse | None = None
+
+
 class RechargePackageResponse(BaseModel):
     package_key: str
     title: str
@@ -570,6 +814,15 @@ class UsageRecordResponse(BaseModel):
     user_avatar_url: str | None = None
     request_payload_summary: dict[str, Any] | None = None
     result_summary: dict[str, Any] | None = None
+    llm_key_id: str | None = None
+    llm_key_name: str | None = None
+    llm_model: str | None = None
+    llm_priority_class: str | None = None
+    llm_wait_ms: int | None = None
+    llm_duration_ms: int | None = None
+    llm_retry_count: int = 0
+    llm_error_type: str | None = None
+    llm_error_message: str | None = None
     created_at: str
     updated_at: str
 
@@ -657,6 +910,52 @@ class InternalPhoneQimenReviewDetailResponse(BaseModel):
     review: InternalPhoneQimenReviewItemResponse
     unlock_records: list[InternalPhoneQimenAspectUnlockRecordResponse] = Field(default_factory=list)
     voice_records: list[UsageRecordResponse] = Field(default_factory=list)
+
+
+class InternalFourPillarsSummaryResponse(InternalPhoneQimenSummaryResponse):
+    pass
+
+
+class InternalFourPillarsReviewItemResponse(BaseModel):
+    review_id: str
+    user_id: str | None = None
+    user_uid: str | None = None
+    user_nickname: str | None = None
+    user_phone: str | None = None
+    gender: Gender
+    birth_date: str
+    birth_time: str
+    timezone: str
+    birth_place: str | None = None
+    name: str | None = None
+    status: ReviewStatus
+    progress_stage: ReviewProgressStage | None = None
+    progress_message: str | None = None
+    error_message: str | None = None
+    channel: str | None = None
+    base_points_cost: int = 0
+    unlock_count: int = 0
+    voice_count: int = 0
+    generation_duration_seconds: int | None = None
+    created_at: str
+    updated_at: str
+
+
+class InternalFourPillarsReviewListResponse(BaseModel):
+    items: list[InternalFourPillarsReviewItemResponse]
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+
+
+class InternalFourPillarsAspectUnlockRecordResponse(InternalPhoneQimenAspectUnlockRecordResponse):
+    pass
+
+
+class InternalFourPillarsReviewDetailResponse(BaseModel):
+    review: InternalFourPillarsReviewItemResponse
+    unlock_records: list[InternalFourPillarsAspectUnlockRecordResponse] = Field(default_factory=list)
+    luck_render_records: list[FourPillarsLuckRenderRecordResponse] = Field(default_factory=list)
 
 
 class AdminReviewRequest(BaseModel):
@@ -772,6 +1071,14 @@ class LlmApiKeyResponse(BaseModel):
     secret_configured: bool = False
     enabled: bool
     priority: int
+    max_concurrency: int = 450
+    cooldown_seconds: int = 60
+    current_inflight: int = 0
+    available_slots: int = 0
+    cooldown_until: str | None = None
+    last_rate_limited_at: str | None = None
+    last_error_message: str | None = None
+    last_used_at: str | None = None
     remark: str | None = None
     last_operator: str | None = None
     created_at: str
@@ -794,8 +1101,47 @@ class LlmApiKeyUpsertRequest(BaseModel):
     secret_value: str | None = Field(default=None, max_length=4096)
     enabled: bool = False
     priority: int = 100
+    max_concurrency: int = Field(default=450, ge=1, le=5000)
+    cooldown_seconds: int = Field(default=60, ge=1, le=3600)
     remark: str | None = Field(default=None, max_length=512)
     last_operator: str | None = Field(default=None, max_length=128)
+
+
+class LlmConcurrencyKeyResponse(BaseModel):
+    key_id: str
+    display_name: str
+    provider: str
+    model: str
+    enabled: bool = True
+    priority: int = 100
+    max_concurrency: int = 450
+    cooldown_seconds: int = 60
+    current_inflight: int = 0
+    available_slots: int = 0
+    cooldown_until: str | None = None
+    last_rate_limited_at: str | None = None
+    last_error_message: str | None = None
+    last_used_at: str | None = None
+
+
+class LlmConcurrencyStatusResponse(BaseModel):
+    backend: str
+    backend_available: bool = True
+    backend_error: str | None = None
+    redis_configured: bool = False
+    global_inflight: int = 0
+    foreground_waiting: int = 0
+    background_waiting: int = 0
+    foreground_inflight: int = 0
+    background_inflight: int = 0
+    enabled_key_count: int = 0
+    total_capacity: int = 0
+    recent_429_count: int = 0
+    recent_timeout_count: int = 0
+    avg_wait_ms: int = 0
+    avg_duration_ms: int = 0
+    config: dict[str, Any] = Field(default_factory=dict)
+    keys: list[LlmConcurrencyKeyResponse] = Field(default_factory=list)
 
 
 class AuthLoginResponse(BaseModel):
@@ -860,6 +1206,28 @@ class ReviewAspectUnlockListResponse(BaseModel):
     aspect_unlock_points_cost: int
     unlock_enforcement_enabled: bool
     aspects: list[ReviewAspectResponse] = Field(default_factory=list)
+
+
+class FourPillarsAspectUnlockResponse(BaseModel):
+    unlock_id: str
+    review_id: str
+    user_id: str
+    aspect_key: str
+    points_cost: int
+    usage_record_id: str
+    unlocked_at: str
+    points: PointsAccountResponse | None = None
+    aspect: FourPillarsAspectResponse | None = None
+
+
+class FourPillarsAspectUnlockListResponse(BaseModel):
+    items: list[FourPillarsAspectUnlockResponse]
+    available_aspect_keys: list[str]
+    free_aspect_keys: list[str]
+    unlocked_aspect_keys: list[str]
+    aspect_unlock_points_cost: int
+    unlock_enforcement_enabled: bool
+    aspects: list[FourPillarsAspectResponse] = Field(default_factory=list)
 
 
 class VoiceNarrationRequest(BaseModel):
@@ -982,6 +1350,9 @@ class ModuleRuntimeConfigResponse(BaseModel):
     free_aspect_keys: list[str] | None = None
     aspect_order: list[str] | None = None
     unlock_enforcement_enabled: bool | None = None
+    luck_cycle_points_cost: int | None = None
+    luck_year_points_cost: int | None = None
+    luck_generation_enabled: bool | None = None
     metaphysics_skill_enabled: bool | None = None
 
 
@@ -997,6 +1368,7 @@ class VoiceRuntimeConfigResponse(BaseModel):
 
 class RuntimeModulesConfigResponse(BaseModel):
     phone_review: ModuleRuntimeConfigResponse
+    four_pillars: ModuleRuntimeConfigResponse
     agent: ModuleRuntimeConfigResponse
     almanac: ModuleRuntimeConfigResponse
     voice: VoiceRuntimeConfigResponse

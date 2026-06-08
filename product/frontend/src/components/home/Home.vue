@@ -8,9 +8,10 @@ import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 
 const emit = defineEmits<{
   (e: 'phone-click'): void;
+  (e: 'bazi-click'): void;
 }>();
 
-const { state, bootstrapApp, reviewBasePointsCost } = useEaseWiseApp();
+const { state, bootstrapApp, reviewBasePointsCost, fourPillarsBasePointsCost } = useEaseWiseApp();
 const toast = ref<string | null>(null);
 const yiExpanded = ref(false);
 const jiExpanded = ref(false);
@@ -58,7 +59,6 @@ const showToast = (message: string) => {
 const tools = [
   { id: 'avatar', name: '头像解析', desc: '头像风格与气场参考', icon: UserCircle },
   { id: 'name', name: '姓名解析', desc: '名字结构与使用感受', icon: Type },
-  { id: 'bazi', name: '八字解析', desc: '个人状态与长期趋势', icon: Calendar },
   { id: 'qimen', name: '奇门问事', desc: '问题分析与决策辅助', icon: Compass },
   { id: 'almanac', name: '黄历查询', desc: '今日宜忌与日常参考', icon: History },
   { id: 'wuxing', name: '五行属性', desc: '属性查询与基础说明', icon: Sparkles },
@@ -197,6 +197,37 @@ onMounted(() => {
         </div>
         <div class="bg-white/15 p-4 rounded-full shrink-0 z-10">
           <Calculator :size="36" class="text-brand-accent shrink-0 animate-bounce" data-icon="dialpad" />
+        </div>
+      </button>
+    </section>
+
+    <!-- Four pillars CTA -->
+    <section class="mb-4">
+      <button
+        @click="emit('bazi-click')"
+        class="w-full bg-white text-brand-ink-strong rounded-2xl p-5 shadow-sm border border-brand-primary/15 flex items-center justify-between active:scale-[0.99] transition-transform text-left relative overflow-hidden cursor-pointer"
+      >
+        <div class="absolute top-0 right-0 bg-brand-primary/10 text-brand-primary-strong font-sans text-[10px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wide">
+          四柱八字 · 命盘评测
+        </div>
+        <div class="flex flex-col gap-1.5 z-10 max-w-[70%]">
+          <span class="font-serif text-[17.5px] font-bold leading-tight flex items-center gap-1.5">
+            四柱八字评测
+          </span>
+          <span class="font-sans text-[13px] text-brand-secondary leading-relaxed">
+            输入出生日期和时辰，查看命盘结构、五行比例、日主和专项趋势。
+          </span>
+          <div class="flex items-center gap-3 mt-1.5 flex-wrap">
+            <span class="font-sans text-[11px] text-brand-primary-strong font-bold">
+              公历生日时辰评测 →
+            </span>
+            <span class="px-2.5 py-1 bg-brand-primary/10 border border-brand-primary/25 rounded-lg font-sans text-[10px] font-bold text-brand-primary-strong leading-none select-none shadow-sm">
+              消耗 {{ fourPillarsBasePointsCost }} 积分
+            </span>
+          </div>
+        </div>
+        <div class="bg-brand-primary/10 p-4 rounded-full shrink-0 z-10">
+          <Calendar :size="34" class="text-brand-primary shrink-0" />
         </div>
       </button>
     </section>

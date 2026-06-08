@@ -3,15 +3,17 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import BottomNav from './components/layout/BottomNav.vue';
 import Home from './components/home/Home.vue';
 import Analysis from './components/analysis/Analysis.vue';
+import FourPillarsAnalysis from './components/four-pillars/FourPillarsAnalysis.vue';
 import AIAgent from './components/ai-agent/AIAgent.vue';
 import Profile from './components/profile/Profile.vue';
 import RechargePage from './components/recharge/RechargePage.vue';
+import PointsClaimPage from './components/points-claim/PointsClaimPage.vue';
 import AuthModal from './components/auth/AuthModal.vue';
 import ContactServiceModal from './components/support/ContactServiceModal.vue';
 import AdminWorkspace from './components/admin/AdminWorkspace.vue';
 import { useEaseWiseApp } from './composables/useEaseWiseApp';
 
-type AppTab = 'home' | 'phone' | 'agent' | 'profile' | 'recharge';
+type AppTab = 'home' | 'phone' | 'bazi' | 'agent' | 'profile' | 'recharge' | 'points-claim';
 
 const activeTab = ref<AppTab>('home');
 const routeQuery = ref<Record<string, string>>({});
@@ -25,9 +27,11 @@ const title = computed(() => {
   switch (activeTab.value) {
     case 'home': return '易如反掌';
     case 'phone': return '手机号评测';
+    case 'bazi': return '四柱八字评测';
     case 'agent': return '智能体';
     case 'profile': return '我的';
     case 'recharge': return '积分充值';
+    case 'points-claim': return '免费积分领取';
     default: return '易如反掌';
   }
 });
@@ -40,12 +44,26 @@ function readCurrentRoute(): { tab: AppTab; query: Record<string, string> } {
   const url = new URL(window.location.href);
   const query = Object.fromEntries(url.searchParams.entries());
   const page = query.page || '';
+  const claimPathMatch = url.pathname.match(/^\/(?:points-claim|claim)\/([^/?#]+)/u);
+
+  if (claimPathMatch) {
+    return {
+      tab: 'points-claim',
+      query: {
+        ...query,
+        claim_code: decodeURIComponent(claimPathMatch[1]),
+      },
+    };
+  }
 
   if (url.pathname === '/recharge' || page === 'recharge') {
     return { tab: 'recharge', query };
   }
   if (page === 'phone') {
     return { tab: 'phone', query };
+  }
+  if (page === 'bazi' || page === 'four-pillars') {
+    return { tab: 'bazi', query };
   }
   if (page === 'agent') {
     return { tab: 'agent', query };
@@ -62,7 +80,7 @@ function syncRouteState(tab: AppTab, params: Record<string, string | number | un
   }
 
   const normalizedParams = new URLSearchParams();
-  if (tab !== 'home' && tab !== 'recharge') {
+  if (tab !== 'home' && tab !== 'recharge' && tab !== 'points-claim') {
     normalizedParams.set('page', tab);
   }
   Object.entries(params).forEach(([key, value]) => {
@@ -73,7 +91,15 @@ function syncRouteState(tab: AppTab, params: Record<string, string | number | un
   });
 
   const nextUrl = new URL(window.location.href);
-  nextUrl.pathname = tab === 'recharge' ? '/recharge' : '/';
+  if (tab === 'recharge') {
+    nextUrl.pathname = '/recharge';
+  } else if (tab === 'points-claim') {
+    const claimCode = String(params.claim_code || routeQuery.value.claim_code || '').trim();
+    nextUrl.pathname = claimCode ? `/points-claim/${encodeURIComponent(claimCode)}` : '/points-claim';
+    normalizedParams.delete('claim_code');
+  } else {
+    nextUrl.pathname = '/';
+  }
   nextUrl.search = normalizedParams.toString() ? `?${normalizedParams.toString()}` : '';
   const nextState = { tab, params: Object.fromEntries(normalizedParams.entries()) };
   if (options.replace) {
@@ -120,6 +146,13 @@ async function handlePhoneClick(): Promise<void> {
   }
 }
 
+async function handleBaziClick(): Promise<void> {
+  const authenticated = await requestRegisteredUser('四柱八字评测');
+  if (authenticated) {
+    navigateToTab('bazi');
+  }
+}
+
 onMounted(() => {
   if (!isAdminRoute) {
     const initialRoute = readCurrentRoute();
@@ -152,10 +185,19 @@ watch(title, (value) => {
       <!-- Main viewport -->
       <main class="font-sans antialiased min-h-screen">
         <div v-if="activeTab === 'home'">
-          <Home @phone-click="handlePhoneClick" />
+          <Home
+            @phone-click="handlePhoneClick"
+            @bazi-click="handleBaziClick"
+          />
         </div>
         <div v-else-if="activeTab === 'phone'">
           <Analysis
+            @back-to-home="navigateToTab('home')"
+            @navigate-to-tab="navigateToTab"
+          />
+        </div>
+        <div v-else-if="activeTab === 'bazi'">
+          <FourPillarsAnalysis
             @back-to-home="navigateToTab('home')"
             @navigate-to-tab="navigateToTab"
           />
@@ -174,12 +216,18 @@ watch(title, (value) => {
             @navigate-to-tab="navigateToTab"
           />
         </div>
+        <div v-else-if="activeTab === 'points-claim'">
+          <PointsClaimPage
+            :claim-code="routeQuery.claim_code || ''"
+            @navigate-to-tab="navigateToTab"
+          />
+        </div>
       </main>
 
       <!-- Tab navigations -->
       <BottomNav
-        v-if="activeTab !== 'recharge'"
-        :active-tab="activeTab === 'phone' ? 'home' : activeTab"
+        v-if="activeTab !== 'recharge' && activeTab !== 'points-claim'"
+        :active-tab="activeTab === 'phone' || activeTab === 'bazi' ? 'home' : activeTab"
         @update:active-tab="navigateToTab"
       />
     </div>

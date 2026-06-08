@@ -157,9 +157,6 @@ def _get_int_env(name: str, default: int, *, minimum: int, maximum: int) -> int:
 
 def _resolve_render_client() -> tuple[DeepSeekClient, str]:
     load_env_file()
-    if not os.getenv("DEEPSEEK_API_KEY", "").strip():
-        raise DeepSeekAPIError(DEEPSEEK_PHONE_SUMMARY_ERROR)
-
     try:
         client = DeepSeekClient.from_env()
         configured_model = os.getenv("EASEWISE_REVIEW_MODEL", "").strip() or client.config.model

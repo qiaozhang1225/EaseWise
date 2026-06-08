@@ -6,7 +6,11 @@ import {
   ArrowUp,
   Award,
   Calendar,
+  CheckCircle2,
   Coins,
+  Copy,
+  ExternalLink,
+  Gift,
   LogOut,
   MessageSquare,
   RotateCcw,
@@ -18,17 +22,22 @@ import {
   TrendingUp,
   Users,
   X,
+  XCircle,
 } from 'lucide-vue-next';
 import {
   ApiError,
   adjustInternalUserPoints,
+  createInternalPointsClaimLink,
   createInternalLlmApiKey,
   createInternalRechargeOrderRefund,
   deleteInternalCustomerServiceQrCode,
   deleteInternalLlmApiKey,
+  disableInternalPointsClaimLink,
   getInternalDashboard,
+  getInternalLlmConcurrency,
   getInternalPhoneQimenReview,
   getInternalPhoneQimenSummary,
+  getInternalPointsClaimLink,
   getInternalPromotionApplication,
   getInternalPromotionCommission,
   getInternalPromotionRules,
@@ -39,6 +48,8 @@ import {
   getInternalRuntimeConfigSchema,
   listInternalLlmApiKeys,
   listInternalPhoneQimenReviews,
+  listInternalPointsClaimLinks,
+  listInternalPointsClaimRecords,
   listInternalPromotionApplications,
   listInternalPromotionCommissions,
   listInternalPromotionWithdrawals,
@@ -72,6 +83,9 @@ import type {
   InternalUserAdminSummaryResponse,
   InternalUserResponse,
   LlmApiKeyResponse,
+  LlmConcurrencyStatusResponse,
+  PointsClaimLinkResponse,
+  PointsClaimRecordResponse,
   PromotionApplicationResponse,
   PromotionCommissionResponse,
   PromotionRulesResponse,
@@ -88,14 +102,15 @@ import type {
 const ADMIN_TOKEN_KEY = 'easewise_internal_admin_token';
 
 type PrimaryNavKey = 'dashboard' | 'orders' | 'users' | 'features' | 'promotion' | 'settings';
-type FeatureNavKey = 'almanac' | 'phone-review';
+type FeatureNavKey = 'almanac' | 'phone-review' | 'four-pillars' | 'points-claim';
 type PromotionNavKey = 'review' | 'withdrawals' | 'commissions' | 'rules';
-type SettingsNavKey = 'basic-config' | 'customer-service' | 'voice' | 'safety' | 'service-keys';
+type SettingsNavKey = 'basic-config' | 'customer-service' | 'voice' | 'safety' | 'llm-concurrency' | 'service-keys';
 type DashboardMetric = DashboardResponse['sections'][number]['metrics'][number];
 type UserLinkedDestination = 'orders' | 'usage';
 type UserPointOperation = 'increase' | 'decrease' | 'set';
 type FeatureUsageWindowKey = 'today' | 'yesterday' | 'week' | 'month';
 type PhoneReviewAspectConfigModal = 'free' | 'order';
+type PointsClaimExpiryUnit = 'hours' | 'days';
 type SelectedUserInfoCard = {
   key: 'uid' | 'identity' | 'channel' | 'registered_at' | 'phone' | 'unionid';
   label: string;
@@ -143,6 +158,7 @@ const PHONE_REVIEW_ASPECT_UNLOCK_POINTS_CONFIG_KEY = 'phone_review.aspect_unlock
 const PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY = 'phone_review.free_aspect_keys';
 const PHONE_REVIEW_ASPECT_ORDER_CONFIG_KEY = 'phone_review.aspect_order';
 const PHONE_REVIEW_UNLOCK_ENFORCEMENT_CONFIG_KEY = 'phone_review.unlock_enforcement_enabled';
+const FOUR_PILLARS_UNLOCK_ENFORCEMENT_CONFIG_KEY = 'four_pillars.unlock_enforcement_enabled';
 const CUSTOMER_SERVICE_WECHAT_ID_CONFIG_KEY = 'customer_service.wechat_id';
 const CUSTOMER_SERVICE_CONTACT_URL_CONFIG_KEY = 'customer_service.contact_url';
 const CUSTOMER_SERVICE_QR_CODE_URL_CONFIG_KEY = 'customer_service.qr_code_url';
@@ -197,6 +213,8 @@ const primaryNavItems: Array<{key: PrimaryNavKey; label: string; desc: string}> 
 const featureNavItems: Array<{key: FeatureNavKey; label: string}> = [
   {key: 'almanac', label: '黄历相关设置'},
   {key: 'phone-review', label: '数字奇门手机号评测'},
+  {key: 'four-pillars', label: '四柱八字评测'},
+  {key: 'points-claim', label: '积分领取'},
 ];
 
 const promotionNavItems: Array<{key: PromotionNavKey; label: string}> = [
@@ -211,6 +229,7 @@ const settingsNavItems: Array<{key: SettingsNavKey; label: string}> = [
   {key: 'customer-service', label: '客服配置'},
   {key: 'voice', label: '语音播报'},
   {key: 'safety', label: '安全与合规'},
+  {key: 'llm-concurrency', label: 'DeepSeek 并发'},
   {key: 'service-keys', label: '服务密钥'},
 ];
 
@@ -227,6 +246,8 @@ const primaryNavIcons: Record<PrimaryNavKey, Component> = {
 const featureNavIcons: Record<FeatureNavKey, Component> = {
   almanac: Calendar,
   'phone-review': Smartphone,
+  'four-pillars': Calendar,
+  'points-claim': Gift,
 };
 const promotionNavIcons: Record<PromotionNavKey, Component> = {
   review: Users,
@@ -239,6 +260,7 @@ const settingsNavIcons: Record<SettingsNavKey, Component> = {
   'customer-service': MessageSquare,
   voice: Smartphone,
   safety: AlertTriangle,
+  'llm-concurrency': Sliders,
   'service-keys': Settings,
 };
 
@@ -277,6 +299,10 @@ const usageSceneSelectOptions = [
   {value: '', label: '全部功能', dotClass: 'bg-indigo-500'},
   {value: 'phone_review_base', label: '手机号评测', dotClass: 'bg-blue-500'},
   {value: 'phone_review_aspect_unlock', label: '维度解锁', dotClass: 'bg-emerald-500'},
+  {value: 'four_pillars_review_base', label: '四柱八字', dotClass: 'bg-indigo-500'},
+  {value: 'four_pillars_aspect_unlock', label: '四柱专项解锁', dotClass: 'bg-teal-500'},
+  {value: 'four_pillars_luck_cycle_render', label: '四柱大运综评', dotClass: 'bg-violet-500'},
+  {value: 'four_pillars_luck_year_render', label: '四柱流年单年', dotClass: 'bg-fuchsia-500'},
   {value: 'agent_reply', label: '智能体对话', dotClass: 'bg-purple-500'},
   {value: 'almanac_query', label: '黄历查询', dotClass: 'bg-amber-500'},
   {value: 'five_elements_query', label: '五行属性查询', dotClass: 'bg-cyan-500'},
@@ -293,6 +319,22 @@ const genderSelectOptions = [
   {value: '', label: '全部性别', dotClass: 'bg-indigo-500'},
   {value: 'male', label: '男', dotClass: 'bg-blue-500'},
   {value: 'female', label: '女', dotClass: 'bg-pink-500'},
+];
+
+const pointsClaimStatusSelectOptions = [
+  {value: '', label: '全部链接', dotClass: 'bg-indigo-500'},
+  {value: 'active', label: '有效', dotClass: 'bg-emerald-500'},
+  {value: 'expired', label: '已过期', dotClass: 'bg-gray-400'},
+  {value: 'disabled', label: '停用', dotClass: 'bg-red-500'},
+];
+
+const pointsClaimRecordStatusSelectOptions = [
+  {value: '', label: '全部动作', dotClass: 'bg-indigo-500'},
+  {value: 'granted', label: '成功领取', dotClass: 'bg-emerald-500'},
+  {value: 'already_claimed_this_week', label: '本周重复', dotClass: 'bg-amber-500'},
+  {value: 'expired', label: '链接过期', dotClass: 'bg-gray-400'},
+  {value: 'disabled', label: '链接停用', dotClass: 'bg-red-500'},
+  {value: 'not_started', label: '未开始', dotClass: 'bg-blue-500'},
 ];
 
 const booleanToggleSelectOptions = [
@@ -345,7 +387,9 @@ const dashboardLoading = ref(false);
 const dashboardError = ref('');
 
 const llmKeys = ref<LlmApiKeyResponse[]>([]);
+const llmConcurrency = ref<LlmConcurrencyStatusResponse | null>(null);
 const llmLoading = ref(false);
+const llmConcurrencyLoading = ref(false);
 const llmError = ref('');
 const llmSchema = ref<RuntimeConfigSchemaItemResponse[]>([]);
 const llmKeyFormMode = ref<'create' | 'edit' | null>(null);
@@ -357,6 +401,8 @@ const llmKeyForm = ref<InternalLlmApiKeyPayload>({
   secret_value: '',
   enabled: true,
   priority: 100,
+  max_concurrency: 450,
+  cooldown_seconds: 60,
   remark: '',
   last_operator: 'internal_admin',
 });
@@ -397,6 +443,32 @@ const phoneReviewFilters = ref({
 });
 const selectedPhoneReview = ref<InternalPhoneQimenReviewDetailResponse | null>(null);
 const phoneReviewDetailLoading = ref(false);
+
+const pointsClaimLoading = ref(false);
+const pointsClaimError = ref('');
+const pointsClaimLinks = ref<PointsClaimLinkResponse[]>([]);
+const pointsClaimTotal = ref(0);
+const pointsClaimPageSize = ref(20);
+const pointsClaimOffset = ref(0);
+const pointsClaimFilters = ref({status: '', keyword: ''});
+const pointsClaimRecordsFilters = ref({status: '', user_id: ''});
+const pointsClaimRecordsTotal = ref(0);
+const pointsClaimRecordsPageSize = ref(20);
+const pointsClaimRecordsOffset = ref(0);
+const pointsClaimCreating = ref(false);
+const pointsClaimForm = ref({
+  title: '',
+  points_amount: 500,
+  display_value_yuan: 0,
+  expires_value: 1,
+  expires_unit: 'days' as PointsClaimExpiryUnit,
+  operator_note: '',
+});
+const latestCreatedPointsClaimLink = ref<PointsClaimLinkResponse | null>(null);
+const selectedPointsClaimLink = ref<PointsClaimLinkResponse | null>(null);
+const selectedPointsClaimRecords = ref<PointsClaimRecordResponse[]>([]);
+const pointsClaimRecordsLoading = ref(false);
+const pointsClaimRecordsError = ref('');
 
 const userLoading = ref(false);
 const userError = ref('');
@@ -481,7 +553,10 @@ const selectedUserInfoCards = computed<SelectedUserInfoCard[]>(() => {
 const expandedUserInfoCard = computed(() => selectedUserInfoCards.value.find((item) => item.key === expandedUserInfoKey.value) || null);
 const activeCode = computed(() => {
   if (activePrimary.value === 'features') {
-    return activeFeature.value === 'almanac' ? 'features_almanac' : 'features_phone';
+    if (activeFeature.value === 'almanac') return 'features_almanac';
+    if (activeFeature.value === 'four-pillars') return 'features_four_pillars';
+    if (activeFeature.value === 'points-claim') return 'features_points_claim';
+    return 'features_phone';
   }
   if (activePrimary.value === 'promotion') {
     return `promo_${activePromotion.value}`;
@@ -497,6 +572,7 @@ const activeSettingsTitle = computed(() => {
     'customer-service': '客服配置',
     voice: '语音播报',
     safety: '安全与合规',
+    'llm-concurrency': 'DeepSeek 并发治理',
     'service-keys': '服务密钥管理',
   };
   return titleMap[activeSettings.value];
@@ -507,6 +583,7 @@ const activeSettingsDescription = computed(() => {
     'customer-service': '统一维护前台“联系客服”弹窗的二维码、微信号和各业务场景文案。',
     voice: '维护语音播报模式、自动播报、供应商、音色和缓存策略。',
     safety: '维护安全模式、允许功能和强制隐藏功能。',
+    'llm-concurrency': '查看 DeepSeek key 池、等待队列、429 冷却和前后台调度状态。',
     'service-keys': '配置 DeepSeek、阿里云 NLS / 百炼等第三方服务密钥。',
   };
   return descriptionMap[activeSettings.value];
@@ -516,6 +593,8 @@ const activeHeaderTitle = computed(() => {
   if (activePrimary.value === 'orders') return '会员充值订单审计部';
   if (activePrimary.value === 'users') return '测算用户流水分账部';
   if (activePrimary.value === 'features' && activeFeature.value === 'almanac') return '日常黄历万年历日课定制';
+  if (activePrimary.value === 'features' && activeFeature.value === 'four-pillars') return '四柱八字评测配置';
+  if (activePrimary.value === 'features' && activeFeature.value === 'points-claim') return '运营积分领取链接中心';
   if (activePrimary.value === 'features') return '手算五行手机号评测算法';
   if (activePrimary.value === 'promotion' && activePromotion.value === 'review') return '合伙人入驻资质审批中心';
   if (activePrimary.value === 'promotion' && activePromotion.value === 'withdrawals') return '合伙佣金提现风险审计部';
@@ -525,6 +604,7 @@ const activeHeaderTitle = computed(() => {
   if (activePrimary.value === 'settings' && activeSettings.value === 'customer-service') return '客服配置中心';
   if (activePrimary.value === 'settings' && activeSettings.value === 'voice') return '语音播报配置中心';
   if (activePrimary.value === 'settings' && activeSettings.value === 'safety') return '安全与合规配置';
+  if (activePrimary.value === 'settings' && activeSettings.value === 'llm-concurrency') return 'DeepSeek 并发治理中心';
   if (activePrimary.value === 'settings' && activeSettings.value === 'service-keys') return 'DeepSeek 与阿里云服务密钥库';
   return '全局系统基础配置部';
 });
@@ -551,6 +631,10 @@ const userOverviewCards = computed(() => [
 const featureUsageSceneLabels: Record<string, string> = {
   phone_review_base: '手机号评测',
   phone_review_aspect_unlock: '维度解锁',
+  four_pillars_review_base: '四柱八字',
+  four_pillars_aspect_unlock: '四柱专项解锁',
+  four_pillars_luck_cycle_render: '四柱大运综评',
+  four_pillars_luck_year_render: '四柱流年单年',
   agent_reply: '智能体玄学技能',
   almanac_query: '黄历查询',
   five_elements_query: '五行属性查询',
@@ -599,6 +683,24 @@ const featureUsageWindowCards = computed<FeatureUsageWindowCard[]>(() => {
       items: fallbackItems,
     };
   });
+});
+
+const pointsClaimCards = computed(() => {
+  const now = Date.now();
+  const activeCount = pointsClaimLinks.value.filter((item) => item.effective_status === 'active').length;
+  const claimedTotal = pointsClaimLinks.value.reduce((total, item) => total + item.claimed_user_count, 0);
+  const duplicateTotal = pointsClaimLinks.value.reduce((total, item) => total + item.duplicate_attempt_count, 0);
+  const expiringSoon = pointsClaimLinks.value.filter((item) => {
+    if (item.effective_status !== 'active') return false;
+    const expiresAt = Date.parse(item.expires_at);
+    return Number.isFinite(expiresAt) && expiresAt - now <= 24 * 60 * 60 * 1000;
+  }).length;
+  return [
+    {label: '当前有效链接', value: String(activeCount), sub: `列表共 ${pointsClaimTotal.value || pointsClaimLinks.value.length} 条`},
+    {label: '累计成功领取', value: String(claimedTotal), sub: '成功领取人数累计'},
+    {label: '重复领取动作', value: String(duplicateTotal), sub: '本周已领取后的访问'},
+    {label: '24h 内过期', value: String(expiringSoon), sub: '当前有效链接口径'},
+  ];
 });
 
 const orderCards = computed(() => [
@@ -669,13 +771,25 @@ const phoneReviewAspectConfigModal = ref<PhoneReviewAspectConfigModal | null>(nu
 const featureConfigItems = computed(() => sortRuntimeConfigItems(runtimeConfigSchema.value.filter((item) => (
   !item.admin_hidden
   && item.group === '功能管理'
-  && item.config_key.startsWith('phone_review.')
-  && item.config_key !== PHONE_REVIEW_UNLOCK_ENFORCEMENT_CONFIG_KEY
+  && item.config_key.startsWith(activeFeatureConfigPrefix.value)
+  && item.config_key !== activeFeatureUnlockEnforcementConfigKey.value
 ))));
-const phoneReviewBaseCostItem = computed(() => featureConfigItems.value.find((item) => item.config_key === PHONE_REVIEW_BASE_POINTS_CONFIG_KEY));
-const phoneReviewAspectUnlockCostItem = computed(() => featureConfigItems.value.find((item) => item.config_key === PHONE_REVIEW_ASPECT_UNLOCK_POINTS_CONFIG_KEY));
+const activeFeatureConfigPrefix = computed(() => (activeFeature.value === 'four-pillars' ? 'four_pillars.' : 'phone_review.'));
+const activeFeatureUnlockEnforcementConfigKey = computed(() => (activeFeature.value === 'four-pillars' ? FOUR_PILLARS_UNLOCK_ENFORCEMENT_CONFIG_KEY : PHONE_REVIEW_UNLOCK_ENFORCEMENT_CONFIG_KEY));
+const activeFeatureDisplayName = computed(() => (activeFeature.value === 'four-pillars' ? '四柱八字评测' : '手机号评测'));
+const activeFeatureDescriptionText = computed(() => (
+  activeFeature.value === 'four-pillars'
+    ? '维护四柱八字基础消耗、专项消耗、免费专项和展示顺序。'
+    : '基础消耗、专项消耗、免费专项和专项展示顺序。'
+));
+const phoneReviewBaseCostItem = computed(() => featureConfigItems.value.find((item) => item.config_key.endsWith('.base_points_cost')));
+const phoneReviewAspectUnlockCostItem = computed(() => featureConfigItems.value.find((item) => item.config_key.endsWith('.aspect_unlock_points_cost')));
 const phoneReviewFreeAspectsItem = computed(() => featureConfigItems.value.find((item) => item.config_key === PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY));
 const phoneReviewAspectOrderItem = computed(() => featureConfigItems.value.find((item) => item.config_key === PHONE_REVIEW_ASPECT_ORDER_CONFIG_KEY));
+const featureExtraConfigItems = computed(() => featureConfigItems.value.filter((item) => (
+  !item.config_key.endsWith('.base_points_cost')
+  && !item.config_key.endsWith('.aspect_unlock_points_cost')
+)));
 const basicSystemConfigItems = computed(() => sortRuntimeConfigItems(runtimeConfigSchema.value.filter((item) => (
   !item.admin_hidden
   && item.group === '系统配置'
@@ -684,9 +798,22 @@ const basicSystemConfigItems = computed(() => sortRuntimeConfigItems(runtimeConf
   && !CUSTOMER_SERVICE_CONFIG_KEYS.has(item.config_key)
   && item.admin_section !== '语音播报'
   && item.admin_section !== '安全与合规'
+  && item.admin_section !== 'DeepSeek 并发治理'
 ))));
 const voiceSystemConfigItems = computed(() => sortRuntimeConfigItems(runtimeConfigSchema.value.filter((item) => !item.admin_hidden && item.admin_section === '语音播报')));
 const safetySystemConfigItems = computed(() => sortRuntimeConfigItems(runtimeConfigSchema.value.filter((item) => !item.admin_hidden && item.admin_section === '安全与合规')));
+const llmConcurrencyConfigItems = computed(() => sortRuntimeConfigItems(runtimeConfigSchema.value.filter((item) => !item.admin_hidden && item.admin_section === 'DeepSeek 并发治理')));
+const llmConcurrencyCards = computed(() => {
+  const status = llmConcurrency.value;
+  return [
+    {label: '当前并发', value: `${status?.global_inflight ?? 0} / ${status?.total_capacity ?? 0}`, sub: `前台 ${status?.foreground_inflight ?? 0} · 后台 ${status?.background_inflight ?? 0}`},
+    {label: '等待队列', value: `${status?.foreground_waiting ?? 0} / ${status?.background_waiting ?? 0}`, sub: '前台 / 后台'},
+    {label: '启用 Key', value: `${status?.enabled_key_count ?? 0}`, sub: `backend ${status?.backend || 'memory'}`},
+    {label: '近1小时 429', value: `${status?.recent_429_count ?? 0}`, sub: `超时 ${status?.recent_timeout_count ?? 0}`},
+    {label: '平均等待', value: `${status?.avg_wait_ms ?? 0} ms`, sub: `平均响应 ${status?.avg_duration_ms ?? 0} ms`},
+    {label: 'Redis', value: status?.redis_configured ? '已配置' : '未配置', sub: status?.backend_available ? 'backend 可用' : (status?.backend_error || 'backend 不可用')},
+  ];
+});
 const customerServiceBaseConfigItems = computed(() => [
   runtimeConfigSchemaItemForKey(CUSTOMER_SERVICE_WECHAT_ID_CONFIG_KEY, '客服微信号'),
   runtimeConfigSchemaItemForKey(CUSTOMER_SERVICE_QR_GUIDANCE_TEXT_CONFIG_KEY, '二维码提示文案'),
@@ -742,6 +869,18 @@ const phoneReviewPageStart = computed(() => (phoneReviewTotal.value === 0 ? 0 : 
 const phoneReviewPageEnd = computed(() => Math.min(phoneReviewOffset.value + phoneReviewRecords.value.length, phoneReviewTotal.value));
 const canGoPrevPhoneReviewPage = computed(() => phoneReviewOffset.value > 0 && !phoneReviewLoading.value);
 const canGoNextPhoneReviewPage = computed(() => phoneReviewOffset.value + phoneReviewPageSize.value < phoneReviewTotal.value && !phoneReviewLoading.value);
+const pointsClaimTotalPages = computed(() => Math.max(1, Math.ceil(pointsClaimTotal.value / pointsClaimPageSize.value)));
+const pointsClaimCurrentPage = computed(() => Math.floor(pointsClaimOffset.value / pointsClaimPageSize.value) + 1);
+const pointsClaimPageStart = computed(() => (pointsClaimTotal.value === 0 ? 0 : pointsClaimOffset.value + 1));
+const pointsClaimPageEnd = computed(() => Math.min(pointsClaimOffset.value + pointsClaimLinks.value.length, pointsClaimTotal.value));
+const canGoPrevPointsClaimPage = computed(() => pointsClaimOffset.value > 0 && !pointsClaimLoading.value);
+const canGoNextPointsClaimPage = computed(() => pointsClaimOffset.value + pointsClaimPageSize.value < pointsClaimTotal.value && !pointsClaimLoading.value);
+const pointsClaimRecordsTotalPages = computed(() => Math.max(1, Math.ceil(pointsClaimRecordsTotal.value / pointsClaimRecordsPageSize.value)));
+const pointsClaimRecordsCurrentPage = computed(() => Math.floor(pointsClaimRecordsOffset.value / pointsClaimRecordsPageSize.value) + 1);
+const pointsClaimRecordsPageStart = computed(() => (pointsClaimRecordsTotal.value === 0 ? 0 : pointsClaimRecordsOffset.value + 1));
+const pointsClaimRecordsPageEnd = computed(() => Math.min(pointsClaimRecordsOffset.value + selectedPointsClaimRecords.value.length, pointsClaimRecordsTotal.value));
+const canGoPrevPointsClaimRecordsPage = computed(() => pointsClaimRecordsOffset.value > 0 && !pointsClaimRecordsLoading.value);
+const canGoNextPointsClaimRecordsPage = computed(() => pointsClaimRecordsOffset.value + pointsClaimRecordsPageSize.value < pointsClaimRecordsTotal.value && !pointsClaimRecordsLoading.value);
 const phoneReviewFreeAspectSummary = computed(() => {
   const keys = runtimeConfigStringList(PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY).filter(isKnownPhoneReviewAspectKey);
   return keys.length ? keys.map(aspectLabel).join('、') : '未设置免费专项';
@@ -775,7 +914,7 @@ function isPrimaryNavKey(value: string | null): value is PrimaryNavKey {
 }
 
 function isFeatureNavKey(value: string | null): value is FeatureNavKey {
-  return ['almanac', 'phone-review'].includes(value || '');
+  return ['almanac', 'phone-review', 'four-pillars', 'points-claim'].includes(value || '');
 }
 
 function isPromotionNavKey(value: string | null): value is PromotionNavKey {
@@ -783,7 +922,7 @@ function isPromotionNavKey(value: string | null): value is PromotionNavKey {
 }
 
 function isSettingsNavKey(value: string | null): value is SettingsNavKey {
-  return ['basic-config', 'customer-service', 'voice', 'safety', 'service-keys'].includes(value || '');
+  return ['basic-config', 'customer-service', 'voice', 'safety', 'llm-concurrency', 'service-keys'].includes(value || '');
 }
 
 function userDisplayLabel(userId: string) {
@@ -847,6 +986,8 @@ function writeAdminHistory(query: AdminRouteQuery, mode: 'push' | 'replace' = 'p
 function clearOverlayState() {
   selectedUsage.value = null;
   selectedPhoneReview.value = null;
+  selectedPointsClaimLink.value = null;
+  selectedPointsClaimRecords.value = [];
   selectedUser.value = null;
   selectedOrder.value = null;
   selectedPromotionApplication.value = null;
@@ -1021,11 +1162,17 @@ async function loadActivePage() {
     await Promise.allSettled([loadDashboard(), loadOrders(), loadUsers(), loadUsageRecords(), loadLlmKeys()]);
   }
   if (activePrimary.value === 'features') {
-    await Promise.allSettled([loadRuntimeSchema(), loadRuntimeConfig()]);
+    if (activeFeature.value === 'points-claim') {
+      await loadPointsClaimLinks();
+    } else {
+      await Promise.allSettled([loadRuntimeSchema(), loadRuntimeConfig()]);
+    }
   }
   if (activePrimary.value === 'settings') {
     if (activeSettings.value === 'service-keys') {
       await loadLlmKeys();
+    } else if (activeSettings.value === 'llm-concurrency') {
+      await Promise.allSettled([loadRuntimeSchema(), loadRuntimeConfig(), loadLlmConcurrency(), loadLlmKeys()]);
     } else {
       await Promise.allSettled([loadRuntimeSchema(), loadRuntimeConfig()]);
     }
@@ -1071,6 +1218,21 @@ async function loadLlmKeys() {
     globalMessage.value = message;
   } finally {
     llmLoading.value = false;
+  }
+}
+
+async function loadLlmConcurrency() {
+  llmConcurrencyLoading.value = true;
+  llmError.value = '';
+  try {
+    llmConcurrency.value = await getInternalLlmConcurrency(adminToken.value);
+    globalMessage.value = '';
+  } catch (error) {
+    const message = resolveError(error);
+    llmError.value = message;
+    globalMessage.value = message;
+  } finally {
+    llmConcurrencyLoading.value = false;
   }
 }
 
@@ -1258,6 +1420,207 @@ async function loadPhoneReviewRecords(options: {resetPage?: boolean} = {}) {
   } finally {
     phoneReviewLoading.value = false;
   }
+}
+
+async function loadPointsClaimLinks(options: {resetPage?: boolean} = {}) {
+  if (options.resetPage) {
+    pointsClaimOffset.value = 0;
+  }
+  pointsClaimLoading.value = true;
+  pointsClaimError.value = '';
+  try {
+    const response = await listInternalPointsClaimLinks(adminToken.value, {
+      ...pointsClaimFilters.value,
+      limit: pointsClaimPageSize.value,
+      offset: pointsClaimOffset.value,
+    });
+    pointsClaimLinks.value = response.items;
+    pointsClaimTotal.value = response.total;
+    pointsClaimPageSize.value = response.limit;
+    pointsClaimOffset.value = response.offset;
+    globalMessage.value = '';
+  } catch (error) {
+    const message = resolveError(error);
+    pointsClaimError.value = message;
+    globalMessage.value = message;
+  } finally {
+    pointsClaimLoading.value = false;
+  }
+}
+
+async function searchPointsClaimLinks() {
+  await loadPointsClaimLinks({resetPage: true});
+}
+
+function resetPointsClaimFilters() {
+  pointsClaimFilters.value = {status: '', keyword: ''};
+  pointsClaimOffset.value = 0;
+}
+
+async function changePointsClaimPage(direction: number) {
+  const maxOffset = Math.max(0, (pointsClaimTotalPages.value - 1) * pointsClaimPageSize.value);
+  const nextOffset = Math.min(maxOffset, Math.max(0, pointsClaimOffset.value + direction * pointsClaimPageSize.value));
+  if (nextOffset === pointsClaimOffset.value) {
+    return;
+  }
+  pointsClaimOffset.value = nextOffset;
+  await loadPointsClaimLinks();
+}
+
+function validatePointsClaimForm(): string | null {
+  const title = pointsClaimForm.value.title.trim();
+  const pointsAmount = Math.trunc(Number(pointsClaimForm.value.points_amount));
+  const displayValueYuan = Number(pointsClaimForm.value.display_value_yuan);
+  const expiresInHours = resolvePointsClaimExpiresInHours();
+  if (!title) {
+    return '请填写链接名称，方便客服识别活动。';
+  }
+  if (!Number.isFinite(pointsAmount) || pointsAmount <= 0) {
+    return '领取积分必须是大于 0 的整数。';
+  }
+  if (!Number.isFinite(displayValueYuan) || displayValueYuan < 0) {
+    return '展示人民币价值不能小于 0。';
+  }
+  if (!expiresInHours) {
+    return pointsClaimForm.value.expires_unit === 'days'
+      ? '有效期必须是 1 到 30 天之间的整数。'
+      : '有效期必须是 1 到 720 小时之间的整数。';
+  }
+  if (expiresInHours > 24 * 30) {
+    return '有效期最多可配置 30 天。';
+  }
+  return null;
+}
+
+function resolvePointsClaimExpiresInHours(): number | null {
+  const rawValue = Math.trunc(Number(pointsClaimForm.value.expires_value));
+  if (!Number.isFinite(rawValue) || rawValue <= 0) {
+    return null;
+  }
+  const multiplier = pointsClaimForm.value.expires_unit === 'days' ? 24 : 1;
+  return rawValue * multiplier;
+}
+
+async function createPointsClaimLink() {
+  const validationMessage = validatePointsClaimForm();
+  if (validationMessage) {
+    pointsClaimError.value = validationMessage;
+    globalMessage.value = validationMessage;
+    return;
+  }
+  pointsClaimCreating.value = true;
+  pointsClaimError.value = '';
+  try {
+    const created = await createInternalPointsClaimLink(adminToken.value, {
+      title: pointsClaimForm.value.title.trim(),
+      points_amount: Math.trunc(Number(pointsClaimForm.value.points_amount)),
+      display_value_cents: Math.round(Number(pointsClaimForm.value.display_value_yuan || 0) * 100),
+      expires_in_hours: resolvePointsClaimExpiresInHours(),
+      operator_note: pointsClaimForm.value.operator_note.trim() || null,
+    });
+    latestCreatedPointsClaimLink.value = created;
+    pointsClaimForm.value = {
+      title: '',
+      points_amount: created.points_amount,
+      display_value_yuan: Number((created.display_value_cents / 100).toFixed(2)),
+      expires_value: 1,
+      expires_unit: 'days',
+      operator_note: '',
+    };
+    globalMessage.value = '积分领取链接已生成';
+    await loadPointsClaimLinks({resetPage: true});
+  } catch (error) {
+    const message = resolveError(error);
+    pointsClaimError.value = message;
+    globalMessage.value = message;
+  } finally {
+    pointsClaimCreating.value = false;
+  }
+}
+
+async function openPointsClaimLink(link: PointsClaimLinkResponse) {
+  selectedPointsClaimLink.value = link;
+  selectedPointsClaimRecords.value = [];
+  pointsClaimRecordsFilters.value = {status: '', user_id: ''};
+  pointsClaimRecordsOffset.value = 0;
+  try {
+    selectedPointsClaimLink.value = await getInternalPointsClaimLink(adminToken.value, link.claim_link_id);
+  } catch (error) {
+    globalMessage.value = resolveError(error);
+  }
+  await loadPointsClaimRecords({resetPage: true});
+}
+
+async function disablePointsClaimLink(link: PointsClaimLinkResponse) {
+  if (
+    typeof window !== 'undefined'
+    && !window.confirm(`确认停用「${link.title}」？停用后用户访问会被记录但不再发放积分。`)
+  ) {
+    return;
+  }
+  pointsClaimLoading.value = true;
+  try {
+    const updated = await disableInternalPointsClaimLink(adminToken.value, link.claim_link_id, {
+      operator_note: 'internal_admin_disabled',
+    });
+    latestCreatedPointsClaimLink.value = latestCreatedPointsClaimLink.value?.claim_link_id === updated.claim_link_id
+      ? updated
+      : latestCreatedPointsClaimLink.value;
+    if (selectedPointsClaimLink.value?.claim_link_id === updated.claim_link_id) {
+      selectedPointsClaimLink.value = updated;
+    }
+    globalMessage.value = '积分领取链接已停用';
+    await loadPointsClaimLinks();
+  } catch (error) {
+    globalMessage.value = resolveError(error);
+  } finally {
+    pointsClaimLoading.value = false;
+  }
+}
+
+async function loadPointsClaimRecords(options: {resetPage?: boolean} = {}) {
+  if (!selectedPointsClaimLink.value) {
+    return;
+  }
+  if (options.resetPage) {
+    pointsClaimRecordsOffset.value = 0;
+  }
+  pointsClaimRecordsLoading.value = true;
+  pointsClaimRecordsError.value = '';
+  try {
+    const response = await listInternalPointsClaimRecords(adminToken.value, selectedPointsClaimLink.value.claim_link_id, {
+      ...pointsClaimRecordsFilters.value,
+      limit: pointsClaimRecordsPageSize.value,
+      offset: pointsClaimRecordsOffset.value,
+    });
+    selectedPointsClaimRecords.value = response.items;
+    pointsClaimRecordsTotal.value = response.total;
+    pointsClaimRecordsPageSize.value = response.limit;
+    pointsClaimRecordsOffset.value = response.offset;
+  } catch (error) {
+    pointsClaimRecordsError.value = resolveError(error);
+  } finally {
+    pointsClaimRecordsLoading.value = false;
+  }
+}
+
+async function searchPointsClaimRecords() {
+  await loadPointsClaimRecords({resetPage: true});
+}
+
+function resetPointsClaimRecordsFilters() {
+  pointsClaimRecordsFilters.value = {status: '', user_id: ''};
+  pointsClaimRecordsOffset.value = 0;
+}
+
+async function changePointsClaimRecordsPage(direction: number) {
+  const maxOffset = Math.max(0, (pointsClaimRecordsTotalPages.value - 1) * pointsClaimRecordsPageSize.value);
+  const nextOffset = Math.min(maxOffset, Math.max(0, pointsClaimRecordsOffset.value + direction * pointsClaimRecordsPageSize.value));
+  if (nextOffset === pointsClaimRecordsOffset.value) {
+    return;
+  }
+  pointsClaimRecordsOffset.value = nextOffset;
+  await loadPointsClaimRecords();
 }
 
 async function searchPhoneReviewRecords() {
@@ -1553,11 +1916,13 @@ function selectFeature(key: FeatureNavKey) {
   isFeaturesMenuOpen.value = true;
   activeFeature.value = key;
   activePrimary.value = 'features';
-  selectedUsage.value = null;
-  selectedPhoneReview.value = null;
+  clearOverlayState();
   writeAdminHistory({view: 'features', feature: key});
   if (key === 'phone-review') {
     void Promise.allSettled([loadPhoneQimenSummary(), loadPhoneReviewRecords()]);
+  }
+  if (key === 'points-claim') {
+    void loadPointsClaimLinks();
   }
 }
 
@@ -1916,12 +2281,30 @@ async function saveRuntimeConfig(items: RuntimeConfigSchemaItemResponse[] = runt
       value: value === undefined ? null : value,
     };
   });
+  const backendEntry = entries.find((item) => item.config_key === 'llm.concurrency.backend');
+  if (backendEntry?.value === 'redis' && !llmConcurrency.value?.redis_configured) {
+    globalMessage.value = 'Redis URL 未在服务端环境变量中配置，不能切换到 redis backend。';
+    return;
+  }
+  const defaultConcurrencyEntry = entries.find((item) => item.config_key === 'llm.deepseek.default_key_max_concurrency');
+  if (Number(defaultConcurrencyEntry?.value || 0) > 450 && typeof window !== 'undefined') {
+    const confirmed = window.confirm('默认单 Key 并发超过 450，请确认 DeepSeek 侧已扩容。继续保存？');
+    if (!confirmed) return;
+  }
+  const backgroundRatioEntry = entries.find((item) => item.config_key === 'llm.deepseek.background_max_concurrency_ratio');
+  if (Number(backgroundRatioEntry?.value || 0) > 0.8) {
+    globalMessage.value = '后台预热最大并发占比不能超过 80%。';
+    return;
+  }
   runtimeConfigLoading.value = true;
   try {
     const result = await updateInternalRuntimeConfig(adminToken.value, entries);
     mergeRuntimeConfigEntries(result.items);
     runtimeConfigDirty.value = false;
     globalMessage.value = successMessage;
+    if (entries.some((item) => item.config_key.startsWith('llm.'))) {
+      await Promise.allSettled([loadLlmConcurrency(), loadLlmKeys()]);
+    }
   } catch (error) {
     globalMessage.value = resolveError(error);
   } finally {
@@ -2211,6 +2594,8 @@ function beginCreateLlmKey() {
     secret_value: '',
     enabled: true,
     priority: 100,
+    max_concurrency: 450,
+    cooldown_seconds: 60,
     remark: '',
     last_operator: 'internal_admin',
   };
@@ -2228,6 +2613,8 @@ function beginEditLlmKey(item: LlmApiKeyResponse) {
     secret_value: '',
     enabled: item.enabled,
     priority: item.priority,
+    max_concurrency: item.max_concurrency || 450,
+    cooldown_seconds: item.cooldown_seconds || 60,
     remark: item.remark || '',
     last_operator: item.last_operator || 'internal_admin',
   };
@@ -2259,10 +2646,30 @@ function serviceKeyModelLabel(provider: string, model: string) {
   return (serviceKeyPresetMap[provider] || []).find((item) => item.value === model)?.label || model;
 }
 
+function llmKeyRuntimeLabel(item: LlmApiKeyResponse) {
+  if (!item.enabled) return '停用';
+  if (item.cooldown_until) return '冷却中';
+  if (item.current_inflight >= item.max_concurrency) return '已满';
+  if (item.last_error_message) return '有错误';
+  return item.priority <= 100 ? '主 Key' : '备用 Key';
+}
+
+function llmKeyRuntimeClass(item: LlmApiKeyResponse) {
+  if (!item.enabled) return 'bg-gray-50 text-gray-500 border-gray-100';
+  if (item.cooldown_until) return 'bg-amber-50 text-amber-700 border-amber-100';
+  if (item.current_inflight >= item.max_concurrency) return 'bg-red-50 text-red-600 border-red-100';
+  if (item.last_error_message) return 'bg-orange-50 text-orange-700 border-orange-100';
+  return item.priority <= 100 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100';
+}
+
 async function submitLlmKeyForm() {
   if (llmKeyFormMode.value === 'create' && !String(llmKeyForm.value.secret_value || '').trim()) {
     globalMessage.value = '请填写真实 Key，保存后系统只展示脱敏值';
     return;
+  }
+  if (Number(llmKeyForm.value.max_concurrency || 0) > 450 && typeof window !== 'undefined') {
+    const confirmed = window.confirm('该 Key 并发上限超过 450，请确认 DeepSeek 侧已扩容。继续保存？');
+    if (!confirmed) return;
   }
   llmLoading.value = true;
   try {
@@ -2273,7 +2680,7 @@ async function submitLlmKeyForm() {
     }
     llmKeyFormMode.value = null;
     llmEditingKeyId.value = '';
-    await loadLlmKeys();
+    await Promise.allSettled([loadLlmKeys(), loadLlmConcurrency()]);
   } catch (error) {
     globalMessage.value = resolveError(error);
   } finally {
@@ -2621,6 +3028,56 @@ function usageStatusClass(status: string) {
   if (status === 'success' || status === 'completed') return 'bg-emerald-50 text-emerald-600 border-emerald-100';
   if (status === 'failed') return 'bg-red-50 text-red-600 border-red-100';
   return 'bg-amber-50 text-amber-600 border-amber-100';
+}
+
+function pointsClaimStatusLabel(status: string | null | undefined) {
+  const map: Record<string, string> = {
+    active: '有效',
+    expired: '已过期',
+    disabled: '停用',
+    not_started: '未开始',
+    granted: '成功领取',
+    already_claimed_this_week: '本周重复',
+  };
+  return map[status || ''] || status || '--';
+}
+
+function pointsClaimStatusClass(status: string | null | undefined) {
+  if (status === 'active' || status === 'granted') return 'bg-emerald-50 text-emerald-600 border-emerald-100';
+  if (status === 'already_claimed_this_week') return 'bg-amber-50 text-amber-700 border-amber-100';
+  if (status === 'disabled') return 'bg-red-50 text-red-600 border-red-100';
+  if (status === 'expired') return 'bg-gray-50 text-gray-500 border-gray-200';
+  if (status === 'not_started') return 'bg-blue-50 text-blue-600 border-blue-100';
+  return 'bg-slate-50 text-slate-500 border-slate-200';
+}
+
+function pointsClaimRecordFailureLabel(record: PointsClaimRecordResponse) {
+  if (record.status === 'granted') return '已发放到账';
+  if (record.status === 'already_claimed_this_week') return '本周已领取过免费积分';
+  if (record.failure_reason === 'claim_link_expired' || record.status === 'expired') return '访问时链接已过期';
+  if (record.failure_reason === 'claim_link_disabled' || record.status === 'disabled') return '访问时链接已停用';
+  if (record.failure_reason === 'claim_link_not_started' || record.status === 'not_started') return '访问时链接未生效';
+  return record.failure_reason || '--';
+}
+
+function formatClaimMoney(cents: number | null | undefined) {
+  return formatAmount(Number(cents || 0));
+}
+
+function formatClaimDuration(hours: number | null | undefined) {
+  const normalizedHours = Math.trunc(Number(hours || 0));
+  if (!Number.isFinite(normalizedHours) || normalizedHours <= 0) return '--';
+  if (normalizedHours % 24 === 0) {
+    return `${normalizedHours / 24} 天`;
+  }
+  return `${normalizedHours} 小时`;
+}
+
+function formatClaimUrl(link: PointsClaimLinkResponse | null | undefined) {
+  if (!link?.claim_url) return '';
+  if (/^https?:\/\//i.test(link.claim_url)) return link.claim_url;
+  if (typeof window === 'undefined') return link.claim_url;
+  return `${window.location.origin}${link.claim_url.startsWith('/') ? link.claim_url : `/${link.claim_url}`}`;
 }
 
 function userStatusLabel(status: string) {
@@ -3454,15 +3911,292 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
+          <div v-else-if="activePrimary === 'features' && activeFeature === 'points-claim'" class="space-y-6 text-left animate-fade-in">
+            <div class="bg-white border border-gray-100 rounded-2xl p-6 space-y-6 shadow-sm">
+              <div class="flex flex-wrap justify-between items-start gap-4 pb-4 border-b border-gray-100">
+                <div class="space-y-0.5 block">
+                  <h3 class="font-serif text-lg font-bold text-brand-primary flex items-center gap-2">
+                    <Gift :size="20" />
+                    <span>积分领取</span>
+                  </h3>
+                  <p class="text-xs text-brand-secondary">创建运营临时链接，按自然周限制用户成功领取次数，并保留重复访问记录。</p>
+                </div>
+                <button
+                  @click="loadPointsClaimLinks"
+                  class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10 flex items-center gap-1.5"
+                >
+                  {{ pointsClaimLoading ? '刷新中...' : '刷新链接' }}
+                </button>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div v-for="item in pointsClaimCards" :key="item.label" class="bg-brand-paper/45 border border-gray-100 rounded-xl p-4">
+                  <div class="text-[10px] text-brand-secondary">{{ item.label }}</div>
+                  <div class="text-xl font-bold font-mono mt-1 text-brand-ink-strong">{{ item.value }}</div>
+                  <div class="text-[10px] text-brand-secondary">{{ item.sub }}</div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 xl:grid-cols-[minmax(260px,0.3fr)_minmax(0,0.7fr)] gap-4 items-start">
+                <section class="bg-brand-paper/35 border border-gray-100 rounded-2xl p-4 space-y-3">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 class="font-serif text-sm font-bold text-brand-ink-strong">生成临时领取链接</h4>
+                    </div>
+                    <span class="rounded-full bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[9.5px] font-bold text-emerald-700">周限 1 次</span>
+                  </div>
+
+                  <div class="grid grid-cols-1 gap-2.5 text-xs">
+                    <label class="space-y-1.5 block">
+                      <span class="text-[10.5px] font-bold text-brand-secondary">链接名称</span>
+                      <input
+                        v-model="pointsClaimForm.title"
+                        type="text"
+                        maxlength="128"
+                        class="w-full bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs text-brand-ink-strong outline-none focus:border-brand-primary"
+                        placeholder="如：端午客服福利 500 积分"
+                      />
+                    </label>
+                    <div class="grid grid-cols-2 gap-2">
+                      <label class="space-y-1.5 block">
+                        <span class="text-[10.5px] font-bold text-brand-secondary">领取积分</span>
+                        <input
+                          v-model.number="pointsClaimForm.points_amount"
+                          type="number"
+                          min="1"
+                          step="1"
+                          class="w-full bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs font-mono text-brand-ink-strong outline-none focus:border-brand-primary"
+                        />
+                      </label>
+                      <label class="space-y-1.5 block">
+                        <span class="text-[10.5px] font-bold text-brand-secondary">人民币价值</span>
+                        <input
+                          v-model.number="pointsClaimForm.display_value_yuan"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="w-full bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs font-mono text-brand-ink-strong outline-none focus:border-brand-primary"
+                          placeholder="0.00"
+                        />
+                      </label>
+                    </div>
+                    <label class="space-y-1.5 block">
+                      <span class="text-[10.5px] font-bold text-brand-secondary">有效期</span>
+                      <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                        <input
+                          v-model.number="pointsClaimForm.expires_value"
+                          type="number"
+                          min="1"
+                          :max="pointsClaimForm.expires_unit === 'days' ? 30 : 720"
+                          step="1"
+                          class="w-full bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs font-mono text-brand-ink-strong outline-none focus:border-brand-primary"
+                          :placeholder="pointsClaimForm.expires_unit === 'days' ? '最多 30' : '最多 720'"
+                        />
+                        <div class="grid grid-cols-2 gap-1 rounded-lg border border-gray-100 bg-white p-1">
+                          <button
+                            type="button"
+                            @click="pointsClaimForm.expires_unit = 'hours'"
+                            class="px-3 py-1.5 rounded-md text-[10.5px] font-bold transition-colors"
+                            :class="pointsClaimForm.expires_unit === 'hours' ? 'bg-brand-primary text-white shadow-sm shadow-brand-primary/10' : 'text-brand-secondary hover:bg-brand-paper'"
+                          >
+                            小时
+                          </button>
+                          <button
+                            type="button"
+                            @click="pointsClaimForm.expires_unit = 'days'"
+                            class="px-3 py-1.5 rounded-md text-[10.5px] font-bold transition-colors"
+                            :class="pointsClaimForm.expires_unit === 'days' ? 'bg-brand-primary text-white shadow-sm shadow-brand-primary/10' : 'text-brand-secondary hover:bg-brand-paper'"
+                          >
+                            天
+                          </button>
+                        </div>
+                      </div>
+                      <span class="block text-[10px] text-brand-secondary">最多 30 天。</span>
+                    </label>
+                    <label class="space-y-1.5 block">
+                      <span class="text-[10.5px] font-bold text-brand-secondary">内部备注</span>
+                      <textarea
+                        v-model="pointsClaimForm.operator_note"
+                        maxlength="512"
+                        class="w-full bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs text-brand-ink-strong outline-none focus:border-brand-primary min-h-14"
+                        placeholder="批次或渠道，可选"
+                      ></textarea>
+                    </label>
+                  </div>
+
+                  <div v-if="pointsClaimError" class="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                    {{ pointsClaimError }}
+                  </div>
+
+                  <button
+                    @click="createPointsClaimLink"
+                    :disabled="pointsClaimCreating"
+                    class="w-full bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {{ pointsClaimCreating ? '生成中...' : '生成领取链接' }}
+                  </button>
+
+                  <div v-if="latestCreatedPointsClaimLink" class="bg-white border border-emerald-100 rounded-xl p-3 space-y-2">
+                    <div class="flex items-center justify-between gap-3">
+                      <span class="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
+                        <CheckCircle2 :size="14" />
+                        <span>最新链接已生成</span>
+                      </span>
+                      <span class="text-[10px] text-brand-secondary font-mono">{{ formatTime(latestCreatedPointsClaimLink.expires_at) }}</span>
+                    </div>
+                    <p class="font-mono text-[10.5px] text-brand-ink-strong break-all select-all">{{ formatClaimUrl(latestCreatedPointsClaimLink) }}</p>
+                    <div class="flex flex-wrap gap-2">
+                      <button @click="copyText(formatClaimUrl(latestCreatedPointsClaimLink), '领取链接')" class="bg-brand-primary text-white px-3 py-1.5 rounded-lg text-[10.5px] font-bold flex items-center gap-1.5">
+                        <Copy :size="12" />
+                        <span>复制链接</span>
+                      </button>
+                      <a :href="formatClaimUrl(latestCreatedPointsClaimLink)" target="_blank" rel="noreferrer" class="bg-white border border-gray-100 text-brand-primary px-3 py-1.5 rounded-lg text-[10.5px] font-bold flex items-center gap-1.5">
+                        <ExternalLink :size="12" />
+                        <span>打开预览</span>
+                      </a>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="bg-white border border-gray-100 rounded-2xl p-5 space-y-4">
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 class="font-serif text-base font-bold text-brand-ink-strong">领取链接列表</h4>
+                      <p class="text-[11.5px] text-brand-secondary">成功领取、重复访问和链接生命周期在这里追踪。</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <input v-model="pointsClaimFilters.keyword" class="bg-gray-50 border border-gray-100 p-2.5 rounded-lg text-xs text-brand-ink-strong outline-none focus:border-brand-primary w-56" placeholder="名称 / 链接码 / ID" />
+                      <AdminSelect
+                        v-model="pointsClaimFilters.status"
+                        :options="pointsClaimStatusSelectOptions"
+                        min-width-class="min-w-[132px]"
+                        panel-width-class="w-40"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="flex flex-wrap justify-end gap-2">
+                    <button @click="resetPointsClaimFilters(); loadPointsClaimLinks({resetPage: true})" class="bg-white border border-gray-100 text-brand-secondary px-4 py-2 rounded-xl text-xs font-bold hover:bg-gray-50">
+                      重置
+                    </button>
+                    <button @click="searchPointsClaimLinks" class="bg-brand-primary text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-brand-primary-strong">
+                      {{ pointsClaimLoading ? '查询中...' : '查询链接' }}
+                    </button>
+                  </div>
+
+                  <div v-if="pointsClaimError" class="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                    {{ pointsClaimError }}
+                  </div>
+
+                  <div class="overflow-x-auto border border-gray-100 rounded-xl bg-white">
+                    <table class="w-full table-fixed text-xs font-sans text-left">
+                      <colgroup>
+                        <col class="w-[220px]" />
+                        <col class="w-[92px]" />
+                        <col class="w-[56px]" />
+                        <col class="w-[72px]" />
+                        <col class="w-[72px]" />
+                        <col class="w-[132px]" />
+                        <col class="w-[132px]" />
+                        <col class="w-[172px]" />
+                      </colgroup>
+                      <thead>
+                        <tr class="bg-gray-50 border-b border-gray-100 text-brand-secondary uppercase font-mono text-[10px] tracking-wider">
+                          <th class="px-3 py-2.5">链接</th>
+                          <th class="px-3 py-2.5">额度</th>
+                          <th class="px-3 py-2.5">状态</th>
+                          <th class="px-3 py-2.5 text-right">已领</th>
+                          <th class="px-3 py-2.5 text-right">重复</th>
+                          <th class="px-3 py-2.5">创建时间</th>
+                          <th class="px-3 py-2.5">过期时间</th>
+                          <th class="px-3 py-2.5 text-right">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-gray-100">
+                        <tr v-for="item in pointsClaimLinks" :key="item.claim_link_id" class="hover:bg-brand-paper/50">
+                          <td class="px-3 py-2.5 align-top">
+                            <div class="font-bold text-brand-ink-strong leading-snug break-words" :title="item.title">{{ item.title }}</div>
+                            <div class="text-[10px] text-brand-secondary font-mono break-all" :title="item.claim_code">{{ shortText(item.claim_code, 8, 5) }}</div>
+                          </td>
+                          <td class="px-3 py-2.5 align-top">
+                            <div class="font-mono text-brand-primary font-bold">{{ item.points_amount }} pt</div>
+                            <div class="text-[10px] text-brand-secondary font-mono">{{ formatClaimMoney(item.display_value_cents) }}</div>
+                          </td>
+                          <td class="px-3 py-2.5 align-top">
+                            <span class="px-2 py-0.5 rounded text-[9px] font-bold inline-block border" :class="pointsClaimStatusClass(item.effective_status)">
+                              {{ pointsClaimStatusLabel(item.effective_status) }}
+                            </span>
+                          </td>
+                          <td class="px-3 py-2.5 align-top text-right font-mono text-emerald-600 font-bold">
+                            {{ item.claimed_user_count }} 人
+                          </td>
+                          <td class="px-3 py-2.5 align-top text-right font-mono text-amber-700 font-bold">
+                            {{ item.duplicate_attempt_count }} 次
+                          </td>
+                          <td class="px-3 py-2.5 align-top font-mono text-brand-secondary">{{ formatTime(item.created_at) }}</td>
+                          <td class="px-3 py-2.5 align-top font-mono text-brand-secondary">{{ formatTime(item.expires_at) }}</td>
+                          <td class="px-3 py-2.5 align-top">
+                            <div class="flex justify-end gap-1.5 whitespace-nowrap">
+                              <button @click="copyText(formatClaimUrl(item), '领取链接')" class="bg-white border border-gray-100 text-brand-primary px-2.5 py-1.5 rounded-lg text-[10px] font-bold inline-flex items-center gap-1">
+                                <Copy :size="11" />
+                                <span>复制</span>
+                              </button>
+                              <button @click="openPointsClaimLink(item)" class="bg-brand-primary text-white px-2.5 py-1.5 rounded-lg text-[10px] font-bold">记录</button>
+                              <button
+                                v-if="item.effective_status !== 'disabled'"
+                                @click="disablePointsClaimLink(item)"
+                                class="bg-red-50 border border-red-100 text-red-600 px-2.5 py-1.5 rounded-lg text-[10px] font-bold"
+                              >
+                                停用
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        <tr v-if="!pointsClaimLoading && pointsClaimLinks.length === 0">
+                          <td colspan="8" class="p-8 text-center text-brand-secondary font-mono">暂无积分领取链接</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-100 text-xs text-brand-secondary">
+                    <div class="font-mono">
+                      显示 {{ pointsClaimPageStart }}-{{ pointsClaimPageEnd }} / {{ pointsClaimTotal }}，每页 {{ pointsClaimPageSize }} 条
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <button
+                        @click="changePointsClaimPage(-1)"
+                        :disabled="!canGoPrevPointsClaimPage"
+                        class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[10.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-paper"
+                      >
+                        上一页
+                      </button>
+                      <span class="font-mono text-[11px] text-brand-secondary px-2">
+                        第 {{ pointsClaimCurrentPage }} / {{ pointsClaimTotalPages }} 页
+                      </span>
+                      <button
+                        @click="changePointsClaimPage(1)"
+                        :disabled="!canGoNextPointsClaimPage"
+                        class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[10.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-paper"
+                      >
+                        下一页
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+
           <div v-else-if="activePrimary === 'features'" class="space-y-6 text-left animate-fade-in">
             <div class="bg-white border border-gray-100 rounded-2xl p-6 space-y-6 shadow-sm">
               <div class="flex justify-between items-center pb-4 border-b border-gray-100">
                 <div class="space-y-0.5 block">
                   <h3 class="font-serif text-lg font-bold text-brand-primary flex items-center gap-2">
                     <Smartphone :size="20" />
-                    <span>手算五行 · 手机号数字测算规则策略</span>
+                    <span>{{ activeFeatureDisplayName }}配置</span>
                   </h3>
-                  <p class="text-xs text-brand-secondary">查看手机号评测运营数据，维护评测积分与专项解锁规则。</p>
+                  <p class="text-xs text-brand-secondary">{{ activeFeatureDescriptionText }}</p>
                 </div>
                 <button
                   @click="refreshPhoneQimenPage"
@@ -3474,21 +4208,32 @@ onBeforeUnmount(() => {
 
               <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)] gap-5 items-stretch">
                 <section class="h-full bg-brand-paper/35 border border-gray-100 rounded-2xl p-5 space-y-4">
-                  <div class="flex items-center justify-between gap-3">
+                  <div v-if="activeFeature === 'phone-review'" class="flex items-center justify-between gap-3">
                     <div>
                       <h4 class="font-serif text-base font-bold text-brand-ink-strong">手机号评测数据大盘</h4>
                       <p class="text-[11.5px] text-brand-secondary">以评测主记录为统计口径，专项解锁和语音播报只作为关联指标。</p>
                     </div>
                     <span class="text-[10px] text-brand-secondary font-mono">{{ formatTime(phoneQimenSummary?.generated_at) }}</span>
                   </div>
-                  <div v-if="phoneQimenSummaryError" class="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                  <div v-if="activeFeature === 'phone-review' && phoneQimenSummaryError" class="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
                     {{ phoneQimenSummaryError }}
                   </div>
-                  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div v-if="activeFeature === 'phone-review'" class="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div v-for="item in phoneQimenSummaryCards" :key="item.label" class="bg-white border border-gray-100 rounded-xl p-3">
                       <div class="text-[10px] text-brand-secondary">{{ item.label }}</div>
                       <div class="text-lg font-bold font-mono mt-1" :class="item.tone">{{ item.value }}</div>
                       <div class="text-[10px] text-brand-secondary">{{ item.sub }}</div>
+                    </div>
+                  </div>
+                  <div v-if="activeFeature !== 'phone-review'" class="h-full min-h-[196px] flex flex-col justify-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-brand-primary/10 text-brand-primary flex items-center justify-center">
+                      <Calendar :size="20" />
+                    </div>
+                    <div>
+                      <h4 class="font-serif text-base font-bold text-brand-ink-strong">四柱八字评测</h4>
+                      <p class="text-[11.5px] text-brand-secondary mt-1 leading-relaxed">
+                        公开与内部接口已接入，运营记录可在下方使用记录中筛选“四柱八字”和“四柱专项解锁”。
+                      </p>
                     </div>
                   </div>
                 </section>
@@ -3496,11 +4241,11 @@ onBeforeUnmount(() => {
                 <section class="h-full bg-white border border-gray-100 rounded-2xl p-5 space-y-4">
                   <div class="flex items-center justify-between gap-3">
                     <div>
-                      <h4 class="font-serif text-base font-bold text-brand-ink-strong">手机号评测配置</h4>
-                      <p class="text-[11.5px] text-brand-secondary">基础消耗、专项消耗、免费专项和专项展示顺序。</p>
+                      <h4 class="font-serif text-base font-bold text-brand-ink-strong">{{ activeFeatureDisplayName }}配置</h4>
+                      <p class="text-[11.5px] text-brand-secondary">{{ activeFeatureDescriptionText }}</p>
                     </div>
                     <button
-                      @click="saveRuntimeConfig(featureConfigItems, '手机号评测配置已保存')"
+                      @click="saveRuntimeConfig(featureConfigItems, `${activeFeatureDisplayName}配置已保存`)"
                       class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10"
                     >
                       {{ runtimeConfigLoading ? '保存中...' : '保存配置' }}
@@ -3534,7 +4279,7 @@ onBeforeUnmount(() => {
                       </label>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div v-if="activeFeature === 'phone-review'" class="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <button
                         v-if="phoneReviewFreeAspectsItem"
                         type="button"
@@ -3561,10 +4306,45 @@ onBeforeUnmount(() => {
                         <span class="block text-[11px] text-brand-secondary mt-1 truncate">{{ phoneReviewAspectOrderSummary }}</span>
                       </button>
                     </div>
+
+                    <div v-else class="space-y-3">
+                      <label
+                        v-for="item in featureExtraConfigItems"
+                        :key="item.config_key"
+                        class="bg-brand-paper/40 border border-gray-100 rounded-xl px-3.5 py-3 space-y-1.5 block"
+                      >
+                        <span class="text-[10.5px] font-bold text-brand-secondary">{{ item.label }}</span>
+                        <select
+                          v-if="item.value_type === 'bool'"
+                          v-model="runtimeConfigDrafts[item.config_key]"
+                          @change="runtimeConfigDirty = true"
+                          class="w-full bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs outline-none focus:border-brand-primary"
+                        >
+                          <option :value="true">开启</option>
+                          <option :value="false">关闭</option>
+                        </select>
+                        <textarea
+                          v-else-if="item.value_type === 'json'"
+                          v-model="runtimeConfigDrafts[item.config_key]"
+                          @input="runtimeConfigDirty = true"
+                          rows="3"
+                          class="w-full bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs font-mono outline-none focus:border-brand-primary"
+                          :placeholder="JSON.stringify(item.default_value)"
+                        ></textarea>
+                        <input
+                          v-else
+                          v-model="runtimeConfigDrafts[item.config_key]"
+                          @input="runtimeConfigDirty = true"
+                          class="w-full bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs font-mono outline-none focus:border-brand-primary"
+                          :placeholder="String(item.default_value ?? '')"
+                        />
+                        <span class="block text-[10px] text-brand-secondary font-mono">{{ item.config_key }}</span>
+                      </label>
+                    </div>
                   </div>
 
                   <div v-else class="h-32 rounded-xl border border-dashed border-gray-200 bg-white/70 flex items-center justify-center text-xs text-brand-secondary font-mono">
-                    暂无手机号评测配置项
+                    暂无{{ activeFeatureDisplayName }}配置项
                   </div>
                 </section>
               </div>
@@ -3908,8 +4688,11 @@ onBeforeUnmount(() => {
                   </p>
                 </div>
                 <div class="flex gap-2">
-                  <button v-if="activeSettings !== 'service-keys'" @click="loadRuntimeConfig" class="bg-white border border-gray-100 text-brand-secondary px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-gray-50">
+                  <button v-if="activeSettings !== 'service-keys'" @click="activeSettings === 'llm-concurrency' ? Promise.allSettled([loadRuntimeConfig(), loadLlmConcurrency(), loadLlmKeys()]) : loadRuntimeConfig()" class="bg-white border border-gray-100 text-brand-secondary px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-gray-50">
                     {{ runtimeConfigLoading ? '刷新中...' : '刷新配置' }}
+                  </button>
+                  <button v-if="activeSettings === 'llm-concurrency'" @click="loadLlmConcurrency" class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10">
+                    {{ llmConcurrencyLoading ? '刷新中...' : '刷新状态' }}
                   </button>
                   <button v-if="activeSettings === 'service-keys'" @click="loadLlmKeys" class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10">
                     刷新密钥
@@ -4352,6 +5135,132 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
+              <div v-if="activeSettings === 'llm-concurrency'" class="space-y-4">
+                <div v-if="llmError" class="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                  {{ llmError }}
+                </div>
+
+                <section class="space-y-3">
+                  <div class="flex flex-wrap items-start justify-between gap-3 pb-2 border-b border-gray-100">
+                    <div>
+                      <h4 class="text-xs font-bold text-brand-secondary font-mono uppercase">DeepSeek 运行概览</h4>
+                      <p class="text-[11px] text-brand-secondary mt-1">前台请求优先，后台预热按比例让路；Redis URL 只由服务端环境变量提供。</p>
+                    </div>
+                    <span class="text-[10px] px-2.5 py-1 rounded-full border font-mono" :class="llmConcurrency?.backend_available ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'">
+                      {{ llmConcurrency?.backend || 'memory' }} · {{ llmConcurrency?.backend_available ? '可用' : '不可用' }}
+                    </span>
+                  </div>
+
+                  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                    <div v-for="item in llmConcurrencyCards" :key="item.label" class="bg-brand-paper/40 border border-gray-100 rounded-xl p-4 min-h-[88px]">
+                      <div class="text-[10px] text-brand-secondary font-bold">{{ item.label }}</div>
+                      <div class="text-xl font-black font-mono text-brand-ink-strong mt-1">{{ item.value }}</div>
+                      <div class="text-[10px] text-brand-secondary font-mono mt-1 truncate" :title="item.sub">{{ item.sub }}</div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="space-y-3">
+                  <div class="flex flex-wrap items-start justify-between gap-3 pb-2 border-b border-gray-100">
+                    <div>
+                      <h4 class="text-xs font-bold text-brand-secondary font-mono uppercase">并发配置</h4>
+                      <p class="text-[11px] text-brand-secondary mt-1">切换 Redis 前请先在服务端配置 `EASEWISE_REDIS_URL`；后台不展示 Redis URL 明文。</p>
+                    </div>
+                    <button
+                      @click="saveRuntimeConfig(llmConcurrencyConfigItems, 'DeepSeek 并发治理配置已保存')"
+                      class="bg-brand-primary hover:bg-brand-primary-strong text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer shadow-sm shadow-brand-primary/10"
+                    >
+                      {{ runtimeConfigLoading ? '保存中...' : '保存并发配置' }}
+                    </button>
+                  </div>
+
+                  <div v-if="llmConcurrencyConfigItems.length" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div v-for="item in llmConcurrencyConfigItems" :key="item.config_key" class="bg-brand-paper/40 border border-gray-100 rounded-xl p-4 space-y-2">
+                      <div class="flex items-start justify-between gap-2">
+                        <div>
+                          <div class="text-sm font-bold text-brand-ink-strong">{{ item.label }}</div>
+                          <div class="text-[10px] text-brand-secondary font-mono">{{ item.config_key }}</div>
+                        </div>
+                        <span class="text-[10px] px-2 py-0.5 rounded-full border" :class="item.high_risk ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'">
+                          {{ item.high_risk ? '高风险' : '常规' }}
+                        </span>
+                      </div>
+                      <p class="text-[11px] text-brand-secondary leading-relaxed">{{ item.description || '暂无说明' }}</p>
+                      <template v-if="item.value_type === 'bool'">
+                        <AdminSelect
+                          v-model="runtimeConfigDrafts[item.config_key]"
+                          @change="runtimeConfigDirty = true"
+                          :options="booleanToggleSelectOptions"
+                          min-width-class="w-full"
+                          panel-width-class="w-full"
+                        />
+                      </template>
+                      <template v-else-if="item.input_options?.length">
+                        <AdminSelect
+                          v-model="runtimeConfigDrafts[item.config_key]"
+                          @change="runtimeConfigDirty = true"
+                          :options="item.input_options.map((option) => ({value: option.value, label: option.label, dotClass: option.value === 'redis' ? 'bg-amber-500' : 'bg-emerald-500'}))"
+                          min-width-class="w-full"
+                          panel-width-class="w-full"
+                        />
+                      </template>
+                      <template v-else>
+                        <input
+                          v-model="runtimeConfigDrafts[item.config_key]"
+                          @input="runtimeConfigDirty = true"
+                          :type="item.value_type === 'int' || item.value_type === 'float' ? 'number' : 'text'"
+                          :step="item.value_type === 'float' ? '0.01' : undefined"
+                          class="w-full bg-white border border-gray-100 rounded-lg p-2 text-xs outline-none"
+                        />
+                      </template>
+                      <div class="text-[11px] text-brand-secondary">当前值：{{ runtimeInputText(item) }}</div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="space-y-3">
+                  <h4 class="text-xs font-bold text-brand-secondary font-mono uppercase pb-2 border-b border-gray-100">Key 池运行态</h4>
+                  <div class="overflow-x-auto border border-gray-100 rounded-xl bg-white">
+                    <table class="w-full text-xs font-sans text-left">
+                      <thead>
+                        <tr class="bg-gray-50 border-b border-gray-100 text-brand-secondary uppercase font-mono text-[10px] tracking-wider">
+                          <th class="p-3">Key</th>
+                          <th class="p-3">状态</th>
+                          <th class="p-3">并发</th>
+                          <th class="p-3">可用槽位</th>
+                          <th class="p-3">冷却</th>
+                          <th class="p-3">最近 429</th>
+                          <th class="p-3">最近错误</th>
+                          <th class="p-3">最近使用</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-gray-100">
+                        <tr v-for="item in llmKeys" :key="`runtime-${item.key_id}`" class="hover:bg-brand-paper/50">
+                          <td class="p-3">
+                            <div class="font-bold text-brand-ink-strong">{{ item.display_name }}</div>
+                            <div class="font-mono text-[10px] text-brand-secondary">{{ item.model }} · P{{ item.priority }}</div>
+                          </td>
+                          <td class="p-3">
+                            <span class="text-[10px] px-2 py-1 rounded-full border font-bold" :class="llmKeyRuntimeClass(item)">
+                              {{ llmKeyRuntimeLabel(item) }}
+                            </span>
+                          </td>
+                          <td class="p-3 font-mono text-brand-ink-strong">{{ item.current_inflight }} / {{ item.max_concurrency }}</td>
+                          <td class="p-3 font-mono text-emerald-600 font-bold">{{ item.available_slots }}</td>
+                          <td class="p-3 font-mono text-brand-secondary">{{ formatTime(item.cooldown_until) }}</td>
+                          <td class="p-3 font-mono text-brand-secondary">{{ formatTime(item.last_rate_limited_at) }}</td>
+                          <td class="p-3 text-brand-secondary max-w-[220px] truncate" :title="item.last_error_message || '--'">{{ item.last_error_message || '--' }}</td>
+                          <td class="p-3 font-mono text-brand-secondary">{{ formatTime(item.last_used_at) }}</td>
+                        </tr>
+                        <tr v-if="!llmLoading && llmKeys.length === 0">
+                          <td colspan="8" class="p-8 text-center text-brand-secondary font-mono">暂无 DeepSeek Key；系统会尝试读取服务器环境变量。</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+
               <div v-if="activeSettings === 'service-keys'" class="space-y-4">
                 <h4 class="text-xs font-bold text-brand-secondary font-mono uppercase pb-2 border-b border-gray-100">服务密钥管理</h4>
                 <div class="bg-brand-paper/50 border border-gray-100 rounded-xl p-4 text-xs text-brand-secondary leading-relaxed">
@@ -4409,6 +5318,14 @@ onBeforeUnmount(() => {
                       <input v-model.number="llmKeyForm.priority" type="number" class="w-full bg-white border border-gray-100 rounded-lg p-2.5 text-xs outline-none" placeholder="数字越小优先级越高" />
                     </label>
                     <label class="space-y-1.5 block">
+                      <span class="text-[11px] font-bold text-brand-secondary">单 Key 并发上限</span>
+                      <input v-model.number="llmKeyForm.max_concurrency" type="number" min="1" class="w-full bg-white border border-gray-100 rounded-lg p-2.5 text-xs outline-none" placeholder="DeepSeek 默认建议 450" />
+                    </label>
+                    <label class="space-y-1.5 block">
+                      <span class="text-[11px] font-bold text-brand-secondary">429 冷却秒数</span>
+                      <input v-model.number="llmKeyForm.cooldown_seconds" type="number" min="1" class="w-full bg-white border border-gray-100 rounded-lg p-2.5 text-xs outline-none" placeholder="默认 60" />
+                    </label>
+                    <label class="space-y-1.5 block">
                       <span class="text-[11px] font-bold text-brand-secondary">最后操作人</span>
                       <input v-model="llmKeyForm.last_operator" class="w-full bg-white border border-gray-100 rounded-lg p-2.5 text-xs outline-none" placeholder="最后操作人" />
                     </label>
@@ -4437,6 +5354,9 @@ onBeforeUnmount(() => {
 	                        <th class="p-3">真实 Key</th>
 	                        <th class="p-3">启用状态</th>
 	                        <th class="p-3">优先级</th>
+	                        <th class="p-3">并发</th>
+	                        <th class="p-3">可用槽位</th>
+	                        <th class="p-3">冷却</th>
 	                        <th class="p-3">备注</th>
 	                        <th class="p-3 text-right">操作</th>
 	                      </tr>
@@ -4454,6 +5374,9 @@ onBeforeUnmount(() => {
 	                        </td>
 	                        <td class="p-3">{{ item.enabled ? '启用' : '停用' }}</td>
 	                        <td class="p-3 font-mono text-brand-secondary">{{ item.priority }}</td>
+	                        <td class="p-3 font-mono text-brand-ink-strong">{{ item.current_inflight }} / {{ item.max_concurrency }}</td>
+	                        <td class="p-3 font-mono text-emerald-600 font-bold">{{ item.available_slots }}</td>
+	                        <td class="p-3 font-mono text-brand-secondary">{{ formatTime(item.cooldown_until) }}</td>
 	                        <td class="p-3 text-brand-secondary">{{ item.remark || '--' }}</td>
 	                        <td class="p-3 text-right">
                           <div class="flex justify-end gap-2">
@@ -4463,7 +5386,7 @@ onBeforeUnmount(() => {
                         </td>
 	                      </tr>
 	                      <tr v-if="!llmLoading && llmKeys.length === 0">
-	                        <td colspan="9" class="p-8 text-center text-brand-secondary font-mono">暂无服务密钥配置。系统将继续读取服务器环境变量。</td>
+	                        <td colspan="12" class="p-8 text-center text-brand-secondary font-mono">暂无服务密钥配置。系统将继续读取服务器环境变量。</td>
 	                      </tr>
                     </tbody>
                   </table>
@@ -5026,6 +5949,197 @@ onBeforeUnmount(() => {
         </div>
       </aside>
 
+      <aside v-if="selectedPointsClaimLink" class="fixed top-0 right-0 w-full max-w-3xl bg-white border-l border-gray-100 h-full flex flex-col p-6 shadow-2xl text-left overflow-y-auto z-50">
+        <div class="flex items-start justify-between gap-4 pb-4 border-b border-gray-100">
+          <div class="min-w-0">
+            <p class="text-[10px] font-mono text-brand-secondary uppercase font-bold">Points Claim Link</p>
+            <h2 class="font-serif text-lg font-bold text-brand-ink-strong truncate">{{ selectedPointsClaimLink.title }}</h2>
+            <p class="font-mono text-[11px] text-brand-secondary select-all break-all">{{ selectedPointsClaimLink.claim_link_id }}</p>
+          </div>
+          <button @click="selectedPointsClaimLink = null" class="bg-brand-paper hover:bg-gray-100 text-brand-ink-strong text-xs px-3 py-1.5 rounded-lg border border-gray-100 shrink-0">关闭</button>
+        </div>
+
+        <div class="space-y-5 py-5 text-xs text-brand-secondary">
+          <section class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
+              <span class="block text-[10px] uppercase font-bold">当前状态</span>
+              <span class="mt-1 px-2 py-0.5 rounded text-[9px] font-bold inline-block border" :class="pointsClaimStatusClass(selectedPointsClaimLink.effective_status)">
+                {{ pointsClaimStatusLabel(selectedPointsClaimLink.effective_status) }}
+              </span>
+            </div>
+            <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
+              <span class="block text-[10px] uppercase font-bold">领取额度</span>
+              <span class="font-semibold text-brand-primary font-mono">{{ selectedPointsClaimLink.points_amount }} pt</span>
+            </div>
+            <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
+              <span class="block text-[10px] uppercase font-bold">人民币价值</span>
+              <span class="font-semibold text-emerald-600 font-mono">{{ formatClaimMoney(selectedPointsClaimLink.display_value_cents) }}</span>
+            </div>
+            <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
+              <span class="block text-[10px] uppercase font-bold">重复访问</span>
+              <span class="font-semibold text-amber-700 font-mono">{{ selectedPointsClaimLink.duplicate_attempt_count }}</span>
+            </div>
+          </section>
+
+          <section class="space-y-3 border border-gray-100 rounded-xl p-4 bg-white">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <h3 class="font-bold text-brand-ink-strong">链接信息</h3>
+              <div class="flex flex-wrap gap-2">
+                <button @click="copyText(formatClaimUrl(selectedPointsClaimLink), '领取链接')" class="bg-brand-primary text-white px-3 py-1.5 rounded-lg text-[10.5px] font-bold flex items-center gap-1.5">
+                  <Copy :size="12" />
+                  <span>复制链接</span>
+                </button>
+                <a :href="formatClaimUrl(selectedPointsClaimLink)" target="_blank" rel="noreferrer" class="bg-white border border-gray-100 text-brand-primary px-3 py-1.5 rounded-lg text-[10.5px] font-bold flex items-center gap-1.5">
+                  <ExternalLink :size="12" />
+                  <span>打开</span>
+                </a>
+                <button
+                  v-if="selectedPointsClaimLink.effective_status !== 'disabled'"
+                  @click="disablePointsClaimLink(selectedPointsClaimLink)"
+                  class="bg-red-50 border border-red-100 text-red-600 px-3 py-1.5 rounded-lg text-[10.5px] font-bold flex items-center gap-1.5"
+                >
+                  <XCircle :size="12" />
+                  <span>停用</span>
+                </button>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div class="bg-brand-paper/40 border border-gray-100 rounded-xl p-3">
+                <span class="block text-[10px] uppercase font-bold">领取地址</span>
+                <p class="font-mono text-brand-ink-strong break-all mt-1 select-all">{{ formatClaimUrl(selectedPointsClaimLink) }}</p>
+              </div>
+              <div class="bg-brand-paper/40 border border-gray-100 rounded-xl p-3">
+                <span class="block text-[10px] uppercase font-bold">链接码</span>
+                <p class="font-mono text-brand-ink-strong break-all mt-1 select-all">{{ selectedPointsClaimLink.claim_code }}</p>
+              </div>
+              <div class="bg-brand-paper/40 border border-gray-100 rounded-xl p-3">
+                <span class="block text-[10px] uppercase font-bold">生效时间</span>
+                <p class="font-mono text-brand-ink-strong mt-1">{{ formatTime(selectedPointsClaimLink.valid_from) }}</p>
+              </div>
+              <div class="bg-brand-paper/40 border border-gray-100 rounded-xl p-3">
+                <span class="block text-[10px] uppercase font-bold">过期时间</span>
+                <p class="font-mono text-brand-ink-strong mt-1">{{ formatTime(selectedPointsClaimLink.expires_at) }}</p>
+              </div>
+            </div>
+            <p v-if="selectedPointsClaimLink.operator_note" class="text-[11px] text-brand-secondary leading-relaxed">
+              内部备注：{{ selectedPointsClaimLink.operator_note }}
+            </p>
+          </section>
+
+          <section class="space-y-3 border-t border-gray-100 pt-5">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <h3 class="font-bold text-brand-ink-strong">领取动作记录</h3>
+              <span class="font-mono text-[10px] text-brand-secondary">成功 {{ selectedPointsClaimLink.claimed_user_count }} · 重复 {{ selectedPointsClaimLink.duplicate_attempt_count }}</span>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex flex-wrap gap-2">
+                <AdminSelect
+                  v-model="pointsClaimRecordsFilters.status"
+                  :options="pointsClaimRecordStatusSelectOptions"
+                  min-width-class="min-w-[132px]"
+                  panel-width-class="w-44"
+                />
+                <input v-model="pointsClaimRecordsFilters.user_id" class="bg-gray-50 border border-gray-100 p-2.5 rounded-lg text-xs text-brand-ink-strong outline-none focus:border-brand-primary w-56" placeholder="用户 ID 精确筛选" />
+              </div>
+              <div class="flex gap-2">
+                <button @click="resetPointsClaimRecordsFilters(); loadPointsClaimRecords({resetPage: true})" class="bg-white border border-gray-100 text-brand-secondary px-3 py-2 rounded-xl text-[10.5px] font-bold hover:bg-gray-50">
+                  重置
+                </button>
+                <button @click="searchPointsClaimRecords" class="bg-brand-primary text-white px-3 py-2 rounded-xl text-[10.5px] font-bold hover:bg-brand-primary-strong">
+                  {{ pointsClaimRecordsLoading ? '查询中...' : '查询记录' }}
+                </button>
+              </div>
+            </div>
+
+            <div v-if="pointsClaimRecordsError" class="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+              {{ pointsClaimRecordsError }}
+            </div>
+
+            <div class="overflow-x-auto border border-gray-100 rounded-xl bg-white">
+              <table class="w-full table-fixed text-xs font-sans text-left">
+                <colgroup>
+                  <col class="w-[150px]" />
+                  <col class="w-[112px]" />
+                  <col class="w-[96px]" />
+                  <col class="w-[116px]" />
+                  <col class="w-[142px]" />
+                  <col class="w-[96px]" />
+                </colgroup>
+                <thead>
+                  <tr class="bg-gray-50 border-b border-gray-100 text-brand-secondary uppercase font-mono text-[10px] tracking-wider">
+                    <th class="px-3 py-2.5">用户</th>
+                    <th class="px-3 py-2.5">状态</th>
+                    <th class="px-3 py-2.5 text-right">额度快照</th>
+                    <th class="px-3 py-2.5">周周期</th>
+                    <th class="px-3 py-2.5">访问时间</th>
+                    <th class="px-3 py-2.5 text-right">用户档案</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                  <tr v-for="record in selectedPointsClaimRecords" :key="record.claim_record_id" class="hover:bg-brand-paper/50">
+                    <td class="px-3 py-2.5 align-top">
+                      <div class="font-bold text-brand-ink-strong leading-snug break-words" :title="record.user_nickname || record.user_phone || record.user_uid || record.user_id">
+                        {{ record.user_nickname || record.user_phone || record.user_uid || '未命名用户' }}
+                      </div>
+                      <div class="text-[10px] text-brand-secondary font-mono break-all">{{ record.user_uid ? `UID ${record.user_uid}` : shortText(record.user_id, 8, 4) }}</div>
+                    </td>
+                    <td class="px-3 py-2.5 align-top">
+                      <span class="px-2 py-0.5 rounded text-[9px] font-bold inline-block border" :class="pointsClaimStatusClass(record.status)">
+                        {{ pointsClaimStatusLabel(record.status) }}
+                      </span>
+                      <div class="text-[10px] text-brand-secondary mt-1 leading-snug">{{ pointsClaimRecordFailureLabel(record) }}</div>
+                    </td>
+                    <td class="px-3 py-2.5 align-top text-right">
+                      <div class="font-mono text-brand-primary font-bold">{{ record.points_amount_snapshot }} pt</div>
+                      <div class="font-mono text-brand-secondary text-[10px]">{{ formatClaimMoney(record.display_value_cents_snapshot) }}</div>
+                    </td>
+                    <td class="px-3 py-2.5 align-top font-mono text-brand-secondary">
+                      <div>{{ record.week_key }}</div>
+                      <div class="text-[10px]">{{ formatTime(record.week_starts_at) }}</div>
+                    </td>
+                    <td class="px-3 py-2.5 align-top font-mono text-brand-secondary">{{ formatTime(record.created_at) }}</td>
+                    <td class="px-3 py-2.5 align-top text-right">
+                      <button @click="jumpToNullableUser(record.user_id)" class="bg-white border border-gray-100 text-brand-primary px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold">
+                        查看用户
+                      </button>
+                    </td>
+                  </tr>
+                  <tr v-if="!pointsClaimRecordsLoading && selectedPointsClaimRecords.length === 0">
+                    <td colspan="6" class="p-8 text-center text-brand-secondary font-mono">暂无领取动作记录</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-100 text-xs text-brand-secondary">
+              <div class="font-mono">
+                显示 {{ pointsClaimRecordsPageStart }}-{{ pointsClaimRecordsPageEnd }} / {{ pointsClaimRecordsTotal }}，每页 {{ pointsClaimRecordsPageSize }} 条
+              </div>
+              <div class="flex items-center gap-2">
+                <button
+                  @click="changePointsClaimRecordsPage(-1)"
+                  :disabled="!canGoPrevPointsClaimRecordsPage"
+                  class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[10.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-paper"
+                >
+                  上一页
+                </button>
+                <span class="font-mono text-[11px] text-brand-secondary px-2">
+                  第 {{ pointsClaimRecordsCurrentPage }} / {{ pointsClaimRecordsTotalPages }} 页
+                </span>
+                <button
+                  @click="changePointsClaimRecordsPage(1)"
+                  :disabled="!canGoNextPointsClaimRecordsPage"
+                  class="bg-white border border-gray-100 text-brand-ink-strong px-3 py-1.5 rounded-lg text-[10.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-paper"
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </aside>
+
       <aside v-if="selectedUsage" class="fixed top-0 right-0 w-full max-w-lg bg-white border-l border-gray-100 h-full flex flex-col p-6 shadow-2xl text-left overflow-y-auto z-50">
         <div class="flex items-start justify-between pb-4 border-b border-gray-100">
           <div>
@@ -5043,6 +6157,16 @@ onBeforeUnmount(() => {
             <p>渠道：{{ selectedUsage.record.channel || '--' }}</p>
             <p>业务 ID：{{ selectedUsage.record.target_id || '--' }}</p>
             <p>积分消耗：{{ selectedUsage.record.normal_points_cost }}</p>
+          </section>
+
+          <section class="space-y-2 border-t border-gray-100 pt-4">
+            <h3 class="font-bold text-brand-ink-strong">LLM 运行字段</h3>
+            <p>Key：{{ selectedUsage.record.llm_key_name || selectedUsage.record.llm_key_id || '--' }}</p>
+            <p>模型：{{ selectedUsage.record.llm_model || '--' }}</p>
+            <p>优先级：{{ selectedUsage.record.llm_priority_class || '--' }}</p>
+            <p>等待 / 响应：{{ selectedUsage.record.llm_wait_ms ?? '--' }} ms / {{ selectedUsage.record.llm_duration_ms ?? '--' }} ms</p>
+            <p>重试次数：{{ selectedUsage.record.llm_retry_count }}</p>
+            <p>错误：{{ selectedUsage.record.llm_error_type || '--' }} {{ selectedUsage.record.llm_error_message || '' }}</p>
           </section>
 
           <section class="space-y-2 border-t border-gray-100 pt-4">

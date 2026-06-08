@@ -166,6 +166,8 @@ def render_phone_summary_from_package(
             thinking_enabled=thinking_enabled,
             temperature=0.25,
             max_tokens=max_tokens,
+            llm_scene="phone_qimen.summary",
+            priority_class="foreground_core",
         )
         model_output = response.json_object()
         model_name = response.model or model

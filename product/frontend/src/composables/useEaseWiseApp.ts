@@ -3,14 +3,20 @@ import { DEFAULT_ASPECT_UNLOCK_POINTS, DEFAULT_BASE_REVIEW_POINTS } from '../con
 import { EASEWISE_STORAGE_KEYS } from '../constants/storage';
 import {
   ApiError,
+  createFourPillarsLuckCycleSummary,
+  createFourPillarsLuckYearSummary,
+  createFourPillarsReview,
   createPhoneReview,
   getCurrentUser,
+  getFourPillarsReviewDetail,
+  getFourPillarsLuckCycles,
   getPhoneAuthStatus,
   getPublicRuntimeConfig,
   getTodayAlmanac,
   getMyPoints,
   getPhoneReviewDetail,
   loginPhoneWithPassword,
+  listFourPillarsReviews,
   listMyPointsLedger,
   listPhoneReviews,
   logoutCurrentUser,
@@ -19,12 +25,18 @@ import {
   registerPhoneWithPassword,
   uploadMyAvatar,
   updateMyProfile,
+  unlockFourPillarsReviewAspect,
   unlockPhoneReviewAspect,
 } from '../lib/api';
 import type {
   AlmanacResponse,
   AuthLoginResponse,
   CurrentUserResponse,
+  FourPillarsCreatePayload,
+  FourPillarsLuckAnalysis,
+  FourPillarsLuckRenderRecord,
+  FourPillarsReviewRecord,
+  FourPillarsReviewSummary,
   Gender,
   PhoneStatusResponse,
   PasswordChangeResponse,
@@ -46,8 +58,10 @@ type AppState = {
   runtimeConfig: PublicRuntimeConfigResponse | null;
   almanac: AlmanacResponse | null;
   reviewHistory: ReviewSummary[];
+  fourPillarsHistory: FourPillarsReviewSummary[];
   pointsLedger: PointsLedgerEntryResponse[];
   currentReview: ReviewRecord | null;
+  currentFourPillarsReview: FourPillarsReviewRecord | null;
   authPromptVisible: boolean;
   authPromptReason: string | null;
   contactServiceModalVisible: boolean;
@@ -84,8 +98,10 @@ const state = reactive<AppState>({
   runtimeConfig: null,
   almanac: null,
   reviewHistory: [],
+  fourPillarsHistory: [],
   pointsLedger: [],
   currentReview: null,
+  currentFourPillarsReview: null,
   authPromptVisible: false,
   authPromptReason: null,
   contactServiceModalVisible: false,
@@ -110,6 +126,12 @@ const reviewBasePointsCost = computed(
 );
 const aspectUnlockPointsCost = computed(
   () => state.runtimeConfig?.modules.phone_review.aspect_unlock_points_cost ?? DEFAULT_ASPECT_UNLOCK_POINTS,
+);
+const fourPillarsBasePointsCost = computed(
+  () => state.runtimeConfig?.modules.four_pillars?.base_points_cost ?? DEFAULT_BASE_REVIEW_POINTS,
+);
+const fourPillarsAspectUnlockPointsCost = computed(
+  () => state.runtimeConfig?.modules.four_pillars?.aspect_unlock_points_cost ?? DEFAULT_ASPECT_UNLOCK_POINTS,
 );
 const customerServiceCopy = computed(() => state.runtimeConfig?.customer_service.copy || {});
 const customerServiceGuidance = computed(() => customerServiceCopyForScene('default'));
@@ -217,6 +239,28 @@ function persistCurrentReview(review: ReviewRecord | null): void {
   writeStorage(EASEWISE_STORAGE_KEYS.lastReviewId, null);
 }
 
+function persistCurrentFourPillarsReview(review: FourPillarsReviewRecord | null): void {
+  state.currentFourPillarsReview = review;
+  if (review) {
+    writeStorage(EASEWISE_STORAGE_KEYS.lastFourPillarsReviewId, review.id);
+    writeStorage(
+      EASEWISE_STORAGE_KEYS.lastFourPillarsReport,
+      JSON.stringify({
+        report_id: review.report_id,
+        gender: review.gender,
+        birth_date: review.birth_date,
+        birth_time: review.birth_time,
+        timezone: review.timezone,
+        score: review.score,
+        status: review.status,
+        created_at: review.created_at,
+      }),
+    );
+    return;
+  }
+  writeStorage(EASEWISE_STORAGE_KEYS.lastFourPillarsReviewId, null);
+}
+
 function clearConnectionError(): void {
   state.connectionError = null;
 }
@@ -252,8 +296,10 @@ function resetAuthState(): void {
   state.user = null;
   state.points = null;
   state.reviewHistory = [];
+  state.fourPillarsHistory = [];
   state.pointsLedger = [];
   state.currentReview = null;
+  state.currentFourPillarsReview = null;
   writeStorage(EASEWISE_STORAGE_KEYS.accessToken, null);
   clearLegacyAuthStorage();
   writeStorage(EASEWISE_STORAGE_KEYS.points, null);
@@ -359,6 +405,19 @@ async function refreshReviewHistory(limit = 20): Promise<ReviewSummary[]> {
   });
 }
 
+async function refreshFourPillarsHistory(limit = 20): Promise<FourPillarsReviewSummary[]> {
+  if (!isRegisteredUser.value || !state.accessToken) {
+    state.fourPillarsHistory = [];
+    return [];
+  }
+  return withAuthRetry(async (accessToken) => {
+    const response = await listFourPillarsReviews(accessToken, limit);
+    state.fourPillarsHistory = response.items;
+    clearConnectionError();
+    return response.items;
+  });
+}
+
 async function refreshCurrentReview(reviewId: string, { setAsCurrent = true }: { setAsCurrent?: boolean } = {}): Promise<ReviewRecord> {
   if (!isRegisteredUser.value || !state.accessToken) {
     throw new ApiError(403, 'registered_user_required', null);
@@ -373,22 +432,43 @@ async function refreshCurrentReview(reviewId: string, { setAsCurrent = true }: {
   });
 }
 
+async function refreshCurrentFourPillarsReview(reviewId: string, { setAsCurrent = true }: { setAsCurrent?: boolean } = {}): Promise<FourPillarsReviewRecord> {
+  if (!isRegisteredUser.value || !state.accessToken) {
+    throw new ApiError(403, 'registered_user_required', null);
+  }
+  return withAuthRetry(async (accessToken) => {
+    const review = await getFourPillarsReviewDetail(accessToken, reviewId);
+    if (setAsCurrent) {
+      persistCurrentFourPillarsReview(review);
+    }
+    clearConnectionError();
+    return review;
+  });
+}
+
 async function refreshUserScopedData(): Promise<void> {
   if (!isRegisteredUser.value || !state.accessToken) {
     state.pointsLedger = [];
     state.reviewHistory = [];
+    state.fourPillarsHistory = [];
     state.currentReview = null;
+    state.currentFourPillarsReview = null;
     return;
   }
   await Promise.allSettled([
     refreshPoints(),
     refreshReviewHistory(),
+    refreshFourPillarsHistory(),
     refreshPointsLedger(),
   ]);
 
   const lastReviewId = readStorage(EASEWISE_STORAGE_KEYS.lastReviewId);
   if (lastReviewId) {
     await refreshCurrentReview(lastReviewId).catch(() => undefined);
+  }
+  const lastFourPillarsReviewId = readStorage(EASEWISE_STORAGE_KEYS.lastFourPillarsReviewId);
+  if (lastFourPillarsReviewId) {
+    await refreshCurrentFourPillarsReview(lastFourPillarsReviewId).catch(() => undefined);
   }
 }
 
@@ -463,6 +543,16 @@ async function submitPhoneReview(payload: { phone: string; gender: Gender; inclu
   });
 }
 
+async function submitFourPillarsReview(payload: FourPillarsCreatePayload): Promise<FourPillarsReviewRecord> {
+  return withAuthRetry(async (accessToken) => {
+    const review = await createFourPillarsReview(accessToken, payload);
+    persistCurrentFourPillarsReview(review);
+    await Promise.allSettled([refreshPoints(), refreshFourPillarsHistory(), refreshPointsLedger()]);
+    clearConnectionError();
+    return review;
+  });
+}
+
 async function unlockAspect(reviewId: string, aspectKey: string): Promise<ReviewRecord> {
   return withAuthRetry(async (accessToken) => {
     const unlockResponse = await unlockPhoneReviewAspect(accessToken, reviewId, aspectKey);
@@ -472,6 +562,51 @@ async function unlockAspect(reviewId: string, aspectKey: string): Promise<Review
     await Promise.allSettled([refreshPointsLedger(), refreshReviewHistory()]);
     const review = await refreshCurrentReview(reviewId);
     return review;
+  });
+}
+
+async function unlockFourPillarsAspect(reviewId: string, aspectKey: string): Promise<FourPillarsReviewRecord> {
+  return withAuthRetry(async (accessToken) => {
+    const unlockResponse = await unlockFourPillarsReviewAspect(accessToken, reviewId, aspectKey);
+    if (unlockResponse.points) {
+      persistPoints(unlockResponse.points);
+    }
+    await Promise.allSettled([refreshPointsLedger(), refreshFourPillarsHistory()]);
+    const review = await refreshCurrentFourPillarsReview(reviewId);
+    return review;
+  });
+}
+
+async function refreshFourPillarsLuckAnalysis(reviewId: string): Promise<FourPillarsLuckAnalysis> {
+  return withAuthRetry(async (accessToken) => {
+    const response = await getFourPillarsLuckCycles(accessToken, reviewId);
+    if (state.currentFourPillarsReview?.id === reviewId) {
+      state.currentFourPillarsReview = {
+        ...state.currentFourPillarsReview,
+        luck_analysis: response.luck_analysis,
+      };
+      persistCurrentFourPillarsReview(state.currentFourPillarsReview);
+    }
+    clearConnectionError();
+    return response.luck_analysis;
+  });
+}
+
+async function generateFourPillarsLuckCycle(reviewId: string, cycleKey: string): Promise<FourPillarsLuckRenderRecord> {
+  return withAuthRetry(async (accessToken) => {
+    const render = await createFourPillarsLuckCycleSummary(accessToken, reviewId, cycleKey);
+    await Promise.allSettled([refreshPoints(), refreshPointsLedger(), refreshFourPillarsLuckAnalysis(reviewId)]);
+    clearConnectionError();
+    return render;
+  });
+}
+
+async function generateFourPillarsLuckYear(reviewId: string, cycleKey: string, year: number): Promise<FourPillarsLuckRenderRecord> {
+  return withAuthRetry(async (accessToken) => {
+    const render = await createFourPillarsLuckYearSummary(accessToken, reviewId, cycleKey, year);
+    await Promise.allSettled([refreshPoints(), refreshPointsLedger(), refreshFourPillarsLuckAnalysis(reviewId)]);
+    clearConnectionError();
+    return render;
   });
 }
 
@@ -603,7 +738,19 @@ function humanizeError(error: unknown): string {
       registered_user_required: '请先登录或注册后再继续。',
       account_disabled: '账号已被禁用，请联系管理员处理。',
       insufficient_points: '当前积分不足，请充值后继续。',
+      module_disabled: '当前功能暂未开放。',
+      invalid_birth_datetime: '请输入有效的出生日期和出生时间。',
+      invalid_timezone: '请输入有效的时区。',
+      aspect_not_ready: '专项内容还在生成中，请稍后再试。',
       session_not_found: '当前登录态已失效，请重新登录。',
+      claim_link_not_found: '领取链接不存在，请确认链接是否完整。',
+      claim_link_expired: '领取链接已过期。',
+      claim_link_disabled: '领取链接已停用。',
+      claim_link_not_started: '领取链接尚未生效。',
+      already_claimed_this_week: '本周已领取过免费积分',
+      points_claim_duration_too_long: '领取链接有效期最多可配置 30 天。',
+      expires_at_must_be_after_now: '过期时间必须晚于当前时间。',
+      expires_at_must_be_after_valid_from: '过期时间必须晚于生效时间。',
     };
     return messageMap[error.detail] || error.detail;
   }
@@ -622,6 +769,8 @@ export function useEaseWiseApp() {
     displayAvatarText,
     reviewBasePointsCost,
     aspectUnlockPointsCost,
+    fourPillarsBasePointsCost,
+    fourPillarsAspectUnlockPointsCost,
     customerServiceGuidance,
     customerServiceContact,
     customerServiceWechatId,
@@ -638,9 +787,16 @@ export function useEaseWiseApp() {
     refreshPoints,
     refreshPointsLedger,
     refreshReviewHistory,
+    refreshFourPillarsHistory,
     refreshCurrentReview,
+    refreshCurrentFourPillarsReview,
+    refreshFourPillarsLuckAnalysis,
     submitPhoneReview,
+    submitFourPillarsReview,
     unlockAspect,
+    unlockFourPillarsAspect,
+    generateFourPillarsLuckCycle,
+    generateFourPillarsLuckYear,
     requestRegisteredUser,
     cancelAuthRequest,
     checkPhoneAuthStatus,

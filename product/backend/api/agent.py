@@ -68,6 +68,9 @@ def _build_reply(*, topic: str, message: str, history: list[dict[str, str]], pre
                 thinking_enabled=False,
                 temperature=0.6,
                 max_tokens=520,
+                llm_scene="agent.reply",
+                priority_class="foreground_interactive",
+                user_id=user_id,
             )
             reply = (response.content or '').strip()
             if reply:

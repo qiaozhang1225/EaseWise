@@ -4,7 +4,7 @@ import json
 import secrets
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 from uuid import uuid4
@@ -31,6 +31,29 @@ CREATE TABLE IF NOT EXISTS reviews (
     user_id TEXT,
     phone TEXT NOT NULL,
     gender TEXT NOT NULL,
+    status TEXT NOT NULL,
+    progress_stage TEXT,
+    progress_message TEXT,
+    score_result_json TEXT,
+    score_template_json TEXT,
+    score_markdown TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+)
+"""
+
+CREATE_FOUR_PILLARS_REVIEWS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS four_pillars_reviews (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    gender TEXT NOT NULL,
+    birth_date TEXT NOT NULL,
+    birth_time TEXT NOT NULL,
+    timezone TEXT NOT NULL,
+    birth_place TEXT,
+    name TEXT,
     status TEXT NOT NULL,
     progress_stage TEXT,
     progress_message TEXT,
@@ -203,6 +226,15 @@ CREATE TABLE IF NOT EXISTS usage_records (
     status TEXT NOT NULL,
     request_payload_summary TEXT,
     result_summary TEXT,
+    llm_key_id TEXT,
+    llm_key_name TEXT,
+    llm_model TEXT,
+    llm_priority_class TEXT,
+    llm_wait_ms INTEGER,
+    llm_duration_ms INTEGER,
+    llm_retry_count INTEGER NOT NULL DEFAULT 0,
+    llm_error_type TEXT,
+    llm_error_message TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY(user_id) REFERENCES users(id)
@@ -220,6 +252,11 @@ CREATE TABLE IF NOT EXISTS llm_api_keys (
     secret_value TEXT,
     enabled INTEGER NOT NULL DEFAULT 0,
     priority INTEGER NOT NULL DEFAULT 100,
+    max_concurrency INTEGER NOT NULL DEFAULT 450,
+    cooldown_seconds INTEGER NOT NULL DEFAULT 60,
+    last_rate_limited_at TEXT,
+    last_error_message TEXT,
+    last_used_at TEXT,
     remark TEXT,
     last_operator TEXT,
     created_at TEXT NOT NULL,
@@ -254,6 +291,47 @@ CREATE TABLE IF NOT EXISTS review_aspect_unlocks (
 )
 """
 
+CREATE_FOUR_PILLARS_ASPECT_UNLOCKS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS four_pillars_aspect_unlocks (
+    id TEXT PRIMARY KEY,
+    review_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    aspect_key TEXT NOT NULL,
+    points_cost INTEGER NOT NULL,
+    usage_record_id TEXT,
+    unlocked_at TEXT NOT NULL,
+    UNIQUE(review_id, user_id, aspect_key),
+    FOREIGN KEY(review_id) REFERENCES four_pillars_reviews(id),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+)
+"""
+
+CREATE_FOUR_PILLARS_LUCK_RENDERS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS four_pillars_luck_renders (
+    id TEXT PRIMARY KEY,
+    review_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    render_type TEXT NOT NULL,
+    cycle_key TEXT NOT NULL,
+    year INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    progress_message TEXT,
+    points_cost INTEGER NOT NULL DEFAULT 0,
+    usage_record_id TEXT,
+    facts_json TEXT,
+    result_json TEXT,
+    error_message TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at TEXT,
+    next_retry_available_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(review_id, user_id, render_type, cycle_key, year),
+    FOREIGN KEY(review_id) REFERENCES four_pillars_reviews(id),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+)
+"""
+
 CREATE_RECHARGE_ORDERS_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS recharge_orders (
     id TEXT PRIMARY KEY,
@@ -283,6 +361,47 @@ CREATE TABLE IF NOT EXISTS recharge_orders (
     UNIQUE(source, external_order_id),
     FOREIGN KEY(user_id) REFERENCES users(id),
     FOREIGN KEY(granted_ledger_id) REFERENCES points_ledgers(id)
+)
+"""
+
+CREATE_POINTS_CLAIM_LINKS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS points_claim_links (
+    id TEXT PRIMARY KEY,
+    claim_code TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    points_amount INTEGER NOT NULL,
+    display_value_cents INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    valid_from TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_by TEXT,
+    disabled_by TEXT,
+    disabled_at TEXT,
+    operator_note TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
+CREATE_POINTS_CLAIM_RECORDS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS points_claim_records (
+    id TEXT PRIMARY KEY,
+    claim_link_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    week_key TEXT NOT NULL,
+    week_starts_at TEXT NOT NULL,
+    status TEXT NOT NULL,
+    points_amount_snapshot INTEGER NOT NULL,
+    display_value_cents_snapshot INTEGER NOT NULL DEFAULT 0,
+    ledger_id TEXT,
+    failure_reason TEXT,
+    request_ip TEXT,
+    user_agent TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(claim_link_id) REFERENCES points_claim_links(id),
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    FOREIGN KEY(ledger_id) REFERENCES points_ledgers(id)
 )
 """
 
@@ -410,6 +529,8 @@ CREATE TABLE IF NOT EXISTS promotion_withdrawals (
 CREATE_INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS idx_reviews_created_at ON reviews(created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_reviews_user_created_at ON reviews(user_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_four_pillars_reviews_created_at ON four_pillars_reviews(created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_four_pillars_reviews_user_created_at ON four_pillars_reviews(user_id, created_at DESC)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_uid ON users(uid)",
     "CREATE INDEX IF NOT EXISTS idx_users_identity_type_created_at ON users(primary_identity_type, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_phone_identity_user_id ON user_phone_identities(user_id)",
@@ -425,9 +546,16 @@ CREATE_INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS idx_usage_records_channel_created_at ON usage_records(channel, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_runtime_config_scope_key ON runtime_config_entries(scope_type, scope_key, config_key)",
     "CREATE INDEX IF NOT EXISTS idx_review_aspect_unlocks_review_user ON review_aspect_unlocks(review_id, user_id, unlocked_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_four_pillars_aspect_unlocks_review_user ON four_pillars_aspect_unlocks(review_id, user_id, unlocked_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_four_pillars_luck_renders_review_user ON four_pillars_luck_renders(review_id, user_id, updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_four_pillars_luck_renders_status ON four_pillars_luck_renders(status, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_recharge_orders_user_created_at ON recharge_orders(user_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_recharge_orders_status_created_at ON recharge_orders(status, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_recharge_orders_source_external_order_id ON recharge_orders(source, external_order_id)",
+    "CREATE INDEX IF NOT EXISTS idx_points_claim_links_status_expires ON points_claim_links(status, expires_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_points_claim_records_link_created ON points_claim_records(claim_link_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_points_claim_records_user_created ON points_claim_records(user_id, created_at DESC)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_points_claim_records_user_week_granted ON points_claim_records(user_id, week_key) WHERE status = 'granted'",
     "CREATE INDEX IF NOT EXISTS idx_payment_transactions_order_created_at ON payment_transactions(order_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_payment_transactions_provider_status ON payment_transactions(provider, status, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_llm_api_keys_enabled_priority ON llm_api_keys(enabled, priority, updated_at DESC)",
@@ -498,6 +626,24 @@ def _ensure_usage_records_columns(connection: sqlite3.Connection) -> None:
     columns = {row["name"] for row in connection.execute("PRAGMA table_info(usage_records)").fetchall()}
     if "channel" not in columns:
         connection.execute("ALTER TABLE usage_records ADD COLUMN channel TEXT")
+    if "llm_key_id" not in columns:
+        connection.execute("ALTER TABLE usage_records ADD COLUMN llm_key_id TEXT")
+    if "llm_key_name" not in columns:
+        connection.execute("ALTER TABLE usage_records ADD COLUMN llm_key_name TEXT")
+    if "llm_model" not in columns:
+        connection.execute("ALTER TABLE usage_records ADD COLUMN llm_model TEXT")
+    if "llm_priority_class" not in columns:
+        connection.execute("ALTER TABLE usage_records ADD COLUMN llm_priority_class TEXT")
+    if "llm_wait_ms" not in columns:
+        connection.execute("ALTER TABLE usage_records ADD COLUMN llm_wait_ms INTEGER")
+    if "llm_duration_ms" not in columns:
+        connection.execute("ALTER TABLE usage_records ADD COLUMN llm_duration_ms INTEGER")
+    if "llm_retry_count" not in columns:
+        connection.execute("ALTER TABLE usage_records ADD COLUMN llm_retry_count INTEGER NOT NULL DEFAULT 0")
+    if "llm_error_type" not in columns:
+        connection.execute("ALTER TABLE usage_records ADD COLUMN llm_error_type TEXT")
+    if "llm_error_message" not in columns:
+        connection.execute("ALTER TABLE usage_records ADD COLUMN llm_error_message TEXT")
 
 
 def _ensure_recharge_orders_columns(connection: sqlite3.Connection) -> None:
@@ -514,6 +660,16 @@ def _ensure_llm_api_keys_columns(connection: sqlite3.Connection) -> None:
     columns = {row["name"] for row in connection.execute("PRAGMA table_info(llm_api_keys)").fetchall()}
     if "secret_value" not in columns:
         connection.execute("ALTER TABLE llm_api_keys ADD COLUMN secret_value TEXT")
+    if "max_concurrency" not in columns:
+        connection.execute("ALTER TABLE llm_api_keys ADD COLUMN max_concurrency INTEGER NOT NULL DEFAULT 450")
+    if "cooldown_seconds" not in columns:
+        connection.execute("ALTER TABLE llm_api_keys ADD COLUMN cooldown_seconds INTEGER NOT NULL DEFAULT 60")
+    if "last_rate_limited_at" not in columns:
+        connection.execute("ALTER TABLE llm_api_keys ADD COLUMN last_rate_limited_at TEXT")
+    if "last_error_message" not in columns:
+        connection.execute("ALTER TABLE llm_api_keys ADD COLUMN last_error_message TEXT")
+    if "last_used_at" not in columns:
+        connection.execute("ALTER TABLE llm_api_keys ADD COLUMN last_used_at TEXT")
     connection.execute(
         """
         UPDATE llm_api_keys
@@ -529,6 +685,16 @@ def _ensure_llm_api_keys_columns(connection: sqlite3.Connection) -> None:
           AND secret_value LIKE 'sk-%'
         """
     )
+
+
+def _ensure_four_pillars_luck_renders_columns(connection: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(four_pillars_luck_renders)").fetchall()}
+    if "retry_count" not in columns:
+        connection.execute("ALTER TABLE four_pillars_luck_renders ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0")
+    if "last_attempt_at" not in columns:
+        connection.execute("ALTER TABLE four_pillars_luck_renders ADD COLUMN last_attempt_at TEXT")
+    if "next_retry_available_at" not in columns:
+        connection.execute("ALTER TABLE four_pillars_luck_renders ADD COLUMN next_retry_available_at TEXT")
 
 
 def _ensure_promotion_wallet_accounts(connection: sqlite3.Connection) -> None:
@@ -558,6 +724,7 @@ def ensure_schema() -> None:
     with open_connection() as connection:
         connection.execute(CREATE_REVIEWS_TABLE_SQL)
         _ensure_reviews_columns(connection)
+        connection.execute(CREATE_FOUR_PILLARS_REVIEWS_TABLE_SQL)
         connection.execute(CREATE_USERS_TABLE_SQL)
         _ensure_users_columns(connection)
         connection.execute(CREATE_USER_PROFILES_TABLE_SQL)
@@ -576,8 +743,13 @@ def ensure_schema() -> None:
         _ensure_llm_api_keys_columns(connection)
         connection.execute(CREATE_RUNTIME_CONFIG_ENTRIES_TABLE_SQL)
         connection.execute(CREATE_REVIEW_ASPECT_UNLOCKS_TABLE_SQL)
+        connection.execute(CREATE_FOUR_PILLARS_ASPECT_UNLOCKS_TABLE_SQL)
+        connection.execute(CREATE_FOUR_PILLARS_LUCK_RENDERS_TABLE_SQL)
+        _ensure_four_pillars_luck_renders_columns(connection)
         connection.execute(CREATE_RECHARGE_ORDERS_TABLE_SQL)
         _ensure_recharge_orders_columns(connection)
+        connection.execute(CREATE_POINTS_CLAIM_LINKS_TABLE_SQL)
+        connection.execute(CREATE_POINTS_CLAIM_RECORDS_TABLE_SQL)
         connection.execute(CREATE_PAYMENT_TRANSACTIONS_TABLE_SQL)
         connection.execute(CREATE_REFUND_REQUESTS_TABLE_SQL)
         connection.execute(CREATE_PROMOTION_APPLICATIONS_TABLE_SQL)
@@ -729,6 +901,159 @@ def fail_review(*, review_id: str, error_message: str, updated_at: str) -> None:
         )
 
 
+def create_four_pillars_review_with_charge(
+    *,
+    review_id: str,
+    user_id: str | None,
+    gender: str,
+    birth_date: str,
+    birth_time: str,
+    timezone_name: str,
+    birth_place: str | None,
+    name: str | None,
+    status: str,
+    created_at: str,
+    progress_stage: str | None = None,
+    progress_message: str | None = None,
+    points_cost: int = 0,
+    usage_scene: str | None = None,
+    request_payload_summary: dict[str, Any] | None = None,
+    channel: str | None = None,
+) -> None:
+    normalized_points_cost = max(0, int(points_cost))
+    with open_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO four_pillars_reviews (
+                id, user_id, gender, birth_date, birth_time, timezone, birth_place, name,
+                status, progress_stage, progress_message, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                review_id,
+                user_id,
+                gender,
+                birth_date,
+                birth_time,
+                timezone_name,
+                birth_place,
+                name,
+                status,
+                progress_stage,
+                progress_message,
+                created_at,
+                created_at,
+            ),
+        )
+        if user_id and usage_scene and normalized_points_cost > 0:
+            _spend_points_in_connection(
+                connection,
+                user_id=user_id,
+                points_cost=normalized_points_cost,
+                biz_type=usage_scene,
+                biz_id=review_id,
+                idempotency_key=f"four_pillars:create:{review_id}",
+                remark="four_pillars_review_base_charge",
+                now_text=created_at,
+            )
+            _create_usage_record_in_connection(
+                connection,
+                usage_record_id=review_id,
+                user_id=user_id,
+                scene=usage_scene,
+                channel=channel,
+                target_id=review_id,
+                points_cost=normalized_points_cost,
+                status="processing",
+                request_payload_summary=request_payload_summary,
+                result_summary=None,
+                created_at=created_at,
+                updated_at=created_at,
+            )
+
+
+def update_four_pillars_review_progress(*, review_id: str, progress_stage: str, progress_message: str | None, updated_at: str) -> None:
+    with open_connection() as connection:
+        connection.execute(
+            "UPDATE four_pillars_reviews SET progress_stage = ?, progress_message = ?, updated_at = ? WHERE id = ?",
+            (progress_stage, progress_message, updated_at, review_id),
+        )
+
+
+def update_four_pillars_review_generation_payload(
+    *,
+    review_id: str,
+    score_result: dict[str, Any],
+    score_template: dict[str, Any],
+    score_markdown: str | None,
+    progress_stage: str,
+    progress_message: str | None,
+    updated_at: str,
+) -> None:
+    with open_connection() as connection:
+        connection.execute(
+            """
+            UPDATE four_pillars_reviews
+            SET progress_stage = ?, progress_message = ?, score_result_json = ?, score_template_json = ?, score_markdown = ?, error_message = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                progress_stage,
+                progress_message,
+                json.dumps(score_result, ensure_ascii=False),
+                json.dumps(score_template, ensure_ascii=False),
+                score_markdown,
+                updated_at,
+                review_id,
+            ),
+        )
+
+
+def complete_four_pillars_review_with_message(
+    *,
+    review_id: str,
+    score_result: dict[str, Any],
+    score_template: dict[str, Any],
+    score_markdown: str | None,
+    progress_message: str,
+    updated_at: str,
+) -> None:
+    with open_connection() as connection:
+        connection.execute(
+            """
+            UPDATE four_pillars_reviews
+            SET status = ?, progress_stage = ?, progress_message = ?, score_result_json = ?, score_template_json = ?, score_markdown = ?, error_message = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                "completed",
+                "completed",
+                progress_message,
+                json.dumps(score_result, ensure_ascii=False),
+                json.dumps(score_template, ensure_ascii=False),
+                score_markdown,
+                updated_at,
+                review_id,
+            ),
+        )
+
+
+def update_four_pillars_review_score_template(*, review_id: str, score_template: dict[str, Any], updated_at: str) -> None:
+    with open_connection() as connection:
+        connection.execute(
+            "UPDATE four_pillars_reviews SET score_template_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(score_template, ensure_ascii=False), updated_at, review_id),
+        )
+
+
+def fail_four_pillars_review(*, review_id: str, error_message: str, updated_at: str) -> None:
+    with open_connection() as connection:
+        connection.execute(
+            "UPDATE four_pillars_reviews SET status = ?, progress_stage = ?, progress_message = ?, error_message = ?, updated_at = ? WHERE id = ?",
+            ("failed", "failed", error_message, error_message, updated_at, review_id),
+        )
+
+
 
 def get_review(review_id: str) -> dict[str, Any] | None:
     with open_connection() as connection:
@@ -737,6 +1062,42 @@ def get_review(review_id: str) -> dict[str, Any] | None:
             (review_id,),
         ).fetchone()
     return _deserialize_review_row(row) if row is not None else None
+
+
+def get_four_pillars_review(review_id: str) -> dict[str, Any] | None:
+    with open_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT id, user_id, gender, birth_date, birth_time, timezone, birth_place, name,
+                   status, progress_stage, progress_message, score_result_json, score_template_json,
+                   score_markdown, error_message, created_at, updated_at
+            FROM four_pillars_reviews
+            WHERE id = ?
+            """,
+            (review_id,),
+        ).fetchone()
+    return _deserialize_four_pillars_review_row(row) if row is not None else None
+
+
+def list_four_pillars_reviews(limit: int = 20, user_id: str | None = None, *, offset: int = 0) -> list[dict[str, Any]]:
+    normalized_limit = max(1, min(int(limit), 100))
+    normalized_offset = max(0, int(offset))
+    conditions: list[str] = []
+    parameters: list[Any] = []
+    if _normalize_optional_text(user_id):
+        conditions.append("user_id = ?")
+        parameters.append(str(user_id))
+    sql = (
+        "SELECT id, user_id, gender, birth_date, birth_time, timezone, birth_place, name, status, progress_stage, progress_message, score_result_json, score_template_json, error_message, created_at, updated_at "
+        "FROM four_pillars_reviews"
+    )
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    sql += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
+    parameters.extend([normalized_limit, normalized_offset])
+    with open_connection() as connection:
+        rows = connection.execute(sql, parameters).fetchall()
+    return [_deserialize_four_pillars_review_summary_row(row) for row in rows]
 
 
 
@@ -1014,12 +1375,184 @@ def get_internal_phone_qimen_review(review_id: str) -> dict[str, Any] | None:
     return _deserialize_internal_phone_qimen_review_row(row) if row is not None else None
 
 
+def get_internal_four_pillars_summary() -> dict[str, Any]:
+    with open_connection() as connection:
+        review_row = connection.execute(
+            """
+            WITH base_usage AS (
+                SELECT COALESCE(NULLIF(target_id, ''), id) AS review_id, SUM(points_cost) AS points_cost
+                FROM usage_records
+                WHERE scene = 'four_pillars_review_base'
+                GROUP BY COALESCE(NULLIF(target_id, ''), id)
+            )
+            SELECT
+                COUNT(r.id) AS total_review_count,
+                SUM(CASE WHEN date(datetime(r.created_at), '+8 hours') = date('now', '+8 hours') THEN 1 ELSE 0 END) AS today_review_count,
+                SUM(CASE WHEN datetime(r.created_at, '+8 hours') >= date('now', '+8 hours', 'weekday 1', '-7 days') THEN 1 ELSE 0 END) AS week_review_count,
+                SUM(CASE WHEN r.status = 'completed' THEN 1 ELSE 0 END) AS completed_review_count,
+                SUM(CASE WHEN r.status = 'failed' THEN 1 ELSE 0 END) AS failed_review_count,
+                AVG(CASE WHEN r.status IN ('completed', 'failed') THEN strftime('%s', r.updated_at) - strftime('%s', r.created_at) END) AS average_generation_seconds,
+                COALESCE(SUM(COALESCE(base_usage.points_cost, 0)), 0) AS review_points_cost
+            FROM four_pillars_reviews r
+            LEFT JOIN base_usage ON base_usage.review_id = r.id
+            """
+        ).fetchone()
+        unlock_row = connection.execute(
+            "SELECT COUNT(*) AS unlock_count, COUNT(DISTINCT review_id) AS unlocked_review_count FROM four_pillars_aspect_unlocks"
+        ).fetchone()
+    total_review_count = int(review_row["total_review_count"] or 0) if review_row else 0
+    completed_review_count = int(review_row["completed_review_count"] or 0) if review_row else 0
+    unlocked_review_count = int(unlock_row["unlocked_review_count"] or 0) if unlock_row else 0
+    return {
+        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "today_review_count": int(review_row["today_review_count"] or 0) if review_row else 0,
+        "week_review_count": int(review_row["week_review_count"] or 0) if review_row else 0,
+        "total_review_count": total_review_count,
+        "completed_review_count": completed_review_count,
+        "failed_review_count": int(review_row["failed_review_count"] or 0) if review_row else 0,
+        "success_rate": round(completed_review_count / total_review_count * 100, 1) if total_review_count else 0,
+        "average_generation_seconds": round(float(review_row["average_generation_seconds"]), 1) if review_row and review_row["average_generation_seconds"] is not None else None,
+        "aspect_unlock_count": int(unlock_row["unlock_count"] or 0) if unlock_row else 0,
+        "aspect_unlock_rate": round(unlocked_review_count / completed_review_count * 100, 1) if completed_review_count else 0,
+        "review_points_cost": int(review_row["review_points_cost"] or 0) if review_row else 0,
+        "voice_request_count": 0,
+    }
+
+
+def _build_internal_four_pillars_review_conditions(
+    *,
+    keyword: str | None = None,
+    status: str | None = None,
+    gender: str | None = None,
+    channel: str | None = None,
+    user_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    review_id: str | None = None,
+) -> tuple[list[str], list[Any]]:
+    conditions: list[str] = []
+    parameters: list[Any] = []
+    if _normalize_optional_text(review_id):
+        conditions.append("r.id = ?")
+        parameters.append(str(review_id))
+    if _normalize_optional_text(user_id):
+        conditions.append("r.user_id = ?")
+        parameters.append(str(user_id))
+    if _normalize_optional_text(status):
+        conditions.append("r.status = ?")
+        parameters.append(str(status))
+    if _normalize_optional_text(gender):
+        conditions.append("r.gender = ?")
+        parameters.append(str(gender))
+    if _normalize_optional_text(channel):
+        conditions.append("base_usage.channel = ?")
+        parameters.append(str(channel))
+    if _normalize_optional_text(date_from):
+        conditions.append("r.created_at >= ?")
+        parameters.append(str(date_from))
+    if _normalize_optional_text(date_to):
+        conditions.append("r.created_at <= ?")
+        parameters.append(str(date_to))
+    if _normalize_optional_text(keyword):
+        like_value = f"%{str(keyword).strip()}%"
+        conditions.append(
+            "(r.id LIKE ? OR IFNULL(r.user_id, '') LIKE ? OR IFNULL(r.birth_date, '') LIKE ? OR IFNULL(r.birth_place, '') LIKE ? OR IFNULL(r.name, '') LIKE ? OR IFNULL(u.uid, '') LIKE ? OR IFNULL(p.nickname, '') LIKE ? OR IFNULL(pi.normalized_phone, '') LIKE ?)"
+        )
+        parameters.extend([like_value, like_value, like_value, like_value, like_value, like_value, like_value, like_value])
+    return conditions, parameters
+
+
+def _internal_four_pillars_review_from_clause() -> str:
+    return """
+        FROM four_pillars_reviews r
+        LEFT JOIN users u ON u.id = r.user_id
+        LEFT JOIN user_profiles p ON p.user_id = r.user_id
+        LEFT JOIN user_phone_identities pi ON pi.user_id = r.user_id AND pi.is_primary = 1
+        LEFT JOIN (
+            SELECT
+                COALESCE(NULLIF(target_id, ''), id) AS review_id,
+                MAX(channel) AS channel,
+                SUM(points_cost) AS points_cost
+            FROM usage_records
+            WHERE scene = 'four_pillars_review_base'
+            GROUP BY COALESCE(NULLIF(target_id, ''), id)
+        ) base_usage ON base_usage.review_id = r.id
+        LEFT JOIN (
+            SELECT review_id, COUNT(*) AS unlock_count
+            FROM four_pillars_aspect_unlocks
+            GROUP BY review_id
+        ) unlocks ON unlocks.review_id = r.id
+    """
+
+
+def count_internal_four_pillars_reviews(*, keyword: str | None = None, status: str | None = None, gender: str | None = None, channel: str | None = None, user_id: str | None = None, date_from: str | None = None, date_to: str | None = None) -> int:
+    conditions, parameters = _build_internal_four_pillars_review_conditions(keyword=keyword, status=status, gender=gender, channel=channel, user_id=user_id, date_from=date_from, date_to=date_to)
+    sql = "SELECT COUNT(r.id) AS total " + _internal_four_pillars_review_from_clause()
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    with open_connection() as connection:
+        row = connection.execute(sql, parameters).fetchone()
+    return int(row["total"] if row is not None else 0)
+
+
+def list_internal_four_pillars_reviews(*, limit: int = 20, offset: int = 0, keyword: str | None = None, status: str | None = None, gender: str | None = None, channel: str | None = None, user_id: str | None = None, date_from: str | None = None, date_to: str | None = None) -> list[dict[str, Any]]:
+    normalized_limit = max(1, min(int(limit), 100))
+    normalized_offset = max(0, int(offset))
+    conditions, parameters = _build_internal_four_pillars_review_conditions(keyword=keyword, status=status, gender=gender, channel=channel, user_id=user_id, date_from=date_from, date_to=date_to)
+    sql = (
+        """
+        SELECT
+            r.id, r.user_id, u.uid AS user_uid, p.nickname AS user_nickname, pi.normalized_phone AS user_phone,
+            r.gender, r.birth_date, r.birth_time, r.timezone, r.birth_place, r.name,
+            r.status, r.progress_stage, r.progress_message, r.error_message,
+            base_usage.channel, COALESCE(base_usage.points_cost, 0) AS base_points_cost,
+            COALESCE(unlocks.unlock_count, 0) AS unlock_count,
+            CASE WHEN r.status IN ('completed', 'failed') THEN CAST(strftime('%s', r.updated_at) - strftime('%s', r.created_at) AS INTEGER) ELSE NULL END AS generation_duration_seconds,
+            r.created_at, r.updated_at
+        """
+        + _internal_four_pillars_review_from_clause()
+    )
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    sql += " ORDER BY r.created_at DESC, r.id DESC LIMIT ? OFFSET ?"
+    parameters.extend([normalized_limit, normalized_offset])
+    with open_connection() as connection:
+        rows = connection.execute(sql, parameters).fetchall()
+    return [_deserialize_internal_four_pillars_review_row(row) for row in rows]
+
+
+def get_internal_four_pillars_review(review_id: str) -> dict[str, Any] | None:
+    conditions, parameters = _build_internal_four_pillars_review_conditions(review_id=review_id)
+    sql = (
+        """
+        SELECT
+            r.id, r.user_id, u.uid AS user_uid, p.nickname AS user_nickname, pi.normalized_phone AS user_phone,
+            r.gender, r.birth_date, r.birth_time, r.timezone, r.birth_place, r.name,
+            r.status, r.progress_stage, r.progress_message, r.error_message,
+            base_usage.channel, COALESCE(base_usage.points_cost, 0) AS base_points_cost,
+            COALESCE(unlocks.unlock_count, 0) AS unlock_count,
+            CASE WHEN r.status IN ('completed', 'failed') THEN CAST(strftime('%s', r.updated_at) - strftime('%s', r.created_at) AS INTEGER) ELSE NULL END AS generation_duration_seconds,
+            r.created_at, r.updated_at
+        """
+        + _internal_four_pillars_review_from_clause()
+        + " WHERE "
+        + " AND ".join(conditions)
+        + " LIMIT 1"
+    )
+    with open_connection() as connection:
+        row = connection.execute(sql, parameters).fetchone()
+    return _deserialize_internal_four_pillars_review_row(row) if row is not None else None
+
+
 def list_voice_usage_records_for_review(review_id: str) -> list[dict[str, Any]]:
     with open_connection() as connection:
         rows = connection.execute(
             """
             SELECT ur.id, ur.user_id, ur.scene, ur.channel, ur.target_id, ur.points_cost, ur.status,
-                   ur.request_payload_summary, ur.result_summary, ur.created_at, ur.updated_at,
+                   ur.request_payload_summary, ur.result_summary,
+                   ur.llm_key_id, ur.llm_key_name, ur.llm_model, ur.llm_priority_class, ur.llm_wait_ms,
+                   ur.llm_duration_ms, ur.llm_retry_count, ur.llm_error_type, ur.llm_error_message,
+                   ur.created_at, ur.updated_at,
                    u.status AS user_status, p.nickname AS user_nickname, p.avatar_url AS user_avatar_url
             FROM usage_records ur
             JOIN users u ON u.id = ur.user_id
@@ -1406,6 +1939,391 @@ def list_points_ledger(user_id: str, limit: int = 20) -> list[dict[str, Any]]:
     return [_deserialize_points_ledger_row(row) for row in rows]
 
 
+def create_points_claim_link(
+    *,
+    link_id: str,
+    claim_code: str,
+    title: str,
+    points_amount: int,
+    display_value_cents: int,
+    valid_from: str,
+    expires_at: str,
+    created_by: str | None,
+    operator_note: str | None,
+    now_text: str,
+) -> dict[str, Any]:
+    normalized_title = _normalize_optional_text(title)
+    if not normalized_title:
+        raise ValueError("title_required")
+    normalized_claim_code = _normalize_optional_text(claim_code)
+    if not normalized_claim_code:
+        raise ValueError("claim_code_required")
+    normalized_points_amount = int(points_amount)
+    if normalized_points_amount <= 0:
+        raise ValueError("points_amount_must_be_positive")
+    normalized_display_value = max(0, int(display_value_cents))
+    _validate_points_claim_window(valid_from=valid_from, expires_at=expires_at)
+
+    with open_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO points_claim_links (
+                id, claim_code, title, points_amount, display_value_cents, status,
+                valid_from, expires_at, created_by, operator_note, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                link_id,
+                normalized_claim_code,
+                normalized_title,
+                normalized_points_amount,
+                normalized_display_value,
+                valid_from,
+                expires_at,
+                _normalize_optional_text(created_by),
+                _normalize_optional_text(operator_note),
+                now_text,
+                now_text,
+            ),
+        )
+        row = _get_points_claim_link_row_in_connection(connection, link_id=link_id)
+    if row is None:
+        raise RuntimeError("points_claim_link_create_failed")
+    return _deserialize_points_claim_link_row(row)
+
+
+def list_points_claim_links(
+    *,
+    limit: int = 20,
+    offset: int = 0,
+    status: str | None = None,
+    keyword: str | None = None,
+    now_text: str | None = None,
+) -> list[dict[str, Any]]:
+    normalized_limit = max(1, min(int(limit), 100))
+    normalized_offset = max(0, int(offset))
+    normalized_status = _normalize_optional_text(status)
+    normalized_keyword = _normalize_optional_text(keyword)
+    query = _POINTS_CLAIM_LINK_SELECT_SQL
+    conditions: list[str] = []
+    parameters: list[Any] = []
+    if normalized_status:
+        if normalized_status == "expired":
+            conditions.append("l.status = 'active' AND l.expires_at <= ?")
+            parameters.append(now_text or _utc_now_text())
+        elif normalized_status == "active":
+            conditions.append("l.status = 'active' AND l.valid_from <= ? AND l.expires_at > ?")
+            current_text = now_text or _utc_now_text()
+            parameters.extend([current_text, current_text])
+        else:
+            conditions.append("l.status = ?")
+            parameters.append(normalized_status)
+    if normalized_keyword:
+        conditions.append("(l.title LIKE ? OR l.claim_code LIKE ? OR l.id LIKE ?)")
+        like_value = f"%{normalized_keyword}%"
+        parameters.extend([like_value, like_value, like_value])
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " GROUP BY l.id ORDER BY l.created_at DESC, l.id DESC LIMIT ? OFFSET ?"
+    parameters.extend([normalized_limit, normalized_offset])
+    with open_connection() as connection:
+        rows = connection.execute(query, parameters).fetchall()
+    return [_deserialize_points_claim_link_row(row) for row in rows]
+
+
+def count_points_claim_links(
+    *,
+    status: str | None = None,
+    keyword: str | None = None,
+    now_text: str | None = None,
+) -> int:
+    normalized_status = _normalize_optional_text(status)
+    normalized_keyword = _normalize_optional_text(keyword)
+    query = "SELECT COUNT(*) AS total FROM points_claim_links l"
+    conditions: list[str] = []
+    parameters: list[Any] = []
+    if normalized_status:
+        if normalized_status == "expired":
+            conditions.append("l.status = 'active' AND l.expires_at <= ?")
+            parameters.append(now_text or _utc_now_text())
+        elif normalized_status == "active":
+            conditions.append("l.status = 'active' AND l.valid_from <= ? AND l.expires_at > ?")
+            current_text = now_text or _utc_now_text()
+            parameters.extend([current_text, current_text])
+        else:
+            conditions.append("l.status = ?")
+            parameters.append(normalized_status)
+    if normalized_keyword:
+        conditions.append("(l.title LIKE ? OR l.claim_code LIKE ? OR l.id LIKE ?)")
+        like_value = f"%{normalized_keyword}%"
+        parameters.extend([like_value, like_value, like_value])
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    with open_connection() as connection:
+        row = connection.execute(query, parameters).fetchone()
+    return int(row["total"] if row is not None else 0)
+
+
+def get_points_claim_link(link_id: str) -> dict[str, Any] | None:
+    with open_connection() as connection:
+        row = _get_points_claim_link_row_in_connection(connection, link_id=link_id)
+    return _deserialize_points_claim_link_row(row) if row is not None else None
+
+
+def get_points_claim_link_by_code(claim_code: str) -> dict[str, Any] | None:
+    with open_connection() as connection:
+        row = _get_points_claim_link_row_in_connection(connection, claim_code=claim_code)
+    return _deserialize_points_claim_link_row(row) if row is not None else None
+
+
+def disable_points_claim_link(*, link_id: str, disabled_by: str | None, operator_note: str | None, now_text: str) -> dict[str, Any] | None:
+    with open_connection() as connection:
+        row = _get_points_claim_link_row_in_connection(connection, link_id=link_id)
+        if row is None:
+            return None
+        link = _deserialize_points_claim_link_row(row)
+        if str(link["status"]) != "disabled":
+            connection.execute(
+                """
+                UPDATE points_claim_links
+                SET status = 'disabled', disabled_by = ?, disabled_at = ?, operator_note = COALESCE(?, operator_note), updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    _normalize_optional_text(disabled_by),
+                    now_text,
+                    _normalize_optional_text(operator_note),
+                    now_text,
+                    link_id,
+                ),
+            )
+        refreshed = _get_points_claim_link_row_in_connection(connection, link_id=link_id)
+    return _deserialize_points_claim_link_row(refreshed) if refreshed is not None else None
+
+
+def list_points_claim_records(
+    *,
+    link_id: str | None = None,
+    user_id: str | None = None,
+    status: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    normalized_limit = max(1, min(int(limit), 100))
+    normalized_offset = max(0, int(offset))
+    query = _POINTS_CLAIM_RECORD_SELECT_SQL
+    conditions: list[str] = []
+    parameters: list[Any] = []
+    if _normalize_optional_text(link_id):
+        conditions.append("r.claim_link_id = ?")
+        parameters.append(str(link_id))
+    if _normalize_optional_text(user_id):
+        conditions.append("r.user_id = ?")
+        parameters.append(str(user_id))
+    if _normalize_optional_text(status):
+        conditions.append("r.status = ?")
+        parameters.append(str(status))
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY r.created_at DESC, r.id DESC LIMIT ? OFFSET ?"
+    parameters.extend([normalized_limit, normalized_offset])
+    with open_connection() as connection:
+        rows = connection.execute(query, parameters).fetchall()
+    return [_deserialize_points_claim_record_row(row) for row in rows]
+
+
+def count_points_claim_records(
+    *,
+    link_id: str | None = None,
+    user_id: str | None = None,
+    status: str | None = None,
+) -> int:
+    query = "SELECT COUNT(*) AS total FROM points_claim_records r"
+    conditions: list[str] = []
+    parameters: list[Any] = []
+    if _normalize_optional_text(link_id):
+        conditions.append("r.claim_link_id = ?")
+        parameters.append(str(link_id))
+    if _normalize_optional_text(user_id):
+        conditions.append("r.user_id = ?")
+        parameters.append(str(user_id))
+    if _normalize_optional_text(status):
+        conditions.append("r.status = ?")
+        parameters.append(str(status))
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    with open_connection() as connection:
+        row = connection.execute(query, parameters).fetchone()
+    return int(row["total"] if row is not None else 0)
+
+
+def get_user_current_week_points_claim(user_id: str, *, now_text: str | None = None) -> dict[str, Any] | None:
+    week_key, _ = _build_shanghai_week_window(now_text or _utc_now_text())
+    with open_connection() as connection:
+        row = _get_granted_claim_record_for_user_week(connection, user_id=user_id, week_key=week_key)
+    return _deserialize_points_claim_record_row(row) if row is not None else None
+
+
+def record_points_claim_duplicate_link_visit(
+    *,
+    claim_code: str,
+    user_id: str,
+    request_ip: str | None,
+    user_agent: str | None,
+    now_text: str,
+) -> dict[str, Any] | None:
+    week_key, week_starts_at = _build_shanghai_week_window(now_text)
+    normalized_claim_code = _normalize_optional_text(claim_code)
+    if not normalized_claim_code:
+        raise ValueError("claim_code_required")
+    with open_connection() as connection:
+        link_row = _get_points_claim_link_row_in_connection(connection, claim_code=normalized_claim_code)
+        if link_row is None:
+            raise RuntimeError("claim_link_not_found")
+        existing_record_row = _get_granted_claim_record_for_user_week(connection, user_id=user_id, week_key=week_key)
+        if existing_record_row is None:
+            return None
+        link = _deserialize_points_claim_link_row(link_row)
+        record = _insert_points_claim_record_in_connection(
+            connection,
+            link=link,
+            user_id=user_id,
+            week_key=week_key,
+            week_starts_at=week_starts_at,
+            status="already_claimed_this_week",
+            ledger_id=None,
+            failure_reason="already_claimed_this_week",
+            request_ip=request_ip,
+            user_agent=user_agent,
+            now_text=now_text,
+        )
+        return {
+            "claim_status": "already_claimed_this_week",
+            "link": link,
+            "record": record,
+            "already_claimed_record": _deserialize_points_claim_record_row(existing_record_row),
+            "ledger": None,
+        }
+
+
+def claim_points_from_link(
+    *,
+    claim_code: str,
+    user_id: str,
+    request_ip: str | None,
+    user_agent: str | None,
+    now_text: str,
+) -> dict[str, Any]:
+    week_key, week_starts_at = _build_shanghai_week_window(now_text)
+    normalized_claim_code = _normalize_optional_text(claim_code)
+    if not normalized_claim_code:
+        raise ValueError("claim_code_required")
+    with open_connection() as connection:
+        link_row = _get_points_claim_link_row_in_connection(connection, claim_code=normalized_claim_code)
+        if link_row is None:
+            raise RuntimeError("claim_link_not_found")
+        link = _deserialize_points_claim_link_row(link_row)
+        effective_status = _points_claim_link_effective_status(link, now_text=now_text)
+        if effective_status != "active":
+            record = _insert_points_claim_record_in_connection(
+                connection,
+                link=link,
+                user_id=user_id,
+                week_key=week_key,
+                week_starts_at=week_starts_at,
+                status=effective_status,
+                ledger_id=None,
+                failure_reason=f"claim_link_{effective_status}",
+                request_ip=request_ip,
+                user_agent=user_agent,
+                now_text=now_text,
+            )
+            return {"claim_status": effective_status, "link": link, "record": record, "ledger": None}
+
+        existing_record_row = _get_granted_claim_record_for_user_week(connection, user_id=user_id, week_key=week_key)
+        if existing_record_row is not None:
+            record = _insert_points_claim_record_in_connection(
+                connection,
+                link=link,
+                user_id=user_id,
+                week_key=week_key,
+                week_starts_at=week_starts_at,
+                status="already_claimed_this_week",
+                ledger_id=None,
+                failure_reason="already_claimed_this_week",
+                request_ip=request_ip,
+                user_agent=user_agent,
+                now_text=now_text,
+            )
+            return {
+                "claim_status": "already_claimed_this_week",
+                "link": link,
+                "record": record,
+                "already_claimed_record": _deserialize_points_claim_record_row(existing_record_row),
+                "ledger": None,
+            }
+
+        try:
+            record = _insert_points_claim_record_in_connection(
+                connection,
+                link=link,
+                user_id=user_id,
+                week_key=week_key,
+                week_starts_at=week_starts_at,
+                status="granted",
+                ledger_id=None,
+                failure_reason=None,
+                request_ip=request_ip,
+                user_agent=user_agent,
+                now_text=now_text,
+            )
+        except sqlite3.IntegrityError:
+            existing_record_row = _get_granted_claim_record_for_user_week(connection, user_id=user_id, week_key=week_key)
+            record = _insert_points_claim_record_in_connection(
+                connection,
+                link=link,
+                user_id=user_id,
+                week_key=week_key,
+                week_starts_at=week_starts_at,
+                status="already_claimed_this_week",
+                ledger_id=None,
+                failure_reason="already_claimed_this_week",
+                request_ip=request_ip,
+                user_agent=user_agent,
+                now_text=now_text,
+            )
+            return {
+                "claim_status": "already_claimed_this_week",
+                "link": link,
+                "record": record,
+                "already_claimed_record": _deserialize_points_claim_record_row(existing_record_row) if existing_record_row is not None else None,
+                "ledger": None,
+            }
+
+        ledger = _credit_points_in_connection(
+            connection,
+            user_id=user_id,
+            points_amount=int(link["points_amount"]),
+            change_type="gift",
+            biz_type="free_points_claim",
+            biz_id=str(record["claim_record_id"]),
+            idempotency_key=f"free_points_claim:{user_id}:{week_key}",
+            remark=f"claim_link:{link['claim_link_id']}",
+            now_text=now_text,
+        )
+        connection.execute(
+            "UPDATE points_claim_records SET ledger_id = ?, updated_at = ? WHERE id = ?",
+            (ledger["ledger_id"], now_text, record["claim_record_id"]),
+        )
+        refreshed_row = connection.execute(
+            _POINTS_CLAIM_RECORD_SELECT_SQL + " WHERE r.id = ?",
+            (record["claim_record_id"],),
+        ).fetchone()
+        refreshed_record = _deserialize_points_claim_record_row(refreshed_row) if refreshed_row is not None else record
+        return {"claim_status": "granted", "link": link, "record": refreshed_record, "ledger": ledger}
+
+
 def list_users(
     *,
     limit: int = 20,
@@ -1686,7 +2604,9 @@ def refund_points(*, user_id: str, points_amount: int, biz_type: str, biz_id: st
 def get_usage_record(usage_record_id: str) -> dict[str, Any] | None:
     with open_connection() as connection:
         row = connection.execute(
-            "SELECT ur.id, ur.user_id, ur.scene, ur.channel, ur.target_id, ur.points_cost, ur.status, ur.request_payload_summary, ur.result_summary, ur.created_at, ur.updated_at, u.status AS user_status, p.nickname AS user_nickname, p.avatar_url AS user_avatar_url "
+            "SELECT ur.id, ur.user_id, ur.scene, ur.channel, ur.target_id, ur.points_cost, ur.status, ur.request_payload_summary, ur.result_summary, "
+            "ur.llm_key_id, ur.llm_key_name, ur.llm_model, ur.llm_priority_class, ur.llm_wait_ms, ur.llm_duration_ms, ur.llm_retry_count, ur.llm_error_type, ur.llm_error_message, "
+            "ur.created_at, ur.updated_at, u.status AS user_status, p.nickname AS user_nickname, p.avatar_url AS user_avatar_url "
             "FROM usage_records ur "
             "JOIN users u ON u.id = ur.user_id "
             "LEFT JOIN user_profiles p ON p.user_id = ur.user_id "
@@ -1769,7 +2689,9 @@ def list_usage_records(
         )
         parameters.extend([like_value, like_value, like_value, like_value, like_value, like_value, like_value, like_value])
     sql = (
-        "SELECT ur.id, ur.user_id, ur.scene, ur.channel, ur.target_id, ur.points_cost, ur.status, ur.request_payload_summary, ur.result_summary, ur.created_at, ur.updated_at, "
+        "SELECT ur.id, ur.user_id, ur.scene, ur.channel, ur.target_id, ur.points_cost, ur.status, ur.request_payload_summary, ur.result_summary, "
+        "ur.llm_key_id, ur.llm_key_name, ur.llm_model, ur.llm_priority_class, ur.llm_wait_ms, ur.llm_duration_ms, ur.llm_retry_count, ur.llm_error_type, ur.llm_error_message, "
+        "ur.created_at, ur.updated_at, "
         "u.status AS user_status, p.nickname AS user_nickname, p.avatar_url AS user_avatar_url "
         "FROM usage_records ur "
         "JOIN users u ON u.id = ur.user_id "
@@ -2221,6 +3143,10 @@ def get_dashboard_summary(*, date_from: str | None = None, date_to: str | None =
         feature_scene_labels = {
             "phone_review_base": "手机号评测",
             "phone_review_aspect_unlock": "维度解锁",
+            "four_pillars_review_base": "四柱八字",
+            "four_pillars_aspect_unlock": "四柱专项解锁",
+            "four_pillars_luck_cycle_render": "四柱大运综评",
+            "four_pillars_luck_year_render": "四柱流年单年",
             "agent_reply": "智能体玄学技能",
             "almanac_query": "黄历查询",
             "five_elements_query": "五行属性查询",
@@ -2938,6 +3864,260 @@ def list_review_aspect_unlocks(*, review_id: str, user_id: str) -> list[dict[str
     return [_deserialize_review_aspect_unlock_row(row) for row in rows]
 
 
+def create_four_pillars_aspect_unlock(*, review_id: str, user_id: str, aspect_key: str, points_cost: int, usage_scene: str, request_payload_summary: dict[str, Any] | None, now_text: str, channel: str | None = None) -> dict[str, Any]:
+    normalized_points_cost = max(0, int(points_cost))
+    usage_record_id = uuid4().hex
+    with open_connection() as connection:
+        existing = _get_four_pillars_aspect_unlock_in_connection(connection, review_id=review_id, user_id=user_id, aspect_key=aspect_key)
+        if existing is not None:
+            return existing
+        if normalized_points_cost > 0:
+            _spend_points_in_connection(
+                connection,
+                user_id=user_id,
+                points_cost=normalized_points_cost,
+                biz_type=usage_scene,
+                biz_id=review_id,
+                idempotency_key=f"four_pillars:aspect_unlock:{review_id}:{aspect_key}",
+                remark=f"four_pillars_aspect_unlock:{aspect_key}",
+                now_text=now_text,
+            )
+        connection.execute(
+            "INSERT INTO four_pillars_aspect_unlocks (id, review_id, user_id, aspect_key, points_cost, usage_record_id, unlocked_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (uuid4().hex, review_id, user_id, aspect_key, normalized_points_cost, usage_record_id, now_text),
+        )
+        _create_usage_record_in_connection(
+            connection,
+            usage_record_id=usage_record_id,
+            user_id=user_id,
+            scene=usage_scene,
+            channel=channel,
+            target_id=review_id,
+            points_cost=normalized_points_cost,
+            status="completed",
+            request_payload_summary=request_payload_summary,
+            result_summary={"status": "completed", "aspect_key": aspect_key},
+            created_at=now_text,
+            updated_at=now_text,
+        )
+        row = connection.execute(
+            "SELECT id, review_id, user_id, aspect_key, points_cost, usage_record_id, unlocked_at FROM four_pillars_aspect_unlocks WHERE review_id = ? AND user_id = ? AND aspect_key = ?",
+            (review_id, user_id, aspect_key),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("four_pillars_aspect_unlock_create_failed")
+    return _deserialize_review_aspect_unlock_row(row)
+
+
+def list_four_pillars_aspect_unlocks(*, review_id: str, user_id: str) -> list[dict[str, Any]]:
+    with open_connection() as connection:
+        rows = connection.execute(
+            "SELECT id, review_id, user_id, aspect_key, points_cost, usage_record_id, unlocked_at FROM four_pillars_aspect_unlocks WHERE review_id = ? AND user_id = ? ORDER BY unlocked_at DESC, id DESC",
+            (review_id, user_id),
+        ).fetchall()
+    return [_deserialize_review_aspect_unlock_row(row) for row in rows]
+
+
+def create_four_pillars_luck_render_request(
+    *,
+    review_id: str,
+    user_id: str,
+    render_type: str,
+    cycle_key: str,
+    year: int | None,
+    points_cost: int,
+    usage_scene: str,
+    request_payload_summary: dict[str, Any] | None,
+    facts: dict[str, Any] | None,
+    now_text: str,
+    channel: str | None = None,
+) -> dict[str, Any]:
+    normalized_render_type = _normalize_optional_text(render_type) or ""
+    if normalized_render_type not in {"dayun", "liunian"}:
+        raise ValueError("invalid_luck_render_type")
+    normalized_cycle_key = _normalize_optional_text(cycle_key) or ""
+    if not normalized_cycle_key:
+        raise ValueError("invalid_luck_cycle_key")
+    normalized_year = int(year or 0)
+    normalized_points_cost = max(0, int(points_cost))
+    usage_record_id = uuid4().hex
+    with open_connection() as connection:
+        existing = _get_four_pillars_luck_render_in_connection(
+            connection,
+            review_id=review_id,
+            user_id=user_id,
+            render_type=normalized_render_type,
+            cycle_key=normalized_cycle_key,
+            year=normalized_year,
+        )
+        if existing is not None and existing["status"] in {"processing", "completed"}:
+            return existing
+
+        render_id = existing["id"] if existing is not None else uuid4().hex
+        if normalized_points_cost > 0:
+            _spend_points_in_connection(
+                connection,
+                user_id=user_id,
+                points_cost=normalized_points_cost,
+                biz_type=usage_scene,
+                biz_id=render_id,
+                idempotency_key=f"four_pillars:luck:{render_id}:{usage_record_id}",
+                remark=f"four_pillars_luck_render:{normalized_render_type}:{normalized_cycle_key}:{normalized_year}",
+                now_text=now_text,
+            )
+        if existing is None:
+            connection.execute(
+                """
+                INSERT INTO four_pillars_luck_renders (
+                    id, review_id, user_id, render_type, cycle_key, year, status, progress_message,
+                    points_cost, usage_record_id, facts_json, result_json, error_message, retry_count,
+                    last_attempt_at, next_retry_available_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?, ?)
+                """,
+                (
+                    render_id,
+                    review_id,
+                    user_id,
+                    normalized_render_type,
+                    normalized_cycle_key,
+                    normalized_year,
+                    "processing",
+                    "DeepSeek 正在生成内容",
+                    normalized_points_cost,
+                    usage_record_id,
+                    json.dumps(facts, ensure_ascii=False) if isinstance(facts, dict) else None,
+                    0,
+                    now_text,
+                    now_text,
+                    now_text,
+                ),
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE four_pillars_luck_renders
+                SET status = ?, progress_message = ?, points_cost = ?, usage_record_id = ?, facts_json = ?,
+                    result_json = NULL, error_message = NULL, retry_count = ?, last_attempt_at = ?,
+                    next_retry_available_at = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    "processing",
+                    "DeepSeek 正在生成内容",
+                    normalized_points_cost,
+                    usage_record_id,
+                    json.dumps(facts, ensure_ascii=False) if isinstance(facts, dict) else None,
+                    int(existing.get("retry_count") or 0) + 1,
+                    now_text,
+                    now_text,
+                    render_id,
+                ),
+            )
+        _create_usage_record_in_connection(
+            connection,
+            usage_record_id=usage_record_id,
+            user_id=user_id,
+            scene=usage_scene,
+            channel=channel,
+            target_id=review_id,
+            points_cost=normalized_points_cost,
+            status="processing",
+            request_payload_summary=request_payload_summary,
+            result_summary=None,
+            created_at=now_text,
+            updated_at=now_text,
+        )
+        row = connection.execute(
+            """
+            SELECT id, review_id, user_id, render_type, cycle_key, year, status, progress_message,
+                   points_cost, usage_record_id, facts_json, result_json, error_message, retry_count,
+                   last_attempt_at, next_retry_available_at, created_at, updated_at
+            FROM four_pillars_luck_renders
+            WHERE id = ?
+            """,
+            (render_id,),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("four_pillars_luck_render_create_failed")
+    return _deserialize_four_pillars_luck_render_row(row)
+
+
+def get_four_pillars_luck_render(*, review_id: str, user_id: str, render_type: str, cycle_key: str, year: int | None = None) -> dict[str, Any] | None:
+    with open_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT id, review_id, user_id, render_type, cycle_key, year, status, progress_message,
+                   points_cost, usage_record_id, facts_json, result_json, error_message, retry_count,
+                   last_attempt_at, next_retry_available_at, created_at, updated_at
+            FROM four_pillars_luck_renders
+            WHERE review_id = ? AND user_id = ? AND render_type = ? AND cycle_key = ? AND year = ?
+            """,
+            (review_id, user_id, render_type, cycle_key, int(year or 0)),
+        ).fetchone()
+    return _deserialize_four_pillars_luck_render_row(row) if row is not None else None
+
+
+def get_four_pillars_luck_render_by_id(render_id: str) -> dict[str, Any] | None:
+    with open_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT id, review_id, user_id, render_type, cycle_key, year, status, progress_message,
+                   points_cost, usage_record_id, facts_json, result_json, error_message, retry_count,
+                   last_attempt_at, next_retry_available_at, created_at, updated_at
+            FROM four_pillars_luck_renders
+            WHERE id = ?
+            """,
+            (render_id,),
+        ).fetchone()
+    return _deserialize_four_pillars_luck_render_row(row) if row is not None else None
+
+
+def list_four_pillars_luck_renders(*, review_id: str, user_id: str | None = None) -> list[dict[str, Any]]:
+    conditions = ["review_id = ?"]
+    parameters: list[Any] = [review_id]
+    if _normalize_optional_text(user_id):
+        conditions.append("user_id = ?")
+        parameters.append(user_id)
+    with open_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT id, review_id, user_id, render_type, cycle_key, year, status, progress_message,
+                   points_cost, usage_record_id, facts_json, result_json, error_message, retry_count,
+                   last_attempt_at, next_retry_available_at, created_at, updated_at
+            FROM four_pillars_luck_renders
+            WHERE """
+            + " AND ".join(conditions)
+            + " ORDER BY updated_at DESC, id DESC",
+            parameters,
+        ).fetchall()
+    return [_deserialize_four_pillars_luck_render_row(row) for row in rows]
+
+
+def complete_four_pillars_luck_render(*, render_id: str, result: dict[str, Any], progress_message: str | None, updated_at: str) -> None:
+    with open_connection() as connection:
+        connection.execute(
+            """
+            UPDATE four_pillars_luck_renders
+            SET status = ?, progress_message = ?, result_json = ?, error_message = NULL,
+                next_retry_available_at = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            ("completed", progress_message or "生成完成", json.dumps(result, ensure_ascii=False), updated_at, render_id),
+        )
+
+
+def fail_four_pillars_luck_render(*, render_id: str, error_message: str, updated_at: str) -> None:
+    with open_connection() as connection:
+        connection.execute(
+            """
+            UPDATE four_pillars_luck_renders
+            SET status = ?, progress_message = ?, error_message = ?, next_retry_available_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            ("retryable", "生成失败，可重试", error_message, updated_at, updated_at, render_id),
+        )
+
+
 def get_runtime_config_entry(*, scope_type: str, scope_key: str, config_key: str) -> dict[str, Any] | None:
     with open_connection() as connection:
         row = connection.execute(
@@ -3104,6 +4284,51 @@ def fail_usage_record(*, usage_record_id: str, result_summary: dict[str, Any] | 
         )
 
 
+def update_usage_record_llm_metrics(
+    *,
+    usage_record_id: str,
+    llm_key_id: str | None = None,
+    llm_key_name: str | None = None,
+    llm_model: str | None = None,
+    llm_priority_class: str | None = None,
+    llm_wait_ms: int | None = None,
+    llm_duration_ms: int | None = None,
+    llm_retry_count: int | None = None,
+    llm_error_type: str | None = None,
+    llm_error_message: str | None = None,
+    updated_at: str | None = None,
+) -> None:
+    assignments: list[str] = []
+    parameters: list[Any] = []
+    mapping = {
+        "llm_key_id": llm_key_id,
+        "llm_key_name": llm_key_name,
+        "llm_model": llm_model,
+        "llm_priority_class": llm_priority_class,
+        "llm_wait_ms": llm_wait_ms,
+        "llm_duration_ms": llm_duration_ms,
+        "llm_retry_count": llm_retry_count,
+        "llm_error_type": llm_error_type,
+        "llm_error_message": llm_error_message,
+    }
+    for field, value in mapping.items():
+        if value is None:
+            continue
+        assignments.append(f"{field} = ?")
+        if field == "llm_error_message":
+            parameters.append(str(value)[:500])
+        else:
+            parameters.append(value)
+    if updated_at:
+        assignments.append("updated_at = ?")
+        parameters.append(updated_at)
+    if not assignments:
+        return
+    parameters.append(usage_record_id)
+    with open_connection() as connection:
+        connection.execute(f"UPDATE usage_records SET {', '.join(assignments)} WHERE id = ?", parameters)
+
+
 
 def _spend_points_in_connection(connection: sqlite3.Connection, *, user_id: str, points_cost: int, biz_type: str, biz_id: str | None, idempotency_key: str | None, remark: str | None, now_text: str) -> dict[str, Any]:
     existing = _get_points_ledger_by_idempotency_key(connection, user_id=user_id, idempotency_key=idempotency_key)
@@ -3242,6 +4467,104 @@ def _deserialize_points_ledger_row(row: sqlite3.Row) -> dict[str, Any]:
     return {"ledger_id": row["id"], "user_id": row["user_id"], "change_type": row["change_type"], "delta": row["delta"], "balance_after": row["balance_after"], "biz_type": row["biz_type"], "biz_id": row["biz_id"], "idempotency_key": row["idempotency_key"], "remark": row["remark"], "created_at": row["created_at"]}
 
 
+_POINTS_CLAIM_LINK_SELECT_SQL = """
+SELECT
+    l.id,
+    l.claim_code,
+    l.title,
+    l.points_amount,
+    l.display_value_cents,
+    l.status,
+    l.valid_from,
+    l.expires_at,
+    l.created_by,
+    l.disabled_by,
+    l.disabled_at,
+    l.operator_note,
+    l.created_at,
+    l.updated_at,
+    COUNT(CASE WHEN r.status = 'granted' THEN 1 END) AS claimed_user_count,
+    COALESCE(SUM(CASE WHEN r.status = 'granted' THEN r.points_amount_snapshot ELSE 0 END), 0) AS granted_points_total,
+    COUNT(CASE WHEN r.status = 'already_claimed_this_week' THEN 1 END) AS duplicate_attempt_count
+FROM points_claim_links l
+LEFT JOIN points_claim_records r ON r.claim_link_id = l.id
+"""
+
+_POINTS_CLAIM_RECORD_SELECT_SQL = """
+SELECT
+    r.id,
+    r.claim_link_id,
+    r.user_id,
+    r.week_key,
+    r.week_starts_at,
+    r.status,
+    r.points_amount_snapshot,
+    r.display_value_cents_snapshot,
+    r.ledger_id,
+    r.failure_reason,
+    r.request_ip,
+    r.user_agent,
+    r.created_at,
+    r.updated_at,
+    l.claim_code,
+    l.title AS claim_title,
+    u.uid AS user_uid,
+    p.nickname AS user_nickname,
+    pi.normalized_phone AS user_phone
+FROM points_claim_records r
+JOIN points_claim_links l ON l.id = r.claim_link_id
+JOIN users u ON u.id = r.user_id
+LEFT JOIN user_profiles p ON p.user_id = u.id
+LEFT JOIN user_phone_identities pi ON pi.user_id = u.id AND pi.is_primary = 1
+"""
+
+
+def _deserialize_points_claim_link_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "claim_link_id": row["id"],
+        "claim_code": row["claim_code"],
+        "title": row["title"],
+        "points_amount": int(row["points_amount"] or 0),
+        "display_value_cents": int(row["display_value_cents"] or 0),
+        "status": row["status"],
+        "valid_from": row["valid_from"],
+        "expires_at": row["expires_at"],
+        "created_by": row["created_by"],
+        "disabled_by": row["disabled_by"],
+        "disabled_at": row["disabled_at"],
+        "operator_note": row["operator_note"],
+        "claimed_user_count": int(row["claimed_user_count"] or 0) if "claimed_user_count" in row.keys() else 0,
+        "granted_points_total": int(row["granted_points_total"] or 0) if "granted_points_total" in row.keys() else 0,
+        "duplicate_attempt_count": int(row["duplicate_attempt_count"] or 0) if "duplicate_attempt_count" in row.keys() else 0,
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _deserialize_points_claim_record_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "claim_record_id": row["id"],
+        "claim_link_id": row["claim_link_id"],
+        "claim_code": row["claim_code"] if "claim_code" in row.keys() else None,
+        "claim_title": row["claim_title"] if "claim_title" in row.keys() else None,
+        "user_id": row["user_id"],
+        "user_uid": row["user_uid"] if "user_uid" in row.keys() else None,
+        "user_nickname": row["user_nickname"] if "user_nickname" in row.keys() else None,
+        "user_phone": row["user_phone"] if "user_phone" in row.keys() else None,
+        "week_key": row["week_key"],
+        "week_starts_at": row["week_starts_at"],
+        "status": row["status"],
+        "points_amount_snapshot": int(row["points_amount_snapshot"] or 0),
+        "display_value_cents_snapshot": int(row["display_value_cents_snapshot"] or 0),
+        "ledger_id": row["ledger_id"],
+        "failure_reason": row["failure_reason"],
+        "request_ip": row["request_ip"],
+        "user_agent": row["user_agent"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
 
 def _deserialize_usage_record_row(row: sqlite3.Row) -> dict[str, Any]:
     points_cost = int(row["points_cost"])
@@ -3262,6 +4585,15 @@ def _deserialize_usage_record_row(row: sqlite3.Row) -> dict[str, Any]:
         "user_avatar_url": row["user_avatar_url"] if "user_avatar_url" in row.keys() else None,
         "request_payload_summary": json.loads(row["request_payload_summary"]) if row["request_payload_summary"] else None,
         "result_summary": json.loads(row["result_summary"]) if row["result_summary"] else None,
+        "llm_key_id": row["llm_key_id"] if "llm_key_id" in row.keys() else None,
+        "llm_key_name": row["llm_key_name"] if "llm_key_name" in row.keys() else None,
+        "llm_model": row["llm_model"] if "llm_model" in row.keys() else None,
+        "llm_priority_class": row["llm_priority_class"] if "llm_priority_class" in row.keys() else None,
+        "llm_wait_ms": int(row["llm_wait_ms"]) if "llm_wait_ms" in row.keys() and row["llm_wait_ms"] is not None else None,
+        "llm_duration_ms": int(row["llm_duration_ms"]) if "llm_duration_ms" in row.keys() and row["llm_duration_ms"] is not None else None,
+        "llm_retry_count": int(row["llm_retry_count"]) if "llm_retry_count" in row.keys() and row["llm_retry_count"] is not None else 0,
+        "llm_error_type": row["llm_error_type"] if "llm_error_type" in row.keys() else None,
+        "llm_error_message": row["llm_error_message"] if "llm_error_message" in row.keys() else None,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -3391,6 +4723,32 @@ def _deserialize_review_aspect_unlock_row(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
+def _deserialize_four_pillars_luck_render_row(row: sqlite3.Row) -> dict[str, Any]:
+    year = int(row["year"] or 0)
+    return {
+        "id": row["id"],
+        "render_id": row["id"],
+        "review_id": row["review_id"],
+        "user_id": row["user_id"],
+        "render_type": row["render_type"],
+        "cycle_key": row["cycle_key"],
+        "year": year if year else None,
+        "status": row["status"],
+        "progress_message": row["progress_message"],
+        "points_cost": int(row["points_cost"] or 0),
+        "usage_record_id": row["usage_record_id"],
+        "facts": json.loads(row["facts_json"]) if row["facts_json"] else None,
+        "result": json.loads(row["result_json"]) if row["result_json"] else None,
+        "error_message": row["error_message"],
+        "retry_count": int(row["retry_count"]) if "retry_count" in row.keys() and row["retry_count"] is not None else 0,
+        "last_attempt_at": row["last_attempt_at"] if "last_attempt_at" in row.keys() else None,
+        "next_retry_available_at": row["next_retry_available_at"] if "next_retry_available_at" in row.keys() else None,
+        "is_retryable": str(row["status"] or "") in {"failed", "retryable"},
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
 
 def _deserialize_review_row(row: sqlite3.Row) -> dict[str, Any]:
     return {
@@ -3410,6 +4768,28 @@ def _deserialize_review_row(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
+def _deserialize_four_pillars_review_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "gender": row["gender"],
+        "birth_date": row["birth_date"],
+        "birth_time": row["birth_time"],
+        "timezone": row["timezone"],
+        "birth_place": row["birth_place"],
+        "name": row["name"],
+        "status": row["status"],
+        "progress_stage": row["progress_stage"],
+        "progress_message": row["progress_message"],
+        "score_result": json.loads(row["score_result_json"]) if row["score_result_json"] else None,
+        "score_template": json.loads(row["score_template_json"]) if row["score_template_json"] else None,
+        "score_markdown": row["score_markdown"],
+        "error_message": row["error_message"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
 
 def _deserialize_review_summary_row(row: sqlite3.Row) -> dict[str, Any]:
     return {
@@ -3417,6 +4797,27 @@ def _deserialize_review_summary_row(row: sqlite3.Row) -> dict[str, Any]:
         "user_id": row["user_id"],
         "phone": row["phone"],
         "gender": row["gender"],
+        "status": row["status"],
+        "progress_stage": row["progress_stage"],
+        "progress_message": row["progress_message"],
+        "score_result": json.loads(row["score_result_json"]) if "score_result_json" in row.keys() and row["score_result_json"] else None,
+        "score_template": json.loads(row["score_template_json"]) if "score_template_json" in row.keys() and row["score_template_json"] else None,
+        "error_message": row["error_message"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _deserialize_four_pillars_review_summary_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "gender": row["gender"],
+        "birth_date": row["birth_date"],
+        "birth_time": row["birth_time"],
+        "timezone": row["timezone"],
+        "birth_place": row["birth_place"],
+        "name": row["name"],
         "status": row["status"],
         "progress_stage": row["progress_stage"],
         "progress_message": row["progress_message"],
@@ -3444,6 +4845,34 @@ def _deserialize_internal_phone_qimen_review_row(row: sqlite3.Row) -> dict[str, 
         "base_points_cost": int(row["base_points_cost"] or 0),
         "unlock_count": int(row["unlock_count"] or 0),
         "voice_count": int(row["voice_count"] or 0),
+        "generation_duration_seconds": int(duration) if duration is not None else None,
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _deserialize_internal_four_pillars_review_row(row: sqlite3.Row) -> dict[str, Any]:
+    duration = row["generation_duration_seconds"]
+    return {
+        "review_id": row["id"],
+        "user_id": row["user_id"],
+        "user_uid": row["user_uid"],
+        "user_nickname": row["user_nickname"],
+        "user_phone": row["user_phone"],
+        "gender": row["gender"],
+        "birth_date": row["birth_date"],
+        "birth_time": row["birth_time"],
+        "timezone": row["timezone"],
+        "birth_place": row["birth_place"],
+        "name": row["name"],
+        "status": row["status"],
+        "progress_stage": row["progress_stage"],
+        "progress_message": row["progress_message"],
+        "error_message": row["error_message"],
+        "channel": row["channel"],
+        "base_points_cost": int(row["base_points_cost"] or 0),
+        "unlock_count": int(row["unlock_count"] or 0),
+        "voice_count": 0,
         "generation_duration_seconds": int(duration) if duration is not None else None,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -3586,6 +5015,10 @@ def _scene_to_feature_name(scene: str) -> str | None:
     scene_map = {
         "phone_review_base": "手机号评测",
         "phone_review_aspect_unlock": "维度解锁",
+        "four_pillars_review_base": "四柱八字",
+        "four_pillars_aspect_unlock": "四柱专项解锁",
+        "four_pillars_luck_cycle_render": "四柱大运综评",
+        "four_pillars_luck_year_render": "四柱流年单年",
         "agent_reply": "智能体对话",
         "almanac_query": "黄历查询",
         "five_elements_query": "五行属性查询",
@@ -3596,10 +5029,24 @@ def _scene_to_feature_name(scene: str) -> str | None:
     return scene_map.get(normalized_scene)
 
 
+LLM_API_KEY_PUBLIC_SELECT_SQL = (
+    "id, provider, model, display_name, masked_key, secret_ref, "
+    "CASE WHEN IFNULL(secret_value, '') != '' THEN 1 ELSE 0 END AS secret_configured, "
+    "enabled, priority, max_concurrency, cooldown_seconds, last_rate_limited_at, "
+    "last_error_message, last_used_at, remark, last_operator, created_at, updated_at"
+)
+LLM_API_KEY_SECRET_SELECT_SQL = (
+    "id, provider, model, display_name, masked_key, secret_ref, secret_value, "
+    "CASE WHEN IFNULL(secret_value, '') != '' THEN 1 ELSE 0 END AS secret_configured, "
+    "enabled, priority, max_concurrency, cooldown_seconds, last_rate_limited_at, "
+    "last_error_message, last_used_at, remark, last_operator, created_at, updated_at"
+)
+
+
 def list_llm_api_keys() -> list[dict[str, Any]]:
     with open_connection() as connection:
         rows = connection.execute(
-            "SELECT id, provider, model, display_name, masked_key, secret_ref, CASE WHEN IFNULL(secret_value, '') != '' THEN 1 ELSE 0 END AS secret_configured, enabled, priority, remark, last_operator, created_at, updated_at FROM llm_api_keys ORDER BY enabled DESC, priority ASC, updated_at DESC, id DESC"
+            f"SELECT {LLM_API_KEY_PUBLIC_SELECT_SQL} FROM llm_api_keys ORDER BY enabled DESC, priority ASC, updated_at DESC, id DESC"
         ).fetchall()
     return [_deserialize_llm_api_key_row(row) for row in rows]
 
@@ -3607,7 +5054,7 @@ def list_llm_api_keys() -> list[dict[str, Any]]:
 def get_llm_api_key(key_id: str) -> dict[str, Any] | None:
     with open_connection() as connection:
         row = connection.execute(
-            "SELECT id, provider, model, display_name, masked_key, secret_ref, secret_value, CASE WHEN IFNULL(secret_value, '') != '' THEN 1 ELSE 0 END AS secret_configured, enabled, priority, remark, last_operator, created_at, updated_at FROM llm_api_keys WHERE id = ?",
+            f"SELECT {LLM_API_KEY_SECRET_SELECT_SQL} FROM llm_api_keys WHERE id = ?",
             (key_id,),
         ).fetchone()
     return _deserialize_llm_api_key_row(row, include_secret=True) if row is not None else None
@@ -3625,7 +5072,7 @@ def get_enabled_llm_api_key(*, provider: str, model: str | None = None) -> dict[
         parameters.append(normalized_model)
     with open_connection() as connection:
         row = connection.execute(
-            "SELECT id, provider, model, display_name, masked_key, secret_ref, secret_value, CASE WHEN IFNULL(secret_value, '') != '' THEN 1 ELSE 0 END AS secret_configured, enabled, priority, remark, last_operator, created_at, updated_at FROM llm_api_keys WHERE "
+            f"SELECT {LLM_API_KEY_SECRET_SELECT_SQL} FROM llm_api_keys WHERE "
             + " AND ".join(conditions)
             + " ORDER BY priority ASC, updated_at DESC, id DESC LIMIT 1",
             parameters,
@@ -3633,7 +5080,27 @@ def get_enabled_llm_api_key(*, provider: str, model: str | None = None) -> dict[
     return _deserialize_llm_api_key_row(row, include_secret=True) if row is not None else None
 
 
-def upsert_llm_api_key(*, key_id: str | None, provider: str, model: str, display_name: str, masked_key: str, secret_ref: str, secret_value: str | None, enabled: bool, priority: int, remark: str | None, last_operator: str | None, now_text: str) -> dict[str, Any]:
+def list_enabled_llm_api_keys(*, provider: str, model: str | None = None) -> list[dict[str, Any]]:
+    normalized_provider = _normalize_optional_text(provider)
+    normalized_model = _normalize_optional_text(model)
+    if not normalized_provider:
+        return []
+    conditions = ["provider = ?", "enabled = 1", "IFNULL(secret_value, '') != ''"]
+    parameters: list[Any] = [normalized_provider]
+    if normalized_model:
+        conditions.append("model = ?")
+        parameters.append(normalized_model)
+    with open_connection() as connection:
+        rows = connection.execute(
+            f"SELECT {LLM_API_KEY_SECRET_SELECT_SQL} FROM llm_api_keys WHERE "
+            + " AND ".join(conditions)
+            + " ORDER BY priority ASC, updated_at DESC, id DESC",
+            parameters,
+        ).fetchall()
+    return [_deserialize_llm_api_key_row(row, include_secret=True) for row in rows]
+
+
+def upsert_llm_api_key(*, key_id: str | None, provider: str, model: str, display_name: str, masked_key: str, secret_ref: str, secret_value: str | None, enabled: bool, priority: int, max_concurrency: int, cooldown_seconds: int, remark: str | None, last_operator: str | None, now_text: str) -> dict[str, Any]:
     normalized_key_id = _normalize_optional_text(key_id) or uuid4().hex
     normalized_secret_value = _normalize_optional_text(secret_value)
     if normalized_secret_value is None and key_id:
@@ -3644,8 +5111,8 @@ def upsert_llm_api_key(*, key_id: str | None, provider: str, model: str, display
     with open_connection() as connection:
         connection.execute(
             """
-            INSERT INTO llm_api_keys (id, provider, model, display_name, masked_key, secret_ref, secret_value, enabled, priority, remark, last_operator, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO llm_api_keys (id, provider, model, display_name, masked_key, secret_ref, secret_value, enabled, priority, max_concurrency, cooldown_seconds, remark, last_operator, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id)
             DO UPDATE SET
                 provider = excluded.provider,
@@ -3656,6 +5123,8 @@ def upsert_llm_api_key(*, key_id: str | None, provider: str, model: str, display
                 secret_value = excluded.secret_value,
                 enabled = excluded.enabled,
                 priority = excluded.priority,
+                max_concurrency = excluded.max_concurrency,
+                cooldown_seconds = excluded.cooldown_seconds,
                 remark = excluded.remark,
                 last_operator = excluded.last_operator,
                 updated_at = excluded.updated_at
@@ -3670,6 +5139,8 @@ def upsert_llm_api_key(*, key_id: str | None, provider: str, model: str, display
                 normalized_secret_value,
                 int(bool(enabled)),
                 int(priority),
+                max(1, int(max_concurrency)),
+                max(1, int(cooldown_seconds)),
                 remark,
                 last_operator,
                 now_text,
@@ -3677,7 +5148,7 @@ def upsert_llm_api_key(*, key_id: str | None, provider: str, model: str, display
             ),
         )
         row = connection.execute(
-            "SELECT id, provider, model, display_name, masked_key, secret_ref, CASE WHEN IFNULL(secret_value, '') != '' THEN 1 ELSE 0 END AS secret_configured, enabled, priority, remark, last_operator, created_at, updated_at FROM llm_api_keys WHERE id = ?",
+            f"SELECT {LLM_API_KEY_PUBLIC_SELECT_SQL} FROM llm_api_keys WHERE id = ?",
             (normalized_key_id,),
         ).fetchone()
     if row is None:
@@ -3688,6 +5159,25 @@ def upsert_llm_api_key(*, key_id: str | None, provider: str, model: str, display
 def delete_llm_api_key(key_id: str) -> None:
     with open_connection() as connection:
         connection.execute("DELETE FROM llm_api_keys WHERE id = ?", (key_id,))
+
+
+def update_llm_api_key_runtime_state(*, key_id: str, last_used_at: str | None = None, last_rate_limited_at: str | None = None, last_error_message: str | None = None) -> None:
+    assignments: list[str] = []
+    parameters: list[Any] = []
+    if _normalize_optional_text(last_used_at):
+        assignments.append("last_used_at = ?")
+        parameters.append(last_used_at)
+    if _normalize_optional_text(last_rate_limited_at):
+        assignments.append("last_rate_limited_at = ?")
+        parameters.append(last_rate_limited_at)
+    if last_error_message is not None:
+        assignments.append("last_error_message = ?")
+        parameters.append(str(last_error_message)[:500] if str(last_error_message).strip() else None)
+    if not assignments:
+        return
+    parameters.append(key_id)
+    with open_connection() as connection:
+        connection.execute(f"UPDATE llm_api_keys SET {', '.join(assignments)} WHERE id = ?", parameters)
 
 
 def _deserialize_llm_api_key_row(row: sqlite3.Row, *, include_secret: bool = False) -> dict[str, Any]:
@@ -3701,6 +5191,11 @@ def _deserialize_llm_api_key_row(row: sqlite3.Row, *, include_secret: bool = Fal
         "secret_configured": bool(row["secret_configured"]) if "secret_configured" in row.keys() else False,
         "enabled": bool(row["enabled"]),
         "priority": int(row["priority"]),
+        "max_concurrency": int(row["max_concurrency"]) if "max_concurrency" in row.keys() and row["max_concurrency"] is not None else 450,
+        "cooldown_seconds": int(row["cooldown_seconds"]) if "cooldown_seconds" in row.keys() and row["cooldown_seconds"] is not None else 60,
+        "last_rate_limited_at": row["last_rate_limited_at"] if "last_rate_limited_at" in row.keys() else None,
+        "last_error_message": row["last_error_message"] if "last_error_message" in row.keys() else None,
+        "last_used_at": row["last_used_at"] if "last_used_at" in row.keys() else None,
         "remark": row["remark"],
         "last_operator": row["last_operator"],
         "created_at": row["created_at"],
@@ -3773,6 +5268,86 @@ def _get_payment_transaction_by_order_idempotency_key_in_connection(connection: 
     return _deserialize_payment_transaction_row(row) if row is not None else None
 
 
+def _get_points_claim_link_row_in_connection(
+    connection: sqlite3.Connection,
+    *,
+    link_id: str | None = None,
+    claim_code: str | None = None,
+) -> sqlite3.Row | None:
+    normalized_link_id = _normalize_optional_text(link_id)
+    normalized_claim_code = _normalize_optional_text(claim_code)
+    if normalized_link_id:
+        return connection.execute(
+            _POINTS_CLAIM_LINK_SELECT_SQL + " WHERE l.id = ? GROUP BY l.id",
+            (normalized_link_id,),
+        ).fetchone()
+    if normalized_claim_code:
+        return connection.execute(
+            _POINTS_CLAIM_LINK_SELECT_SQL + " WHERE l.claim_code = ? GROUP BY l.id",
+            (normalized_claim_code,),
+        ).fetchone()
+    return None
+
+
+def _get_granted_claim_record_for_user_week(
+    connection: sqlite3.Connection,
+    *,
+    user_id: str,
+    week_key: str,
+) -> sqlite3.Row | None:
+    return connection.execute(
+        _POINTS_CLAIM_RECORD_SELECT_SQL + " WHERE r.user_id = ? AND r.week_key = ? AND r.status = 'granted' ORDER BY r.created_at DESC, r.id DESC LIMIT 1",
+        (user_id, week_key),
+    ).fetchone()
+
+
+def _insert_points_claim_record_in_connection(
+    connection: sqlite3.Connection,
+    *,
+    link: dict[str, Any],
+    user_id: str,
+    week_key: str,
+    week_starts_at: str,
+    status: str,
+    ledger_id: str | None,
+    failure_reason: str | None,
+    request_ip: str | None,
+    user_agent: str | None,
+    now_text: str,
+) -> dict[str, Any]:
+    record_id = uuid4().hex
+    connection.execute(
+        """
+        INSERT INTO points_claim_records (
+            id, claim_link_id, user_id, week_key, week_starts_at, status,
+            points_amount_snapshot, display_value_cents_snapshot, ledger_id,
+            failure_reason, request_ip, user_agent, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            record_id,
+            str(link["claim_link_id"]),
+            user_id,
+            week_key,
+            week_starts_at,
+            status,
+            int(link["points_amount"]),
+            int(link["display_value_cents"]),
+            ledger_id,
+            _normalize_optional_text(failure_reason),
+            _normalize_optional_text(request_ip),
+            _normalize_optional_text(user_agent)[:512] if _normalize_optional_text(user_agent) else None,
+            now_text,
+            now_text,
+        ),
+    )
+    row = connection.execute(_POINTS_CLAIM_RECORD_SELECT_SQL + " WHERE r.id = ?", (record_id,)).fetchone()
+    if row is None:
+        raise RuntimeError("points_claim_record_create_failed")
+    return _deserialize_points_claim_record_row(row)
+
+
 def _profile_completed(nickname: str | None, avatar_url: str | None) -> int:
     return int(bool(_normalize_optional_text(nickname)) and bool(_normalize_optional_text(avatar_url)))
 
@@ -3820,6 +5395,50 @@ def _normalize_user_identity_for_output(identity_level: Any) -> str:
         return "normal_user"
 
 
+SHANGHAI_TIMEZONE = timezone(timedelta(hours=8))
+MAX_POINTS_CLAIM_DURATION = timedelta(days=30)
+
+
+def _parse_iso_datetime(value: str) -> datetime:
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _validate_points_claim_window(*, valid_from: str, expires_at: str) -> None:
+    valid_from_dt = _parse_iso_datetime(valid_from)
+    expires_at_dt = _parse_iso_datetime(expires_at)
+    if expires_at_dt <= valid_from_dt:
+        raise ValueError("expires_at_must_be_after_valid_from")
+    if expires_at_dt - valid_from_dt > MAX_POINTS_CLAIM_DURATION:
+        raise ValueError("points_claim_duration_too_long")
+
+
+def _points_claim_link_effective_status(link: dict[str, Any], *, now_text: str) -> str:
+    status = str(link.get("status") or "").strip().lower()
+    if status == "disabled":
+        return "disabled"
+    now_dt = _parse_iso_datetime(now_text)
+    valid_from = _parse_iso_datetime(str(link["valid_from"]))
+    expires_at = _parse_iso_datetime(str(link["expires_at"]))
+    if now_dt < valid_from:
+        return "not_started"
+    if now_dt >= expires_at:
+        return "expired"
+    return status or "active"
+
+
+def _build_shanghai_week_window(now_text: str) -> tuple[str, str]:
+    now_dt = _parse_iso_datetime(now_text).astimezone(SHANGHAI_TIMEZONE)
+    week_start = (now_dt - timedelta(days=now_dt.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    iso_year, iso_week, _ = week_start.isocalendar()
+    return f"{iso_year}-W{iso_week:02d}", week_start.isoformat()
+
+
 def _utc_now_text() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -3848,6 +5467,36 @@ def _get_review_aspect_unlock_in_connection(connection: sqlite3.Connection, *, r
         (review_id, user_id, aspect_key),
     ).fetchone()
     return _deserialize_review_aspect_unlock_row(row) if row is not None else None
+
+
+def _get_four_pillars_aspect_unlock_in_connection(connection: sqlite3.Connection, *, review_id: str, user_id: str, aspect_key: str) -> dict[str, Any] | None:
+    row = connection.execute(
+        "SELECT id, review_id, user_id, aspect_key, points_cost, usage_record_id, unlocked_at FROM four_pillars_aspect_unlocks WHERE review_id = ? AND user_id = ? AND aspect_key = ?",
+        (review_id, user_id, aspect_key),
+    ).fetchone()
+    return _deserialize_review_aspect_unlock_row(row) if row is not None else None
+
+
+def _get_four_pillars_luck_render_in_connection(
+    connection: sqlite3.Connection,
+    *,
+    review_id: str,
+    user_id: str,
+    render_type: str,
+    cycle_key: str,
+    year: int,
+) -> dict[str, Any] | None:
+    row = connection.execute(
+        """
+        SELECT id, review_id, user_id, render_type, cycle_key, year, status, progress_message,
+               points_cost, usage_record_id, facts_json, result_json, error_message, retry_count,
+               last_attempt_at, next_retry_available_at, created_at, updated_at
+        FROM four_pillars_luck_renders
+        WHERE review_id = ? AND user_id = ? AND render_type = ? AND cycle_key = ? AND year = ?
+        """,
+        (review_id, user_id, render_type, cycle_key, int(year or 0)),
+    ).fetchone()
+    return _deserialize_four_pillars_luck_render_row(row) if row is not None else None
 
 
 _USER_SELECT_SQL = """

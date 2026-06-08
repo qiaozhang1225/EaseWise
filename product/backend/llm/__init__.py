@@ -5,11 +5,22 @@ from .deepseek import (
     DeepSeekAPIError,
     DeepSeekClient,
     DeepSeekConfig,
+    DeepSeekHTTPError,
     DeepSeekResponse,
     DeepSeekStreamChunk,
     ToolLoopResult,
     build_messages,
     load_env_file,
+)
+from .governor import (
+    DEFAULT_COOLDOWN_SECONDS,
+    DEFAULT_MAX_CONCURRENCY,
+    LLMGovernorError,
+    LLMLease,
+    PriorityClass,
+    get_deepseek_governor,
+    get_deepseek_governor_status,
+    normalize_priority_class,
 )
 
 __all__ = [
@@ -19,9 +30,18 @@ __all__ = [
     "DeepSeekAPIError",
     "DeepSeekClient",
     "DeepSeekConfig",
+    "DeepSeekHTTPError",
     "DeepSeekResponse",
     "DeepSeekStreamChunk",
     "ToolLoopResult",
+    "DEFAULT_COOLDOWN_SECONDS",
+    "DEFAULT_MAX_CONCURRENCY",
+    "LLMGovernorError",
+    "LLMLease",
+    "PriorityClass",
     "build_messages",
+    "get_deepseek_governor",
+    "get_deepseek_governor_status",
     "load_env_file",
+    "normalize_priority_class",
 ]

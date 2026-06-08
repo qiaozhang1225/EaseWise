@@ -1,8 +1,10 @@
 export const EASEWISE_STORAGE_KEYS = {
   points: 'easewise_points',
   lastPhoneReport: 'easewise_last_phone_report',
+  lastFourPillarsReport: 'easewise_last_four_pillars_report',
   accessToken: 'easewise_access_token',
   lastReviewId: 'easewise_last_review_id',
+  lastFourPillarsReviewId: 'easewise_last_four_pillars_review_id',
   userSnapshot: 'easewise_user_snapshot',
   agentConversation: 'easewise_agent_conversation',
   voiceEnabled: 'easewise_voice_enabled',

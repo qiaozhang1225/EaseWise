@@ -4,7 +4,16 @@ import type {
   AuthLoginResponse,
   CurrentUserResponse,
   DashboardResponse,
+  FourPillarsAspectUnlockResponse,
+  FourPillarsCreatePayload,
+  FourPillarsLuckCycleListResponse,
+  FourPillarsLuckRenderRecord,
+  FourPillarsReviewListResponse,
+  FourPillarsReviewRecord,
   Gender,
+  InternalFourPillarsReviewDetailResponse,
+  InternalFourPillarsReviewListResponse,
+  InternalFourPillarsSummaryResponse,
   InternalPhoneQimenReviewDetailResponse,
   InternalPhoneQimenReviewListResponse,
   InternalPhoneQimenSummaryResponse,
@@ -22,6 +31,7 @@ import type {
   InternalUserListResponse,
   LlmApiKeyListResponse,
   LlmApiKeyResponse,
+  LlmConcurrencyStatusResponse,
   ManualPointsAdjustResponse,
   PaymentTransactionResponse,
   PhonePasswordLoginRequest,
@@ -31,6 +41,11 @@ import type {
   PasswordChangeRequest,
   PasswordChangeResponse,
   RebatePointsAdjustResponse,
+  PointsClaimLinkListResponse,
+  PointsClaimLinkResponse,
+  PointsClaimRecordListResponse,
+  PointsClaimSubmitResponse,
+  PublicPointsClaimLinkResponse,
   RefundRequestResponse,
   RechargeOrderListResponse,
   RechargeOrderManualCompleteResponse,
@@ -239,6 +254,19 @@ export function listMyPointsLedger(accessToken: string, limit = 20): Promise<Poi
   });
 }
 
+export function getPublicPointsClaimLink(claimCode: string, accessToken?: string | null): Promise<PublicPointsClaimLinkResponse> {
+  return requestJson<PublicPointsClaimLinkResponse>(`/api/v1/points-claims/${encodeURIComponent(claimCode)}`, {
+    accessToken,
+  });
+}
+
+export function claimPublicPoints(accessToken: string, claimCode: string): Promise<PointsClaimSubmitResponse> {
+  return requestJson<PointsClaimSubmitResponse>(`/api/v1/points-claims/${encodeURIComponent(claimCode)}/claim`, {
+    method: 'POST',
+    accessToken,
+  });
+}
+
 export function listRechargePackages(accessToken: string): Promise<RechargePackageListResponse> {
   return requestJson<RechargePackageListResponse>('/api/v1/billing/recharge-packages', {
     accessToken,
@@ -322,6 +350,72 @@ export function unlockPhoneReviewAspect(accessToken: string, reviewId: string, a
   });
 }
 
+export function createFourPillarsReview(accessToken: string, payload: FourPillarsCreatePayload): Promise<FourPillarsReviewRecord> {
+  return requestJson<FourPillarsReviewRecord>('/api/v1/four-pillars/reviews', {
+    method: 'POST',
+    accessToken,
+    body: {
+      timezone: 'Asia/Shanghai',
+      include_markdown: true,
+      ...payload,
+    },
+  });
+}
+
+export function listFourPillarsReviews(accessToken: string, limit = 20): Promise<FourPillarsReviewListResponse> {
+  return requestJson<FourPillarsReviewListResponse>(`/api/v1/four-pillars/reviews?limit=${limit}`, {
+    accessToken,
+  });
+}
+
+export function getFourPillarsReviewDetail(accessToken: string, reviewId: string): Promise<FourPillarsReviewRecord> {
+  return requestJson<FourPillarsReviewRecord>(`/api/v1/four-pillars/reviews/${reviewId}`, {
+    accessToken,
+  });
+}
+
+export function unlockFourPillarsReviewAspect(accessToken: string, reviewId: string, aspectKey: string): Promise<FourPillarsAspectUnlockResponse> {
+  return requestJson<FourPillarsAspectUnlockResponse>(`/api/v1/four-pillars/reviews/${reviewId}/aspect-unlocks`, {
+    method: 'POST',
+    accessToken,
+    body: {
+      aspect_key: aspectKey,
+    },
+  });
+}
+
+export function getFourPillarsLuckCycles(accessToken: string, reviewId: string): Promise<FourPillarsLuckCycleListResponse> {
+  return requestJson<FourPillarsLuckCycleListResponse>(`/api/v1/four-pillars/reviews/${encodeURIComponent(reviewId)}/luck-cycles`, {
+    accessToken,
+  });
+}
+
+export function createFourPillarsLuckCycleSummary(accessToken: string, reviewId: string, cycleKey: string): Promise<FourPillarsLuckRenderRecord> {
+  return requestJson<FourPillarsLuckRenderRecord>(`/api/v1/four-pillars/reviews/${encodeURIComponent(reviewId)}/luck-cycles/${encodeURIComponent(cycleKey)}/summary`, {
+    method: 'POST',
+    accessToken,
+  });
+}
+
+export function getFourPillarsLuckCycleSummary(accessToken: string, reviewId: string, cycleKey: string): Promise<FourPillarsLuckRenderRecord> {
+  return requestJson<FourPillarsLuckRenderRecord>(`/api/v1/four-pillars/reviews/${encodeURIComponent(reviewId)}/luck-cycles/${encodeURIComponent(cycleKey)}/summary`, {
+    accessToken,
+  });
+}
+
+export function createFourPillarsLuckYearSummary(accessToken: string, reviewId: string, cycleKey: string, year: number): Promise<FourPillarsLuckRenderRecord> {
+  return requestJson<FourPillarsLuckRenderRecord>(`/api/v1/four-pillars/reviews/${encodeURIComponent(reviewId)}/luck-cycles/${encodeURIComponent(cycleKey)}/years/${encodeURIComponent(String(year))}`, {
+    method: 'POST',
+    accessToken,
+  });
+}
+
+export function getFourPillarsLuckYearSummary(accessToken: string, reviewId: string, cycleKey: string, year: number): Promise<FourPillarsLuckRenderRecord> {
+  return requestJson<FourPillarsLuckRenderRecord>(`/api/v1/four-pillars/reviews/${encodeURIComponent(reviewId)}/luck-cycles/${encodeURIComponent(cycleKey)}/years/${encodeURIComponent(String(year))}`, {
+    accessToken,
+  });
+}
+
 export function createVoiceNarration(accessToken: string, payload: VoiceNarrationRequest): Promise<VoiceNarrationResponse> {
   return requestJson<VoiceNarrationResponse>('/api/v1/voice/narrations', {
     method: 'POST',
@@ -344,6 +438,12 @@ export function listInternalLlmApiKeys(adminToken: string, params: Record<string
   });
 }
 
+export function getInternalLlmConcurrency(adminToken: string): Promise<LlmConcurrencyStatusResponse> {
+  return requestJson<LlmConcurrencyStatusResponse>('/api/v1/internal/llm/concurrency', {
+    adminToken,
+  });
+}
+
 export type InternalLlmApiKeyPayload = {
   provider: string;
   model: string;
@@ -353,6 +453,8 @@ export type InternalLlmApiKeyPayload = {
   secret_value?: string | null;
   enabled: boolean;
   priority: number;
+  max_concurrency?: number;
+  cooldown_seconds?: number;
   remark?: string | null;
   last_operator?: string | null;
 };
@@ -406,6 +508,24 @@ export function listInternalPhoneQimenReviews(adminToken: string, params: Record
 
 export function getInternalPhoneQimenReview(adminToken: string, reviewId: string): Promise<InternalPhoneQimenReviewDetailResponse> {
   return requestJson<InternalPhoneQimenReviewDetailResponse>(`/api/v1/internal/phone-qimen/reviews/${encodeURIComponent(reviewId)}`, {
+    adminToken,
+  });
+}
+
+export function getInternalFourPillarsSummary(adminToken: string): Promise<InternalFourPillarsSummaryResponse> {
+  return requestJson<InternalFourPillarsSummaryResponse>('/api/v1/internal/four-pillars/summary', {
+    adminToken,
+  });
+}
+
+export function listInternalFourPillarsReviews(adminToken: string, params: Record<string, QueryValue> = {}): Promise<InternalFourPillarsReviewListResponse> {
+  return requestJson<InternalFourPillarsReviewListResponse>(`/api/v1/internal/four-pillars/reviews${toQueryString(params)}`, {
+    adminToken,
+  });
+}
+
+export function getInternalFourPillarsReview(adminToken: string, reviewId: string): Promise<InternalFourPillarsReviewDetailResponse> {
+  return requestJson<InternalFourPillarsReviewDetailResponse>(`/api/v1/internal/four-pillars/reviews/${encodeURIComponent(reviewId)}`, {
     adminToken,
   });
 }
@@ -491,6 +611,40 @@ export function adjustInternalUserRebatePoints(adminToken: string, userId: strin
     method: 'POST',
     adminToken,
     body: payload,
+  });
+}
+
+export function listInternalPointsClaimLinks(adminToken: string, params: Record<string, QueryValue> = {}): Promise<PointsClaimLinkListResponse> {
+  return requestJson<PointsClaimLinkListResponse>(`/api/v1/internal/points-claims${toQueryString(params)}`, {
+    adminToken,
+  });
+}
+
+export function createInternalPointsClaimLink(adminToken: string, payload: {title: string; points_amount: number; display_value_cents: number; expires_in_hours?: number | null; expires_at?: string | null; operator_note?: string | null}): Promise<PointsClaimLinkResponse> {
+  return requestJson<PointsClaimLinkResponse>('/api/v1/internal/points-claims', {
+    method: 'POST',
+    adminToken,
+    body: payload,
+  });
+}
+
+export function getInternalPointsClaimLink(adminToken: string, claimLinkId: string): Promise<PointsClaimLinkResponse> {
+  return requestJson<PointsClaimLinkResponse>(`/api/v1/internal/points-claims/${encodeURIComponent(claimLinkId)}`, {
+    adminToken,
+  });
+}
+
+export function disableInternalPointsClaimLink(adminToken: string, claimLinkId: string, payload: {operator_note?: string | null} = {}): Promise<PointsClaimLinkResponse> {
+  return requestJson<PointsClaimLinkResponse>(`/api/v1/internal/points-claims/${encodeURIComponent(claimLinkId)}/disable`, {
+    method: 'POST',
+    adminToken,
+    body: payload,
+  });
+}
+
+export function listInternalPointsClaimRecords(adminToken: string, claimLinkId: string, params: Record<string, QueryValue> = {}): Promise<PointsClaimRecordListResponse> {
+  return requestJson<PointsClaimRecordListResponse>(`/api/v1/internal/points-claims/${encodeURIComponent(claimLinkId)}/records${toQueryString(params)}`, {
+    adminToken,
   });
 }
 

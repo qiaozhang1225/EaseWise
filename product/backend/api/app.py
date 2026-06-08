@@ -8,15 +8,17 @@ from fastapi.staticfiles import StaticFiles
 
 from . import handlers
 from .config import get_uploads_dir, get_voice_cache_dir
-from .routers import account, agent, almanac, auth, billing, phone_qimen, public, runtime_config, voice
+from .routers import account, agent, almanac, auth, billing, four_pillars, phone_qimen, points_claim, public, runtime_config, voice
 from .routers.internal import (
     almanac as internal_almanac,
     billing as internal_billing,
     customer_service as internal_customer_service,
     dashboard as internal_dashboard,
+    four_pillars as internal_four_pillars,
     llm as internal_llm,
     platform as internal_platform,
     phone_qimen as internal_phone_qimen,
+    points_claim as internal_points_claim,
     promotion as internal_promotion,
     runtime_config as internal_runtime_config,
     users as internal_users,
@@ -47,16 +49,20 @@ app.include_router(public.router)
 app.include_router(auth.router)
 app.include_router(account.router)
 app.include_router(billing.router)
+app.include_router(points_claim.router)
 app.include_router(runtime_config.router)
 app.include_router(agent.router)
 app.include_router(almanac.router)
 app.include_router(phone_qimen.router)
+app.include_router(four_pillars.router)
 app.include_router(voice.router)
 app.include_router(internal_dashboard.router)
 app.include_router(internal_users.router)
 app.include_router(internal_phone_qimen.router)
+app.include_router(internal_four_pillars.router)
 app.include_router(internal_almanac.router)
 app.include_router(internal_platform.router)
+app.include_router(internal_points_claim.router)
 app.include_router(internal_runtime_config.router)
 app.include_router(internal_customer_service.router)
 app.include_router(internal_billing.router)

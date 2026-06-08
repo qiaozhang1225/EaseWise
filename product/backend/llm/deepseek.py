@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator, Sequence
 from urllib import error, request
+
+from .governor import get_deepseek_governor
 
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 BETA_BASE_URL = "https://api.deepseek.com/beta"
@@ -17,6 +20,13 @@ ToolHandler = Callable[[dict[str, Any]], Any]
 
 class DeepSeekAPIError(RuntimeError):
     pass
+
+
+class DeepSeekHTTPError(DeepSeekAPIError):
+    def __init__(self, status_code: int, detail: str) -> None:
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(f"DeepSeek HTTP {status_code}: {detail}")
 
 
 def _get_configured_deepseek_key() -> dict[str, Any] | None:
@@ -62,7 +72,7 @@ def build_messages(
 
 @dataclass
 class DeepSeekConfig:
-    api_key: str
+    api_key: str = ""
     base_url: str = DEFAULT_BASE_URL
     model: str = DEFAULT_MODEL
     timeout_seconds: float = 45.0
@@ -83,9 +93,6 @@ class DeepSeekConfig:
         if configured_key:
             api_key = str(configured_key.get("secret_value") or "").strip()
             model = str(configured_key.get("model") or model).strip() or model
-        if not api_key:
-            raise DeepSeekAPIError("Missing DeepSeek API key. Set it in the admin system configuration or `DEEPSEEK_API_KEY`.")
-
         timeout_raw = os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "45").strip() or "45"
         temp_raw = os.getenv("DEEPSEEK_TEMPERATURE", "0").strip()
         thinking_raw = os.getenv("DEEPSEEK_THINKING_ENABLED", "true").strip().lower()
@@ -117,6 +124,7 @@ class DeepSeekResponse:
     tool_calls: list[dict[str, Any]]
     finish_reason: str | None
     usage: dict[str, Any] | None
+    llm_meta: dict[str, Any] | None = None
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "DeepSeekResponse":
@@ -196,6 +204,10 @@ class DeepSeekClient:
         tools: Sequence[dict[str, Any]] | None = None,
         tool_choice: str | dict[str, Any] | None = None,
         extra_body: dict[str, Any] | None = None,
+        llm_scene: str | None = None,
+        priority_class: str | None = None,
+        user_id: str | None = None,
+        request_id: str | None = None,
     ) -> DeepSeekResponse:
         payload = self._build_payload(
             messages=messages,
@@ -211,8 +223,28 @@ class DeepSeekClient:
             stream=False,
         )
         base_url = self._resolve_base_url(tools=tools)
-        raw = self._request_json(base_url, payload)
-        return DeepSeekResponse.from_payload(raw)
+        payload_model = str(payload.get("model") or model or self.config.model)
+        lease = get_deepseek_governor().acquire(
+            model=payload_model,
+            priority_class=priority_class,
+            llm_scene=llm_scene,
+            user_id=user_id,
+            request_id=request_id,
+        )
+        request_started_at = time.monotonic()
+        try:
+            raw = self._request_json(base_url, payload, api_key=lease.api_key)
+            response = DeepSeekResponse.from_payload(raw)
+            duration_ms = int((time.monotonic() - request_started_at) * 1000)
+            response.llm_meta = lease.to_meta(duration_ms=duration_ms)
+            lease.release()
+            return response
+        except Exception as exc:
+            error_type = _classify_error(exc)
+            if isinstance(exc, DeepSeekHTTPError) and exc.status_code == 429:
+                lease.mark_rate_limited(detail=exc.detail)
+            lease.release(error_type=error_type, error_message=str(exc))
+            raise
 
     def stream_chat(
         self,
@@ -227,6 +259,10 @@ class DeepSeekClient:
         tools: Sequence[dict[str, Any]] | None = None,
         tool_choice: str | dict[str, Any] | None = None,
         extra_body: dict[str, Any] | None = None,
+        llm_scene: str | None = None,
+        priority_class: str | None = None,
+        user_id: str | None = None,
+        request_id: str | None = None,
     ) -> Iterator[DeepSeekStreamChunk]:
         payload = self._build_payload(
             messages=messages,
@@ -242,7 +278,31 @@ class DeepSeekClient:
             stream=True,
         )
         base_url = self._resolve_base_url(tools=tools)
-        yield from self._stream_request(base_url, payload)
+        payload_model = str(payload.get("model") or model or self.config.model)
+
+        def iterator() -> Iterator[DeepSeekStreamChunk]:
+            lease = get_deepseek_governor().acquire(
+                model=payload_model,
+                priority_class=priority_class,
+                llm_scene=llm_scene,
+                user_id=user_id,
+                request_id=request_id,
+            )
+            error_type: str | None = None
+            error_message: str | None = None
+            try:
+                for chunk in self._stream_request(base_url, payload, api_key=lease.api_key):
+                    yield chunk
+            except Exception as exc:
+                error_type = _classify_error(exc)
+                error_message = str(exc)
+                if isinstance(exc, DeepSeekHTTPError) and exc.status_code == 429:
+                    lease.mark_rate_limited(detail=exc.detail)
+                raise
+            finally:
+                lease.release(error_type=error_type, error_message=error_message)
+
+        return iterator()
 
     def chat_text(
         self,
@@ -296,6 +356,10 @@ class DeepSeekClient:
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = "auto",
         extra_body: dict[str, Any] | None = None,
+        llm_scene: str | None = None,
+        priority_class: str | None = None,
+        user_id: str | None = None,
+        request_id: str | None = None,
     ) -> ToolLoopResult:
         conversation: list[Message] = [dict(message) for message in messages]
         tool_results: list[dict[str, Any]] = []
@@ -310,6 +374,10 @@ class DeepSeekClient:
                 tools=tools,
                 tool_choice=tool_choice,
                 extra_body=extra_body,
+                llm_scene=llm_scene,
+                priority_class=priority_class,
+                user_id=user_id,
+                request_id=request_id,
             )
             conversation.append(response.assistant_message())
             if not response.tool_calls:
@@ -407,14 +475,14 @@ class DeepSeekClient:
             payload.update(extra_body)
         return payload
 
-    def _request_json(self, base_url: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _request_json(self, base_url: str, payload: dict[str, Any], *, api_key: str) -> dict[str, Any]:
         endpoint = f"{base_url.rstrip('/')}/chat/completions"
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = request.Request(
             endpoint,
             data=body,
             headers={
-                "Authorization": f"Bearer {self.config.api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             method="POST",
@@ -425,18 +493,18 @@ class DeepSeekClient:
                 return json.loads(resp.read().decode("utf-8"))
         except error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            raise DeepSeekAPIError(f"DeepSeek HTTP {exc.code}: {detail}") from exc
+            raise DeepSeekHTTPError(exc.code, detail) from exc
         except error.URLError as exc:
             raise DeepSeekAPIError(f"DeepSeek network error: {exc.reason}") from exc
 
-    def _stream_request(self, base_url: str, payload: dict[str, Any]) -> Iterator[DeepSeekStreamChunk]:
+    def _stream_request(self, base_url: str, payload: dict[str, Any], *, api_key: str) -> Iterator[DeepSeekStreamChunk]:
         endpoint = f"{base_url.rstrip('/')}/chat/completions"
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = request.Request(
             endpoint,
             data=body,
             headers={
-                "Authorization": f"Bearer {self.config.api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
                 "Accept": "text/event-stream",
             },
@@ -447,7 +515,7 @@ class DeepSeekClient:
             response = request.urlopen(req, timeout=self.config.timeout_seconds)
         except error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            raise DeepSeekAPIError(f"DeepSeek HTTP {exc.code}: {detail}") from exc
+            raise DeepSeekHTTPError(exc.code, detail) from exc
         except error.URLError as exc:
             raise DeepSeekAPIError(f"DeepSeek network error: {exc.reason}") from exc
 
@@ -480,3 +548,16 @@ class DeepSeekClient:
                 response.close()
 
         return iterator()
+
+
+def _classify_error(exc: Exception) -> str:
+    if isinstance(exc, DeepSeekHTTPError):
+        if exc.status_code == 429:
+            return "rate_limited"
+        return f"http_{exc.status_code}"
+    text = str(exc).lower()
+    if "timed out" in text or "timeout" in text:
+        return "timeout"
+    if "network" in text or "urlerror" in text:
+        return "network"
+    return exc.__class__.__name__

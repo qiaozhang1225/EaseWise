@@ -15,6 +15,7 @@ const {
 } = useEaseWiseApp();
 
 const copied = ref(false);
+const copyError = ref('');
 const qrCodeFailed = ref(false);
 
 const visible = computed(() => state.contactServiceModalVisible);
@@ -29,15 +30,46 @@ async function copyWechatId(): Promise<void> {
   if (!hasWechatId.value) {
     return;
   }
-  await navigator.clipboard.writeText(wechatId.value);
-  copied.value = true;
-  window.setTimeout(() => {
-    copied.value = false;
-  }, 1800);
+  copyError.value = '';
+  try {
+    await copyTextToClipboard(wechatId.value);
+    copied.value = true;
+    window.setTimeout(() => {
+      copied.value = false;
+    }, 1800);
+  } catch {
+    copyError.value = '复制失败，请手动长按或选中微信号复制。';
+  }
+}
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const input = document.createElement('textarea');
+  input.value = text;
+  input.setAttribute('readonly', 'true');
+  input.style.position = 'fixed';
+  input.style.left = '-9999px';
+  input.style.top = '0';
+  document.body.appendChild(input);
+  input.focus();
+  input.select();
+
+  try {
+    if (!document.execCommand('copy')) {
+      throw new Error('copy_failed');
+    }
+  } finally {
+    document.body.removeChild(input);
+  }
 }
 
 function handleClose(): void {
   copied.value = false;
+  copyError.value = '';
   closeCustomerServiceModal();
 }
 </script>
@@ -112,6 +144,9 @@ function handleClose(): void {
             </div>
             <p v-if="!hasWechatId" class="mt-2 font-sans text-[10px] leading-relaxed text-amber-700">
               {{ customerServiceUnconfiguredText }}
+            </p>
+            <p v-else-if="copyError" class="mt-2 font-sans text-[10px] leading-relaxed text-red-600">
+              {{ copyError }}
             </p>
           </div>
 

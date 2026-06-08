@@ -1,5 +1,5 @@
 export type Gender = 'male' | 'female';
-export type ReviewStatus = 'processing' | 'completed' | 'failed';
+export type ReviewStatus = 'processing' | 'completed' | 'failed' | 'retryable';
 export type ReviewProgressStage = 'queued' | 'scoring' | 'rendering' | 'finalizing' | 'completed' | 'failed';
 export type VoiceNarrationScene = 'phone_summary' | 'phone_stability' | 'phone_aspect';
 export type VoiceNarrationFormat = 'mp3';
@@ -127,6 +127,178 @@ export interface ReviewListResponse {
   offset: number;
 }
 
+export interface FourPillarsSummary {
+  title: string;
+  risk: string;
+  usage_guidance: string;
+  elements_check: Record<string, string>;
+}
+
+export interface FourPillarsAspect {
+  aspect_key: string;
+  title: string;
+  short_title: string | null;
+  score: number | null;
+  is_unlocked: boolean;
+  unlock_points: number;
+  content: string | null;
+  risk: string | null;
+  elements_check: Record<string, string>;
+}
+
+export interface FourPillarsLuckRenderRecord {
+  id: string;
+  render_id: string;
+  review_id: string;
+  user_id: string;
+  render_type: 'dayun' | 'liunian';
+  cycle_key: string;
+  year: number | null;
+  status: ReviewStatus;
+  progress_message: string | null;
+  facts: Record<string, unknown> | null;
+  result: Record<string, unknown> | null;
+  points_cost: number;
+  error_message: string | null;
+  retry_count: number;
+  last_attempt_at: string | null;
+  next_retry_available_at: string | null;
+  is_retryable: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FourPillarsLuckYearItem {
+  year: number;
+  age: number | null;
+  ganzhi: string;
+  stem?: string | null;
+  branch?: string | null;
+  stem_ten_god?: string | null;
+  stem_element?: string | null;
+  branch_element?: string | null;
+  is_current: boolean;
+  render_status: 'not_generated' | ReviewStatus | string;
+  render: FourPillarsLuckRenderRecord | null;
+}
+
+export interface FourPillarsLuckCycle {
+  cycle_key: string;
+  start_year: number;
+  end_year: number;
+  start_age: number | null;
+  end_age: number | null;
+  ganzhi: string | null;
+  display_ganzhi: string | null;
+  is_current: boolean;
+  stem?: string | null;
+  branch?: string | null;
+  stem_ten_god?: string | null;
+  stem_element?: string | null;
+  branch_element?: string | null;
+  render_status: 'not_generated' | ReviewStatus | string;
+  render: FourPillarsLuckRenderRecord | null;
+  year_items: FourPillarsLuckYearItem[];
+}
+
+export interface FourPillarsLuckAnalysis {
+  enabled: boolean;
+  cycle_points_cost: number;
+  year_points_cost: number;
+  current_cycle_key: string | null;
+  cycles: FourPillarsLuckCycle[];
+}
+
+export interface FourPillarsLuckCycleListResponse {
+  luck_analysis: FourPillarsLuckAnalysis;
+}
+
+export interface FourPillarsCreatePayload {
+  gender: Gender;
+  birth_date: string;
+  birth_time: string;
+  timezone?: string | null;
+  birth_place?: string | null;
+  name?: string | null;
+  include_markdown?: boolean;
+}
+
+export interface FourPillarsReviewRecord {
+  id: string;
+  report_id: string;
+  gender: Gender;
+  birth_date: string;
+  birth_time: string;
+  timezone: string;
+  birth_place: string | null;
+  name: string | null;
+  status: ReviewStatus;
+  progress_stage: ReviewProgressStage | null;
+  progress_message: string | null;
+  score: number | null;
+  input_profile: Record<string, unknown>;
+  chart: Record<string, unknown> | null;
+  summary: FourPillarsSummary | null;
+  deterministic_facts: Record<string, unknown>;
+  aspects: FourPillarsAspect[];
+  analysis_branches: Record<string, unknown>;
+  luck_analysis: FourPillarsLuckAnalysis | null;
+  aspect_unlock_points: number | null;
+  free_aspect_keys: string[];
+  unlock_enforcement_enabled: boolean | null;
+  score_markdown: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FourPillarsReviewSummary {
+  id: string;
+  report_id: string;
+  gender: Gender;
+  birth_date: string;
+  birth_time: string;
+  timezone: string;
+  birth_place: string | null;
+  name: string | null;
+  status: ReviewStatus;
+  progress_stage: ReviewProgressStage | null;
+  progress_message: string | null;
+  score: number | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FourPillarsReviewListResponse {
+  items: FourPillarsReviewSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface FourPillarsAspectUnlockResponse {
+  unlock_id: string;
+  review_id: string;
+  user_id: string;
+  aspect_key: string;
+  points_cost: number;
+  usage_record_id: string;
+  unlocked_at: string;
+  points: PointsAccountResponse | null;
+  aspect: FourPillarsAspect | null;
+}
+
+export interface FourPillarsAspectUnlockListResponse {
+  items: FourPillarsAspectUnlockResponse[];
+  available_aspect_keys: string[];
+  free_aspect_keys: string[];
+  unlocked_aspect_keys: string[];
+  aspect_unlock_points_cost: number;
+  unlock_enforcement_enabled: boolean;
+  aspects: FourPillarsAspect[];
+}
+
 export interface AlmanacResponse {
   solar_date: string;
   display_date: string;
@@ -178,6 +350,7 @@ export interface DashboardResponse {
   users: Record<string, unknown>;
   orders: Record<string, unknown>;
   promotion: Record<string, unknown>;
+  llm: Record<string, unknown>;
   sections: DashboardSection[];
 }
 
@@ -217,6 +390,86 @@ export interface PointsLedgerListResponse {
   items: PointsLedgerEntryResponse[];
 }
 
+export interface PointsClaimLinkResponse {
+  claim_link_id: string;
+  claim_code: string;
+  claim_url: string;
+  title: string;
+  points_amount: number;
+  display_value_cents: number;
+  status: string;
+  effective_status: string;
+  valid_from: string;
+  expires_at: string;
+  claimed_user_count: number;
+  granted_points_total: number;
+  duplicate_attempt_count: number;
+  created_by: string | null;
+  disabled_by: string | null;
+  disabled_at: string | null;
+  operator_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PointsClaimLinkListResponse {
+  items: PointsClaimLinkResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PointsClaimRecordResponse {
+  claim_record_id: string;
+  claim_link_id: string;
+  claim_code: string | null;
+  claim_title: string | null;
+  user_id: string;
+  user_uid: string | null;
+  user_nickname: string | null;
+  user_phone: string | null;
+  week_key: string;
+  week_starts_at: string;
+  status: string;
+  points_amount_snapshot: number;
+  display_value_cents_snapshot: number;
+  ledger_id: string | null;
+  failure_reason: string | null;
+  request_ip: string | null;
+  user_agent: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PointsClaimRecordListResponse {
+  items: PointsClaimRecordResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PublicPointsClaimLinkResponse {
+  claim_code: string;
+  title: string;
+  points_amount: number;
+  display_value_cents: number;
+  status: string;
+  effective_status: string;
+  valid_from: string;
+  expires_at: string;
+  current_user_claim_status: string | null;
+  current_user_claim_record: PointsClaimRecordResponse | null;
+}
+
+export interface PointsClaimSubmitResponse {
+  claim_status: string;
+  message: string;
+  points: PointsAccountResponse | null;
+  ledger: PointsLedgerEntryResponse | null;
+  record: PointsClaimRecordResponse | null;
+  already_claimed_record: PointsClaimRecordResponse | null;
+}
+
 export interface RechargePackageResponse {
   package_key: string;
   title: string;
@@ -240,6 +493,9 @@ export interface ModuleRuntimeConfigResponse {
   free_aspect_keys?: string[] | null;
   aspect_order?: string[] | null;
   unlock_enforcement_enabled?: boolean | null;
+  luck_cycle_points_cost?: number | null;
+  luck_year_points_cost?: number | null;
+  luck_generation_enabled?: boolean | null;
   metaphysics_skill_enabled?: boolean | null;
 }
 
@@ -279,6 +535,7 @@ export interface PublicRuntimeConfigResponse {
   };
   modules: {
     phone_review: ModuleRuntimeConfigResponse;
+    four_pillars: ModuleRuntimeConfigResponse;
     agent: ModuleRuntimeConfigResponse;
     almanac: ModuleRuntimeConfigResponse;
     voice: VoiceRuntimeConfigResponse;
@@ -546,6 +803,15 @@ export interface UsageRecordResponse {
   user_avatar_url: string | null;
   request_payload_summary: Record<string, unknown> | null;
   result_summary: Record<string, unknown> | null;
+  llm_key_id: string | null;
+  llm_key_name: string | null;
+  llm_model: string | null;
+  llm_priority_class: string | null;
+  llm_wait_ms: number | null;
+  llm_duration_ms: number | null;
+  llm_retry_count: number;
+  llm_error_type: string | null;
+  llm_error_message: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -635,6 +901,48 @@ export interface InternalPhoneQimenReviewDetailResponse {
   voice_records: UsageRecordResponse[];
 }
 
+export interface InternalFourPillarsSummaryResponse extends InternalPhoneQimenSummaryResponse {}
+
+export interface InternalFourPillarsReviewItemResponse {
+  review_id: string;
+  user_id: string | null;
+  user_uid: string | null;
+  user_nickname: string | null;
+  user_phone: string | null;
+  gender: Gender;
+  birth_date: string;
+  birth_time: string;
+  timezone: string;
+  birth_place: string | null;
+  name: string | null;
+  status: ReviewStatus;
+  progress_stage: ReviewProgressStage | null;
+  progress_message: string | null;
+  error_message: string | null;
+  channel: string | null;
+  base_points_cost: number;
+  unlock_count: number;
+  voice_count: number;
+  generation_duration_seconds: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InternalFourPillarsReviewListResponse {
+  items: InternalFourPillarsReviewItemResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface InternalFourPillarsAspectUnlockRecordResponse extends InternalPhoneQimenAspectUnlockRecordResponse {}
+
+export interface InternalFourPillarsReviewDetailResponse {
+  review: InternalFourPillarsReviewItemResponse;
+  unlock_records: InternalFourPillarsAspectUnlockRecordResponse[];
+  luck_render_records: FourPillarsLuckRenderRecord[];
+}
+
 export interface LlmApiKeyResponse {
   key_id: string;
   provider: string;
@@ -645,6 +953,14 @@ export interface LlmApiKeyResponse {
   secret_configured: boolean;
   enabled: boolean;
   priority: number;
+  max_concurrency: number;
+  cooldown_seconds: number;
+  current_inflight: number;
+  available_slots: number;
+  cooldown_until: string | null;
+  last_rate_limited_at: string | null;
+  last_error_message: string | null;
+  last_used_at: string | null;
   remark: string | null;
   last_operator: string | null;
   created_at: string;
@@ -656,6 +972,43 @@ export interface LlmApiKeyListResponse {
   total: number;
   limit: number;
   offset: number;
+}
+
+export interface LlmConcurrencyKeyResponse {
+  key_id: string;
+  display_name: string;
+  provider: string;
+  model: string;
+  enabled: boolean;
+  priority: number;
+  max_concurrency: number;
+  cooldown_seconds: number;
+  current_inflight: number;
+  available_slots: number;
+  cooldown_until: string | null;
+  last_rate_limited_at: string | null;
+  last_error_message: string | null;
+  last_used_at: string | null;
+}
+
+export interface LlmConcurrencyStatusResponse {
+  backend: string;
+  backend_available: boolean;
+  backend_error: string | null;
+  redis_configured: boolean;
+  global_inflight: number;
+  foreground_waiting: number;
+  background_waiting: number;
+  foreground_inflight: number;
+  background_inflight: number;
+  enabled_key_count: number;
+  total_capacity: number;
+  recent_429_count: number;
+  recent_timeout_count: number;
+  avg_wait_ms: number;
+  avg_duration_ms: number;
+  config: Record<string, unknown>;
+  keys: LlmConcurrencyKeyResponse[];
 }
 
 export interface RuntimeConfigEntryResponse {

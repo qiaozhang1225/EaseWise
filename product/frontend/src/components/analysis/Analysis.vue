@@ -1688,6 +1688,17 @@ function sleep(ms: number): Promise<void> {
         key="input-form"
         class="px-margin-mobile space-y-5 pt-3.5"
       >
+        <div class="flex items-center justify-between">
+          <button
+            type="button"
+            class="h-9 rounded-full bg-white border border-gray-100 px-3.5 text-brand-secondary font-sans text-[12px] font-bold shadow-sm flex items-center gap-1.5"
+            @click="emit('back-to-home')"
+          >
+            <ArrowLeft :size="14" />
+            <span>返回首页</span>
+          </button>
+        </div>
+
         <section class="bg-white rounded-2xl p-4.5 border border-gray-100 shadow-sm relative overflow-hidden text-left font-sans">
           <div class="absolute -right-3 -top-3 w-16 h-16 bg-brand-primary/5 rounded-full"></div>
           <div class="flex items-center gap-2 mb-2">

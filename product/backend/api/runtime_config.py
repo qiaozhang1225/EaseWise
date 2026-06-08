@@ -23,6 +23,7 @@ from .config import (
 )
 from .database import list_runtime_config_entries
 from .phone_review_view import PUBLIC_ASPECT_ORDER
+from features.four_pillars.engine import FOUR_PILLARS_ASPECT_ORDER
 
 GLOBAL_SCOPE_TYPE = "global"
 CHANNEL_SCOPE_TYPE = "channel"
@@ -50,6 +51,14 @@ CONFIG_KEY_PHONE_REVIEW_ASPECT_UNLOCK_POINTS_COST = "phone_review.aspect_unlock_
 CONFIG_KEY_PHONE_REVIEW_FREE_ASPECT_KEYS = "phone_review.free_aspect_keys"
 CONFIG_KEY_PHONE_REVIEW_ASPECT_ORDER = "phone_review.aspect_order"
 CONFIG_KEY_PHONE_REVIEW_UNLOCK_ENFORCEMENT_ENABLED = "phone_review.unlock_enforcement_enabled"
+CONFIG_KEY_FOUR_PILLARS_BASE_POINTS_COST = "four_pillars.base_points_cost"
+CONFIG_KEY_FOUR_PILLARS_ASPECT_UNLOCK_POINTS_COST = "four_pillars.aspect_unlock_points_cost"
+CONFIG_KEY_FOUR_PILLARS_FREE_ASPECT_KEYS = "four_pillars.free_aspect_keys"
+CONFIG_KEY_FOUR_PILLARS_ASPECT_ORDER = "four_pillars.aspect_order"
+CONFIG_KEY_FOUR_PILLARS_UNLOCK_ENFORCEMENT_ENABLED = "four_pillars.unlock_enforcement_enabled"
+CONFIG_KEY_FOUR_PILLARS_LUCK_CYCLE_POINTS_COST = "four_pillars.luck_cycle_points_cost"
+CONFIG_KEY_FOUR_PILLARS_LUCK_YEAR_POINTS_COST = "four_pillars.luck_year_points_cost"
+CONFIG_KEY_FOUR_PILLARS_LUCK_GENERATION_ENABLED = "four_pillars.luck_generation_enabled"
 CONFIG_KEY_CUSTOMER_SERVICE_CONTACT_URL = "customer_service.contact_url"
 CONFIG_KEY_CUSTOMER_SERVICE_WECHAT_ID = "customer_service.wechat_id"
 CONFIG_KEY_CUSTOMER_SERVICE_QR_CODE_URL = "customer_service.qr_code_url"
@@ -188,6 +197,54 @@ def get_runtime_phone_review_unlock_enforcement_enabled(channel_key: str | None 
     return True
 
 
+def get_runtime_four_pillars_base_points_cost(channel_key: str | None = None) -> int:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    return _coerce_int(config_bundle.get(CONFIG_KEY_FOUR_PILLARS_BASE_POINTS_COST), fallback=get_runtime_phone_review_base_points_cost(channel_key), minimum=0)
+
+
+def get_runtime_four_pillars_aspect_unlock_points_cost(channel_key: str | None = None) -> int:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    return _coerce_int(config_bundle.get(CONFIG_KEY_FOUR_PILLARS_ASPECT_UNLOCK_POINTS_COST), fallback=get_runtime_phone_review_aspect_unlock_points_cost(channel_key), minimum=0)
+
+
+def get_runtime_four_pillars_aspect_order(channel_key: str | None = None) -> list[str]:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    configured_order = _coerce_string_list(config_bundle.get(CONFIG_KEY_FOUR_PILLARS_ASPECT_ORDER), fallback=FOUR_PILLARS_ASPECT_ORDER)
+    valid_keys = set(FOUR_PILLARS_ASPECT_ORDER)
+    ordered_items = [item for item in configured_order if item in valid_keys]
+    for item in FOUR_PILLARS_ASPECT_ORDER:
+        if item not in ordered_items:
+            ordered_items.append(item)
+    return ordered_items
+
+
+def get_runtime_four_pillars_free_aspect_keys(channel_key: str | None = None) -> list[str]:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    configured_keys = _coerce_string_list(config_bundle.get(CONFIG_KEY_FOUR_PILLARS_FREE_ASPECT_KEYS), fallback=[])
+    valid_keys = set(FOUR_PILLARS_ASPECT_ORDER)
+    return [item for item in configured_keys if item in valid_keys]
+
+
+def get_runtime_four_pillars_unlock_enforcement_enabled(channel_key: str | None = None) -> bool:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    return _coerce_bool(config_bundle.get(CONFIG_KEY_FOUR_PILLARS_UNLOCK_ENFORCEMENT_ENABLED), fallback=True)
+
+
+def get_runtime_four_pillars_luck_cycle_points_cost(channel_key: str | None = None) -> int:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    return _coerce_int(config_bundle.get(CONFIG_KEY_FOUR_PILLARS_LUCK_CYCLE_POINTS_COST), fallback=50, minimum=0)
+
+
+def get_runtime_four_pillars_luck_year_points_cost(channel_key: str | None = None) -> int:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    return _coerce_int(config_bundle.get(CONFIG_KEY_FOUR_PILLARS_LUCK_YEAR_POINTS_COST), fallback=20, minimum=0)
+
+
+def get_runtime_four_pillars_luck_generation_enabled(channel_key: str | None = None) -> bool:
+    config_bundle = resolve_runtime_config_bundle(channel_key)
+    return _coerce_bool(config_bundle.get(CONFIG_KEY_FOUR_PILLARS_LUCK_GENERATION_ENABLED), fallback=True)
+
+
 def get_runtime_voice_mode(channel_key: str | None = None) -> str:
     config_bundle = resolve_runtime_config_bundle(channel_key)
     value = _coerce_text(config_bundle.get(CONFIG_KEY_VOICE_MODE), fallback=get_voice_mode()).lower()
@@ -296,6 +353,17 @@ def resolve_public_runtime_config(channel_key: str | None = None) -> dict[str, A
                 "free_aspect_keys": get_runtime_phone_review_free_aspect_keys(normalized_channel_key),
                 "aspect_order": get_runtime_phone_review_aspect_order(normalized_channel_key),
                 "unlock_enforcement_enabled": get_runtime_phone_review_unlock_enforcement_enabled(normalized_channel_key),
+            },
+            "four_pillars": {
+                "enabled": is_module_enabled("four_pillars", channel_key=normalized_channel_key),
+                "base_points_cost": get_runtime_four_pillars_base_points_cost(normalized_channel_key),
+                "aspect_unlock_points_cost": get_runtime_four_pillars_aspect_unlock_points_cost(normalized_channel_key),
+                "free_aspect_keys": get_runtime_four_pillars_free_aspect_keys(normalized_channel_key),
+                "aspect_order": get_runtime_four_pillars_aspect_order(normalized_channel_key),
+                "unlock_enforcement_enabled": get_runtime_four_pillars_unlock_enforcement_enabled(normalized_channel_key),
+                "luck_cycle_points_cost": get_runtime_four_pillars_luck_cycle_points_cost(normalized_channel_key),
+                "luck_year_points_cost": get_runtime_four_pillars_luck_year_points_cost(normalized_channel_key),
+                "luck_generation_enabled": get_runtime_four_pillars_luck_generation_enabled(normalized_channel_key),
             },
             "agent": {
                 "enabled": is_module_enabled("agent", channel_key=normalized_channel_key),

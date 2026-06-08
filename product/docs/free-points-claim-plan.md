@@ -19,6 +19,7 @@ V1 不做：
 - 不复用充值订单流程，不产生 0 元充值订单。
 - 不把领取额度做成全局 runtime config，因为每条链接有独立有效期和运营记录。
 - 不允许未登录用户先占位领取。
+- 不在当前阶段实现后台多角色权限体系；创建人先记录为当前 internal admin 上下文，后续再接真实管理员账号和角色管控。
 
 ## 2. 现有代码锚点
 
@@ -62,8 +63,8 @@ V1 不做：
 
 - `title`：运营内部标题，例如 `6 月 6 日客服补偿链接`。
 - `points_amount`：可领取积分，正整数。
-- `display_value_cents`：前台展示的人民币价值，按每条链接配置，避免前台临时推算。
-- `expires_in` 或 `expires_at`：有效期。预设建议为 `1 小时`、`7 小时`、`24 小时`、`7 天`，并保留自定义截止时间。
+- `display_value_cents`：前台展示的人民币价值，由运营手动填写，按每条链接固化，不由充值套餐自动折算。
+- `expires_in` 或 `expires_at`：有效期。预设建议为 `1 小时`、`7 小时`、`24 小时`、`7 天`、`30 天`，并保留自定义截止时间。
 - `operator_note`：创建原因或投放场景，便于客服回溯。
 - `status`：`active` / `disabled` / `expired`，过期可以由查询时动态判断，不一定后台定时改状态。
 
@@ -71,6 +72,7 @@ V1 不做：
 
 - 当前时间 >= `valid_from`。
 - 当前时间 < `expires_at`。
+- `expires_at - valid_from <= 30 天`，超过 30 天的配置后端直接拒绝。
 - 链接 `status = active`。
 - `points_amount > 0`。
 
@@ -97,6 +99,7 @@ V1 不做：
 - 同一个 `user_id` 在同一个 `week_key` 内，只能有一条 `status = granted` 的领取记录。
 - 该限制跨链接生效。用户本周领取 500 分后，访问 1000 分链接也返回 `already_claimed_this_week`。
 - 重复点击同一链接、网络重试、刷新页面，均不得重复加分。
+- 本周已领取用户再次访问任意领取链接时，仍必须新增一条 `already_claimed_this_week` 记录，用于统计活跃与客服排查。
 
 ### 3.4 用户可见状态
 
@@ -188,7 +191,7 @@ WHERE status = 'granted';
 关键点：
 
 - 成功领取用 partial unique index 保证 `user_id + week_key` 只有一条 `granted`。
-- 失败/重复记录不进唯一约束，可以保留多次访问痕迹。
+- 失败/重复记录不进唯一约束；本周已领取后的重复访问必须保留多次访问痕迹。
 - `points_amount_snapshot` 固化当时额度，避免运营之后停用或复制链接时影响历史记录。
 
 ## 5. 后端实现
@@ -262,6 +265,7 @@ with open_connection() as connection:
   - `display_value_cents: int = 0`
   - `expires_in_hours: int | None`
   - `expires_at: str | None`
+  - 后端校验有效期不得超过 30 天。
   - `operator_note: str | None`
 - `PointsClaimLinkResponse`
   - `claim_link_id`
@@ -311,6 +315,7 @@ Public:
   - 如果已登录，额外返回 `current_user_claim_status`，便于页面直接显示已领取。
 - `post_public_points_claim(claim_code, request, current_user=Depends(require_registered_user))`
   - 成功或本周重复都返回 200，靠 `claim_status` 区分。
+  - 本周重复领取也必须写入 `points_claim_records.status='already_claimed_this_week'`，但不写积分流水。
   - 链接不存在用 404。
   - 过期/停用用 409。
 
@@ -368,8 +373,9 @@ Public:
 
 - 标题。
 - 积分数量。
-- 展示人民币价值。
-- 有效期预设：1 小时 / 7 小时 / 24 小时 / 7 天 / 自定义。
+- 展示人民币价值，由运营手动填写。
+- 有效期预设：1 小时 / 7 小时 / 24 小时 / 7 天 / 30 天 / 自定义。
+- 自定义有效期最大 30 天，前端提示且后端兜底校验。
 - 运营备注。
 - 创建按钮。
 
@@ -474,9 +480,10 @@ Public:
 - 成功发放和记录写入必须在同一个数据库事务内。
 - `points_claim_records(user_id, week_key) WHERE status='granted'` 是最终互斥锁。
 - `points_ledgers(user_id, idempotency_key)` 是积分流水级兜底。
-- 本周重复访问不同链接，只返回重复提示，不调用 `_credit_points_in_connection()`。
+- 本周重复访问不同链接，写入重复领取记录并返回重复提示，不调用 `_credit_points_in_connection()`。
 - 后台停用链接后，已成功领取记录保留，未领取用户不能再领。
 - 所有时间对外展示可按北京时间格式化，数据库继续存 ISO 字符串。
+- 链接有效期最大 30 天，前端选择器和后端接口都必须校验。
 
 建议但 V1 可后置：
 
@@ -490,8 +497,8 @@ Public:
 后端最小用例：
 
 1. 创建 500 分链接，登录用户领取成功，余额增加 500，流水 `biz_type=free_points_claim`。
-2. 同一用户重复点击同一链接，返回 `already_claimed_this_week`，余额不变。
-3. 同一用户本周访问另一个 1000 分链接，返回 `already_claimed_this_week`，余额不变。
+2. 同一用户重复点击同一链接，返回 `already_claimed_this_week`，余额不变，并新增一条重复领取记录。
+3. 同一用户本周访问另一个 1000 分链接，返回 `already_claimed_this_week`，余额不变，并新增一条重复领取记录。
 4. 新用户访问 1000 分链接，可成功领取。
 5. 过期链接不能领取。
 6. 停用链接不能领取。

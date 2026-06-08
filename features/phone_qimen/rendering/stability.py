@@ -180,6 +180,8 @@ def render_stability_from_phone(
             thinking_enabled=thinking_enabled,
             temperature=0.2,
             max_tokens=max_tokens,
+            llm_scene="phone_qimen.stability",
+            priority_class="foreground_core",
         )
         model_output = response.json_object()
         model_name = response.model or model
