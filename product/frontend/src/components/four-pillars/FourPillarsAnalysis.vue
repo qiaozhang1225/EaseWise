@@ -95,7 +95,9 @@ const {
 
 const viewState = ref<ViewState>('input');
 const gender = ref<Gender>('male');
-const birthDate = ref('');
+const birthYear = ref('');
+const birthMonth = ref('');
+const birthDay = ref('');
 const birthTime = ref('');
 const birthPlace = ref('');
 const profileName = ref('');
@@ -164,6 +166,7 @@ const hiddenStemMap: Record<string, Array<{ stem: string; element: string }>> = 
 };
 
 const currentReview = computed(() => state.currentFourPillarsReview);
+const birthDate = computed(() => buildBirthDate());
 const userPoints = computed(() => state.points?.balance ?? 0);
 const moduleEnabled = computed(() => state.runtimeConfig?.modules.four_pillars?.enabled ?? true);
 const effectiveBasePoints = computed(() => fourPillarsBasePointsCost.value ?? DEFAULT_BASE_REVIEW_POINTS);
@@ -426,13 +429,46 @@ function showToast(message: string, duration = 2200): void {
   }, duration);
 }
 
+function sanitizeDatePart(value: string, maxLength: number): string {
+  return String(value || '').replace(/\D/gu, '').slice(0, maxLength);
+}
+
+function buildBirthDate(): string {
+  const yearText = sanitizeDatePart(birthYear.value, 4);
+  const monthText = sanitizeDatePart(birthMonth.value, 2);
+  const dayText = sanitizeDatePart(birthDay.value, 2);
+  if (!/^\d{4}$/u.test(yearText) || !/^\d{1,2}$/u.test(monthText) || !/^\d{1,2}$/u.test(dayText)) {
+    return '';
+  }
+  return `${yearText}-${monthText.padStart(2, '0')}-${dayText.padStart(2, '0')}`;
+}
+
+function applyBirthDateParts(value: string): void {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/u);
+  if (!match) {
+    birthYear.value = '';
+    birthMonth.value = '';
+    birthDay.value = '';
+    return;
+  }
+  birthYear.value = match[1];
+  birthMonth.value = String(Number(match[2]));
+  birthDay.value = String(Number(match[3]));
+}
+
 function validateBirthInput(): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/u.test(birthDate.value) || !/^\d{2}:\d{2}$/u.test(birthTime.value)) {
     setError('birth_datetime');
     return false;
   }
   const parsed = new Date(`${birthDate.value}T${birthTime.value}:00`);
-  if (Number.isNaN(parsed.getTime())) {
+  const [yearText, monthText, dayText] = birthDate.value.split('-');
+  if (
+    Number.isNaN(parsed.getTime())
+    || parsed.getFullYear() !== Number(yearText)
+    || parsed.getMonth() + 1 !== Number(monthText)
+    || parsed.getDate() !== Number(dayText)
+  ) {
     setError('birth_datetime');
     return false;
   }
@@ -488,7 +524,7 @@ function syncViewFromReview(review: FourPillarsReviewRecord | null): void {
 
 function applyFormFromReview(review: FourPillarsReviewRecord): void {
   gender.value = review.gender;
-  birthDate.value = review.birth_date;
+  applyBirthDateParts(review.birth_date);
   birthTime.value = review.birth_time;
   birthPlace.value = review.birth_place || '';
   profileName.value = review.name || '';
@@ -798,7 +834,7 @@ function resolveErrorMessage(): string {
   }
   const messageMap: Record<ErrorType, string> = {
     none: '请稍后重试。',
-    birth_datetime: '请选择有效的出生日期和出生时间。',
+    birth_datetime: '请填写有效的出生年月日和出生时间。',
     insufficient_points: '当前积分不足，可充值后继续生成四柱评测。',
     unlock_points_insufficient: '当前积分不足，可充值后继续解锁专项内容。',
     module_disabled: '四柱八字评测当前未开放。',
@@ -899,7 +935,44 @@ function sleep(ms: number): Promise<void> {
               <span class="font-sans text-[12px] text-brand-secondary font-bold flex items-center gap-1.5 mb-1.5">
                 <CalendarDays :size="14" /> 出生日期
               </span>
-              <input v-model="birthDate" type="date" class="w-full h-12 rounded-xl bg-brand-paper border border-transparent px-3 font-sans text-[14px] text-brand-ink-strong outline-none focus:border-brand-primary" />
+              <div class="grid grid-cols-[1.15fr_0.85fr_0.85fr] gap-2">
+                <div class="relative">
+                  <input
+                    v-model="birthYear"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    maxlength="4"
+                    placeholder="1989"
+                    class="w-full h-12 rounded-xl bg-brand-paper border border-transparent pl-3 pr-8 font-sans text-[14px] text-brand-ink-strong outline-none focus:border-brand-primary"
+                    @input="birthYear = sanitizeDatePart(birthYear, 4)"
+                  />
+                  <span class="absolute right-3 top-1/2 -translate-y-1/2 font-sans text-[12px] font-bold text-brand-secondary">年</span>
+                </div>
+                <div class="relative">
+                  <input
+                    v-model="birthMonth"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    maxlength="2"
+                    placeholder="5"
+                    class="w-full h-12 rounded-xl bg-brand-paper border border-transparent pl-3 pr-8 font-sans text-[14px] text-brand-ink-strong outline-none focus:border-brand-primary"
+                    @input="birthMonth = sanitizeDatePart(birthMonth, 2)"
+                  />
+                  <span class="absolute right-3 top-1/2 -translate-y-1/2 font-sans text-[12px] font-bold text-brand-secondary">月</span>
+                </div>
+                <div class="relative">
+                  <input
+                    v-model="birthDay"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    maxlength="2"
+                    placeholder="22"
+                    class="w-full h-12 rounded-xl bg-brand-paper border border-transparent pl-3 pr-8 font-sans text-[14px] text-brand-ink-strong outline-none focus:border-brand-primary"
+                    @input="birthDay = sanitizeDatePart(birthDay, 2)"
+                  />
+                  <span class="absolute right-3 top-1/2 -translate-y-1/2 font-sans text-[12px] font-bold text-brand-secondary">日</span>
+                </div>
+              </div>
             </label>
             <label class="block">
               <span class="font-sans text-[12px] text-brand-secondary font-bold flex items-center gap-1.5 mb-1.5">
