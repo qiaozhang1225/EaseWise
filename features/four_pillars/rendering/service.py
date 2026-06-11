@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from features.four_pillars.engine import FOUR_PILLARS_ASPECT_ORDER, FOUR_PILLARS_ASPECTS, build_dayun_facts, build_liunian_facts
+from features.four_pillars.engine import FOUR_PILLARS_ASPECT_ORDER, FOUR_PILLARS_ASPECTS, build_chart_display, build_dayun_facts, build_liunian_facts
 from features.four_pillars.knowledge import (
     load_aspect_section_knowledge,
     load_aspect_section_model_pack,
@@ -49,6 +49,7 @@ def build_four_pillars_product_view(package: dict[str, Any]) -> dict[str, Any]:
         "score_band": score_result["score_band"],
         "input_profile": score_template["input_profile"],
         "chart": chart,
+        "chart_display": build_chart_display(score_template["input_profile"], chart, facts),
         "summary": summary,
         "deterministic_facts": facts,
         "aspects": build_aspect_public_items(facts, aspects_render),

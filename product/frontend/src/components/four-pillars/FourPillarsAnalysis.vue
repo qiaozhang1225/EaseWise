@@ -6,10 +6,8 @@ import {
   CalendarDays,
   Check,
   Clock,
-  Gem,
   Heart,
   HeartPulse,
-  Leaf,
   Lock,
   MapPin,
   Mountain,
@@ -19,13 +17,13 @@ import {
   TrendingUp,
   UnlockKeyhole,
   User,
-  Waves,
 } from 'lucide-vue-next';
 import { DEFAULT_ASPECT_UNLOCK_POINTS, DEFAULT_BASE_REVIEW_POINTS } from '../../config/pricing';
 import { ApiError } from '../../lib/api';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
-import type { FourPillarsAspect, FourPillarsReviewRecord, Gender, ReviewProgressStage } from '../../types/api';
+import type { FourPillarsAspect, FourPillarsChartDisplay, FourPillarsReviewRecord, Gender, ReviewProgressStage } from '../../types/api';
 import type { FourPillarsLuckCycle, FourPillarsLuckRenderRecord, FourPillarsLuckYearItem } from '../../types/api';
+import FourPillarsNatalTable from './FourPillarsNatalTable.vue';
 
 const emit = defineEmits<{
   (e: 'back-to-home'): void;
@@ -61,6 +59,20 @@ type PillarDisplay = {
   branchElement: string;
   stemTenGod: string;
   branchTenGod: string;
+};
+
+type LuckTableColumn = {
+  label: string;
+  ganzhi: string;
+  stem: string;
+  branch: string;
+  stemElement: string;
+  branchElement: string;
+  stemTenGod: string;
+  hiddenStems: Array<{ stem: string; element: string; ten_god: string }>;
+  diShi: string;
+  selfSitting: string;
+  isLuck?: boolean;
 };
 
 const {
@@ -121,12 +133,34 @@ const aspectUiMap: Record<string, { icon: Component; tint: string; textTint: str
   family_environment: { icon: Mountain, tint: 'bg-slate-50 text-slate-600', textTint: 'text-slate-600' },
 };
 
-const elementUiMap: Record<string, { icon: Component; bar: string; text: string }> = {
-  木: { icon: Leaf, bar: 'bg-emerald-500', text: 'text-emerald-700' },
-  火: { icon: Sparkles, bar: 'bg-red-500', text: 'text-red-700' },
-  土: { icon: Mountain, bar: 'bg-amber-500', text: 'text-amber-700' },
-  金: { icon: Gem, bar: 'bg-slate-500', text: 'text-slate-700' },
-  水: { icon: Waves, bar: 'bg-blue-500', text: 'text-blue-700' },
+const stemInfo: Record<string, { element: '木' | '火' | '土' | '金' | '水'; yinYang: 'yin' | 'yang' }> = {
+  甲: { element: '木', yinYang: 'yang' },
+  乙: { element: '木', yinYang: 'yin' },
+  丙: { element: '火', yinYang: 'yang' },
+  丁: { element: '火', yinYang: 'yin' },
+  戊: { element: '土', yinYang: 'yang' },
+  己: { element: '土', yinYang: 'yin' },
+  庚: { element: '金', yinYang: 'yang' },
+  辛: { element: '金', yinYang: 'yin' },
+  壬: { element: '水', yinYang: 'yang' },
+  癸: { element: '水', yinYang: 'yin' },
+};
+
+const elementProduces: Record<string, string> = { 木: '火', 火: '土', 土: '金', 金: '水', 水: '木' };
+const elementControls: Record<string, string> = { 木: '土', 土: '水', 水: '火', 火: '金', 金: '木' };
+const hiddenStemMap: Record<string, Array<{ stem: string; element: string }>> = {
+  子: [{ stem: '癸', element: '水' }],
+  丑: [{ stem: '己', element: '土' }, { stem: '癸', element: '水' }, { stem: '辛', element: '金' }],
+  寅: [{ stem: '甲', element: '木' }, { stem: '丙', element: '火' }, { stem: '戊', element: '土' }],
+  卯: [{ stem: '乙', element: '木' }],
+  辰: [{ stem: '戊', element: '土' }, { stem: '乙', element: '木' }, { stem: '癸', element: '水' }],
+  巳: [{ stem: '丙', element: '火' }, { stem: '庚', element: '金' }, { stem: '戊', element: '土' }],
+  午: [{ stem: '丁', element: '火' }, { stem: '己', element: '土' }],
+  未: [{ stem: '己', element: '土' }, { stem: '丁', element: '火' }, { stem: '乙', element: '木' }],
+  申: [{ stem: '庚', element: '金' }, { stem: '壬', element: '水' }, { stem: '戊', element: '土' }],
+  酉: [{ stem: '辛', element: '金' }],
+  戌: [{ stem: '戊', element: '土' }, { stem: '辛', element: '金' }, { stem: '丁', element: '火' }],
+  亥: [{ stem: '壬', element: '水' }, { stem: '甲', element: '木' }],
 };
 
 const currentReview = computed(() => state.currentFourPillarsReview);
@@ -174,19 +208,17 @@ const selectedAspectPending = computed(
 );
 const summary = computed(() => currentReview.value?.summary ?? null);
 const chart = computed(() => asRecord(currentReview.value?.chart));
+const chartDisplay = computed<FourPillarsChartDisplay | null>(() => currentReview.value?.chart_display ?? null);
 const facts = computed(() => asRecord(currentReview.value?.deterministic_facts));
 const dayMaster = computed(() => asRecord(facts.value.day_master));
 const strength = computed(() => asRecord(dayMaster.value.strength));
-const interactions = computed(() => asRecord(facts.value.interactions));
 const elementCounts = computed(() => {
   const counts = asRecord(facts.value.element_counts);
   return ['木', '火', '土', '金', '水'].map((element) => ({
     element,
     value: Number(counts[element] ?? 0),
-    ...elementUiMap[element],
   }));
 });
-const maxElementCount = computed(() => Math.max(1, ...elementCounts.value.map((item) => item.value)));
 const pillars = computed<PillarDisplay[]>(() => {
   const rawPillars = asRecord(chart.value.pillars);
   const labels: Record<string, string> = { year: '年柱', month: '月柱', day: '日柱', hour: '时柱' };
@@ -205,17 +237,41 @@ const pillars = computed<PillarDisplay[]>(() => {
     };
   });
 });
+const luckTableColumns = computed<LuckTableColumn[]>(() => {
+  const columns: LuckTableColumn[] = [];
+  const rawPillars = chartDisplay.value?.pillars;
+  const dayStem = rawPillars?.day?.stem || String(chart.value.day_master || '');
+  if (rawPillars) {
+    (['year', 'month', 'day', 'hour'] as const).forEach((key) => {
+      const pillar = rawPillars[key];
+      columns.push({
+        label: pillar.label,
+        ganzhi: pillar.ganzhi,
+        stem: pillar.stem,
+        branch: pillar.branch,
+        stemElement: pillar.stem_element,
+        branchElement: pillar.branch_element,
+        stemTenGod: pillar.stem_ten_god,
+        hiddenStems: pillar.hidden_stems.map((item) => ({ ...item, ten_god: item.ten_god || '-' })),
+        diShi: pillar.di_shi,
+        selfSitting: pillar.self_sitting,
+      });
+    });
+  }
+
+  columns.push(toLuckColumn('大运', selectedLuckCycle.value, dayStem));
+  columns.push(toLuckColumn('流年', selectedLuckYearItem.value, dayStem));
+  return columns;
+});
 const favorableElementsText = computed(() => toStringList(dayMaster.value.favorable_elements).join('、') || '待生成');
 const unfavorableElementsText = computed(() => toStringList(dayMaster.value.unfavorable_elements).join('、') || '待生成');
-const interactionTags = computed(() => {
-  const tags = [
-    ...toStringList(interactions.value.combinations),
-    ...toStringList(interactions.value.six_harmonies),
-    ...toStringList(interactions.value.clashes),
-    ...toStringList(interactions.value.harms),
-    ...toStringList(interactions.value.breaks),
-  ];
-  return tags.length ? tags : ['未见明显合冲刑害破'];
+const elementRatioSummary = computed(() => {
+  const ratioText = elementCounts.value.map((item) => `${item.element}${item.value}`).join('、');
+  const parts = [`五行比例：${ratioText || '待生成'}`];
+  if (strength.value.label) parts.push(`旺衰初判：${strength.value.label}`);
+  if (favorableElementsText.value !== '待生成') parts.push(`喜用候选：${favorableElementsText.value}`);
+  if (unfavorableElementsText.value !== '待生成') parts.push(`节制：${unfavorableElementsText.value}`);
+  return `${parts.join('；')}。`;
 });
 const recentHistory = computed(() => state.fourPillarsHistory.slice(0, 5));
 
@@ -277,6 +333,90 @@ function toStringList(value: unknown): string[] {
     return [];
   }
   return value.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function toLuckColumn(
+  label: '大运' | '流年',
+  item: FourPillarsLuckCycle | FourPillarsLuckYearItem | null,
+  dayStem: string,
+): LuckTableColumn {
+  const stem = String(item?.stem || '').trim();
+  const branch = String(item?.branch || '').trim();
+  const hiddenStems = (hiddenStemMap[branch] || []).map((hidden) => ({
+    stem: hidden.stem,
+    element: hidden.element,
+    ten_god: calculateTenGod(dayStem, hidden.stem),
+  }));
+  return {
+    label,
+    ganzhi: String(item?.ganzhi || ('display_ganzhi' in (item || {}) ? (item as FourPillarsLuckCycle).display_ganzhi : '') || '-'),
+    stem: stem || '-',
+    branch: branch || '-',
+    stemElement: String(item?.stem_element || elementOfStem(stem) || '-'),
+    branchElement: String(item?.branch_element || elementOfBranch(branch) || '-'),
+    stemTenGod: String(item?.stem_ten_god || calculateTenGod(dayStem, stem) || '-'),
+    hiddenStems,
+    diShi: calculateDiShi(dayStem, branch),
+    selfSitting: calculateDiShi(stem, branch),
+    isLuck: true,
+  };
+}
+
+function calculateTenGod(dayStem: string, targetStem: string): string {
+  if (!dayStem || !targetStem || dayStem === '-' || targetStem === '-') return '-';
+  if (dayStem === targetStem) return '日元';
+  const self = stemInfo[dayStem];
+  const target = stemInfo[targetStem];
+  if (!self || !target) return '-';
+  const samePolarity = self.yinYang === target.yinYang;
+  if (self.element === target.element) return samePolarity ? '比肩' : '劫财';
+  if (elementProduces[target.element] === self.element) return samePolarity ? '偏印' : '正印';
+  if (elementProduces[self.element] === target.element) return samePolarity ? '食神' : '伤官';
+  if (elementControls[self.element] === target.element) return samePolarity ? '偏财' : '正财';
+  if (elementControls[target.element] === self.element) return samePolarity ? '七杀' : '正官';
+  return '-';
+}
+
+function elementOfStem(stem: string): string {
+  return stemInfo[stem]?.element || '';
+}
+
+function elementOfBranch(branch: string): string {
+  const hidden = hiddenStemMap[branch]?.[0];
+  return hidden?.element || '';
+}
+
+function calculateDiShi(dayStem: string, branch: string): string {
+  const branchOrder = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
+  const stages = ['长生', '沐浴', '冠带', '临官', '帝旺', '衰', '病', '死', '墓', '绝', '胎', '养'];
+  const startMap: Record<string, { start: string; dir: 1 | -1 }> = {
+    甲: { start: '亥', dir: 1 },
+    乙: { start: '午', dir: -1 },
+    丙: { start: '寅', dir: 1 },
+    丁: { start: '酉', dir: -1 },
+    戊: { start: '寅', dir: 1 },
+    己: { start: '酉', dir: -1 },
+    庚: { start: '巳', dir: 1 },
+    辛: { start: '子', dir: -1 },
+    壬: { start: '申', dir: 1 },
+    癸: { start: '卯', dir: -1 },
+  };
+  const config = startMap[dayStem];
+  const startIndex = branchOrder.indexOf(config?.start || '');
+  const targetIndex = branchOrder.indexOf(branch);
+  if (!config || startIndex < 0 || targetIndex < 0) return '-';
+  let diff = (targetIndex - startIndex) * config.dir;
+  if (diff < 0) diff += 12;
+  return stages[diff % 12];
+}
+
+function elementBadgeClass(element: string): string {
+  if (element === '木') return 'bg-emerald-50 text-emerald-600 border-emerald-100';
+  if (element === '火') return 'bg-rose-50 text-rose-600 border-rose-100';
+  if (element === '土') return 'bg-amber-50 text-amber-800 border-amber-100';
+  if (element === '金') return 'bg-slate-100 text-slate-700 border-slate-200';
+  if (element === '水') return 'bg-blue-50 text-blue-600 border-blue-100';
+  return 'bg-white text-slate-500 border-slate-100';
 }
 
 function showToast(message: string, duration = 2200): void {
@@ -708,7 +848,7 @@ function sleep(ms: number): Promise<void> {
     <header class="sticky top-0 z-20 bg-brand-paper/95 backdrop-blur border-b border-white/80">
       <div class="max-w-md mx-auto px-margin-mobile py-3 flex items-center justify-between">
         <button
-          class="h-9 rounded-full bg-white border border-gray-100 px-3 text-brand-secondary font-sans text-[12px] font-bold flex items-center justify-center gap-1.5 shadow-sm"
+          class="h-9 rounded-lg bg-white border border-gray-100 px-3 text-brand-secondary font-sans text-[12px] font-bold flex items-center justify-center gap-1.5 shadow-sm"
           @click="handleHeaderBackAction"
         >
           <ArrowLeft :size="14" class="text-brand-ink-strong" />
@@ -718,7 +858,7 @@ function sleep(ms: number): Promise<void> {
           <h1 class="font-serif text-[18px] font-bold text-brand-ink-strong leading-none">四柱八字评测</h1>
           <p class="font-sans text-[11px] text-brand-secondary mt-1">公历生日时辰 · 默认北京时间</p>
         </div>
-        <button class="w-9 h-9 rounded-full bg-white border border-gray-100 flex items-center justify-center shadow-sm" @click="refreshActiveReview">
+        <button class="w-9 h-9 rounded-lg bg-white border border-gray-100 flex items-center justify-center shadow-sm" @click="refreshActiveReview">
           <RefreshCw :size="17" class="text-brand-secondary" />
         </button>
       </div>
@@ -812,15 +952,47 @@ function sleep(ms: number): Promise<void> {
         </div>
       </section>
 
-      <section v-else-if="viewState === 'waiting'" class="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm text-center">
-        <div class="mx-auto w-14 h-14 rounded-full bg-brand-primary/10 flex items-center justify-center mb-4">
-          <RefreshCw :size="26" class="text-brand-primary animate-spin" />
-        </div>
-        <h2 class="font-serif text-[20px] font-bold text-brand-ink-strong">命盘生成中</h2>
-        <p class="font-sans text-[13px] text-brand-secondary leading-relaxed mt-2">{{ progressMessage }}</p>
-        <div class="mt-4 rounded-xl bg-brand-paper p-3 text-left">
-          <p class="font-sans text-[11px] text-brand-secondary">当前阶段</p>
-          <p class="font-sans text-[13px] font-bold text-brand-ink-strong mt-1">{{ currentProgressStage || 'queued' }}</p>
+      <section v-else-if="viewState === 'waiting'" class="py-8 flex flex-col justify-center min-h-[62vh]">
+        <div class="bg-white rounded-2xl p-5 border border-gray-150/75 shadow-sm space-y-5 text-center">
+          <div class="relative w-28 h-28 mx-auto flex items-center justify-center select-none">
+            <div class="absolute inset-0 bg-brand-primary/5 rounded-full blur-md animate-pulse"></div>
+            <svg class="absolute w-28 h-28 text-brand-primary/25 animate-[spin_40s_linear_infinite]" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-dasharray="1 3" stroke-width="1.5" />
+              <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" stroke-dasharray="8 4" stroke-width="1.2" />
+            </svg>
+            <svg class="absolute w-24 h-24 text-brand-accent/40 animate-[spin_24s_linear_infinite_reverse]" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-dasharray="12 6" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+            <div class="absolute w-11 h-11 bg-white rounded-full border border-brand-primary/20 shadow-md flex items-center justify-center animate-[spin_8s_ease-in-out_infinite]">
+              <Sparkles :size="20" class="text-brand-primary" />
+            </div>
+          </div>
+
+          <div class="space-y-1">
+            <h2 class="font-serif text-[18px] font-bold text-brand-ink-strong tracking-wide">四柱命盘智能推演中</h2>
+            <p class="font-sans text-[12px] text-brand-secondary leading-relaxed">{{ progressMessage }}</p>
+          </div>
+
+          <div class="space-y-2.5 text-left">
+            <div class="flex items-center gap-2.5">
+              <span class="waiting-step is-done">✓</span>
+              <span class="font-sans text-[12px] font-bold text-brand-ink-strong">出生信息与时区校验</span>
+            </div>
+            <div class="flex items-center gap-2.5" :class="currentProgressStage === 'queued' ? 'opacity-55' : 'opacity-100'">
+              <span class="waiting-step" :class="currentProgressStage !== 'queued' ? 'is-active' : ''">2</span>
+              <span class="font-sans text-[12px] font-bold text-brand-ink-strong">排定四柱干支结构</span>
+              <RefreshCw v-if="currentProgressStage === 'scoring'" :size="12" class="ml-auto text-brand-primary animate-spin" />
+            </div>
+            <div class="flex items-center gap-2.5" :class="['rendering', 'finalizing', 'completed'].includes(currentProgressStage || '') ? 'opacity-100' : 'opacity-55'">
+              <span class="waiting-step" :class="['rendering', 'finalizing', 'completed'].includes(currentProgressStage || '') ? 'is-active' : ''">3</span>
+              <span class="font-sans text-[12px] font-bold text-brand-ink-strong">推演五行旺衰与专项结论</span>
+              <RefreshCw v-if="currentProgressStage === 'rendering'" :size="12" class="ml-auto text-brand-primary animate-spin" />
+            </div>
+            <div class="flex items-center gap-2.5" :class="currentProgressStage === 'completed' ? 'opacity-100' : 'opacity-55'">
+              <span class="waiting-step" :class="currentProgressStage === 'completed' ? 'is-active' : ''">4</span>
+              <span class="font-sans text-[12px] font-bold text-brand-ink-strong">生成大运与流年基础盘</span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -841,47 +1013,44 @@ function sleep(ms: number): Promise<void> {
         </div>
       </section>
 
-      <section v-else class="space-y-4">
-        <div class="bg-brand-primary text-white rounded-2xl p-5 shadow-md">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p class="font-sans text-[12px] text-white/70 font-bold">{{ formatDateTime(currentReview?.birth_date || birthDate, currentReview?.birth_time || birthTime) }}</p>
-              <h2 class="font-serif text-[22px] font-bold mt-1">命盘综合评测</h2>
-              <p class="font-sans text-[12px] text-white/75 mt-1">{{ currentReview?.timezone || 'Asia/Shanghai' }} · {{ currentReview?.gender === 'female' ? '女' : '男' }}</p>
-            </div>
-            <div class="text-right">
-              <p class="font-serif text-[42px] leading-none font-bold">{{ reviewScore || '--' }}</p>
-              <p class="font-sans text-[11px] text-white/70 mt-1">综合分</p>
-            </div>
+      <section v-else class="space-y-3">
+        <div class="grid grid-cols-[1fr_auto] items-center gap-2">
+          <div class="grid grid-cols-2 gap-1 rounded-lg bg-white border border-gray-100 p-1 shadow-sm">
+            <button
+              class="h-9 rounded-lg font-sans text-[12px] font-bold transition-colors"
+              :class="activeBranch === 'chart' ? 'bg-brand-primary text-white shadow-sm' : 'bg-brand-paper text-brand-secondary'"
+              @click="activeBranch = 'chart'"
+            >
+              命盘分析
+            </button>
+            <button
+              class="h-9 rounded-lg font-sans text-[12px] font-bold transition-colors"
+              :class="activeBranch === 'luck' ? 'bg-brand-primary text-white shadow-sm' : 'bg-brand-paper text-brand-secondary'"
+              @click="activeBranch = 'luck'"
+            >
+              大运分析
+            </button>
+          </div>
+          <div class="px-3 py-1.5 rounded-lg bg-[#1D4ED8] text-white shadow-sm flex flex-col items-center justify-center leading-none">
+            <span class="font-mono font-black text-[13px]">{{ reviewScore || '--' }}分</span>
+            <span class="font-sans text-[8px] opacity-85 mt-0.5">综合</span>
           </div>
         </div>
 
-        <div class="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-          <h3 class="font-serif text-[17px] font-bold text-brand-ink-strong">总评</h3>
-          <p class="font-serif text-[18px] font-bold text-brand-ink-strong mt-3 leading-snug">{{ summary?.title || '四柱总评生成中' }}</p>
-          <p class="font-sans text-[13px] text-brand-secondary leading-relaxed mt-3">{{ summary?.risk || '风险提醒生成中。' }}</p>
-          <p class="font-sans text-[13px] text-brand-ink leading-relaxed mt-3">{{ summary?.usage_guidance || '使用建议生成中。' }}</p>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2 bg-white rounded-2xl border border-gray-100 p-2 shadow-sm">
-          <button
-            class="h-10 rounded-xl font-sans text-[13px] font-bold transition-colors"
-            :class="activeBranch === 'chart' ? 'bg-brand-primary text-white' : 'bg-brand-paper text-brand-secondary'"
-            @click="activeBranch = 'chart'"
-          >
-            命盘分析
-          </button>
-          <button
-            class="h-10 rounded-xl font-sans text-[13px] font-bold transition-colors"
-            :class="activeBranch === 'luck' ? 'bg-brand-primary text-white' : 'bg-brand-paper text-brand-secondary'"
-            @click="activeBranch = 'luck'"
-          >
-            大运分析
-          </button>
-        </div>
-
         <div v-if="activeBranch === 'chart'" class="space-y-4">
-          <div class="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+          <FourPillarsNatalTable :chart-display="chartDisplay" :element-summary="elementRatioSummary" />
+
+          <div class="bg-white rounded-xl border border-[#D8E3F5] p-3 shadow-sm">
+            <div class="flex items-center gap-1.5 pb-2">
+              <Sparkles :size="14" class="text-[#2563EB]" />
+              <h3 class="font-serif text-[14px] font-bold text-[#1D4ED8]">综评</h3>
+            </div>
+            <p class="font-serif text-[15px] font-bold text-brand-ink-strong mt-2 leading-snug">{{ summary?.title || '四柱总评生成中' }}</p>
+            <p class="font-sans text-[12px] text-brand-secondary leading-relaxed mt-2">{{ summary?.risk || '风险提醒生成中。' }}</p>
+            <p class="font-sans text-[12px] text-brand-ink leading-relaxed mt-2">{{ summary?.usage_guidance || '使用建议生成中。' }}</p>
+          </div>
+
+          <div v-if="!chartDisplay" class="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
             <h3 class="font-serif text-[17px] font-bold text-brand-ink-strong mb-3">四柱概览</h3>
             <div class="grid grid-cols-4 gap-2">
               <div v-for="pillar in pillars" :key="pillar.key" class="bg-brand-paper rounded-xl p-2 text-center min-h-[116px]">
@@ -893,71 +1062,33 @@ function sleep(ms: number): Promise<void> {
             </div>
           </div>
 
-          <div class="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-            <div class="flex items-center justify-between mb-3">
-              <h3 class="font-serif text-[17px] font-bold text-brand-ink-strong">五行比例</h3>
-              <span class="font-sans text-[11px] text-brand-secondary">日主 {{ chart.day_master || '--' }}</span>
-            </div>
-            <div class="space-y-2.5">
-              <div v-for="item in elementCounts" :key="item.element" class="grid grid-cols-[36px_1fr_28px] gap-2 items-center">
-                <span class="font-sans text-[12px] font-bold flex items-center gap-1" :class="item.text">
-                  <component :is="item.icon" :size="13" />{{ item.element }}
-                </span>
-                <div class="h-2.5 rounded-full bg-brand-paper overflow-hidden">
-                  <div class="h-full rounded-full" :class="item.bar" :style="{ width: `${Math.max(8, item.value / maxElementCount * 100)}%` }"></div>
-                </div>
-                <span class="font-sans text-[12px] font-bold text-brand-secondary text-right">{{ item.value }}</span>
-              </div>
-            </div>
-            <div class="grid grid-cols-2 gap-2 mt-4">
-              <div class="bg-brand-paper rounded-xl p-3">
-                <p class="font-sans text-[11px] text-brand-secondary">旺衰初判</p>
-                <p class="font-sans text-[13px] font-bold text-brand-ink-strong mt-1 leading-snug">{{ strength.label || '待生成' }}</p>
-              </div>
-              <div class="bg-brand-paper rounded-xl p-3">
-                <p class="font-sans text-[11px] text-brand-secondary">喜用候选</p>
-                <p class="font-sans text-[13px] font-bold text-brand-ink-strong mt-1">{{ favorableElementsText }}</p>
-                <p class="font-sans text-[11px] text-brand-secondary mt-1">节制：{{ unfavorableElementsText }}</p>
-              </div>
-            </div>
-            <div class="flex flex-wrap gap-1.5 mt-4">
-              <span v-for="tag in interactionTags" :key="tag" class="px-2 py-1 rounded-lg bg-brand-paper text-brand-secondary font-sans text-[11px] font-bold">
-                {{ tag }}
-              </span>
-            </div>
-          </div>
-
-          <div class="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-            <div class="flex items-center justify-between mb-3">
-              <h3 class="font-serif text-[17px] font-bold text-brand-ink-strong">专项内容</h3>
+          <div class="bg-white rounded-xl border border-[#D8E3F5] p-3 shadow-sm">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-serif text-[14px] font-bold text-[#1D4ED8]">专项</h3>
               <span class="font-sans text-[11px] text-brand-secondary">{{ effectiveAspectUnlockPoints }} 积分/项</span>
             </div>
-            <div class="grid grid-cols-2 gap-2">
+            <div class="grid grid-cols-3 gap-1.5">
               <button
                 v-for="(aspect, index) in reviewAspects"
                 :key="aspect.aspect_key"
-                class="rounded-xl border p-3 text-left transition-colors"
-                :class="index === activeAspect ? 'bg-brand-primary text-white border-brand-primary' : 'bg-brand-paper border-transparent text-brand-ink-strong'"
+                class="h-[46px] rounded-lg border px-1.5 text-center transition-colors flex flex-col items-center justify-center"
+                :class="index === activeAspect ? 'bg-[#EAF1FF] text-[#1D4ED8] border-[#2563EB]' : 'bg-[#F8FAFF] border-[#D8E3F5] text-brand-ink-strong'"
                 @click="void handleAspectClick(aspect, index)"
               >
-                <div class="flex items-center justify-between gap-2">
-                  <component :is="aspect.icon" :size="18" :class="index === activeAspect ? 'text-white' : aspect.textTint" />
-                  <span class="font-serif text-[18px] font-bold">{{ aspect.score ?? '--' }}</span>
-                </div>
-                <div class="font-sans text-[13px] font-bold mt-2">{{ aspect.short_title || aspect.title }}</div>
-                <div class="font-sans text-[10px] mt-1 flex items-center gap-1" :class="index === activeAspect ? 'text-white/70' : 'text-brand-secondary'">
+                <div class="font-sans text-[11px] font-bold leading-none truncate max-w-full">{{ aspect.short_title || aspect.title }}</div>
+                <div class="font-sans text-[9px] mt-1 flex items-center gap-0.5" :class="index === activeAspect ? 'text-[#2563EB]' : 'text-brand-secondary'">
                   <Check v-if="aspect.is_unlocked" :size="12" />
                   <Lock v-else :size="12" />
-                  <span>{{ aspect.is_unlocked ? '已解锁' : `${aspect.unlock_points || effectiveAspectUnlockPoints} 积分` }}</span>
+                  <span>{{ aspect.is_unlocked ? `${aspect.score ?? '--'}分` : `${aspect.unlock_points || effectiveAspectUnlockPoints}点` }}</span>
                 </div>
               </button>
             </div>
 
-            <div v-if="selectedAspect" class="mt-4 rounded-xl bg-brand-paper p-4">
+            <div v-if="selectedAspect" class="mt-2 rounded-lg bg-[#F8FAFF] border border-[#D8E3F5] p-3">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <p class="font-sans text-[11px] text-brand-secondary font-bold">{{ selectedAspect.short_title || selectedAspect.title }}</p>
-                  <h4 class="font-serif text-[18px] font-bold text-brand-ink-strong mt-1">{{ selectedAspect.title }}</h4>
+                  <h4 class="font-serif text-[15px] font-bold text-brand-ink-strong mt-1">{{ selectedAspect.title }}</h4>
                 </div>
                 <button
                   v-if="!selectedAspect.is_unlocked"
@@ -977,32 +1108,118 @@ function sleep(ms: number): Promise<void> {
           </div>
         </div>
 
-        <div v-else class="space-y-4">
-          <div class="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-            <div class="flex items-center justify-between mb-3">
-              <h3 class="font-serif text-[17px] font-bold text-brand-ink-strong">大运时间轴</h3>
-              <span class="font-sans text-[11px] text-brand-secondary">综评 {{ luckCycleCost }} / 流年 {{ luckYearCost }} 积分</span>
+        <div v-else class="space-y-3">
+          <div class="bg-white rounded-xl border border-[#D8E3F5] overflow-hidden shadow-sm">
+            <div class="overflow-x-auto no-scrollbar">
+              <table class="w-full min-w-[360px] table-fixed border-collapse text-center">
+                <thead>
+                  <tr class="bg-[#EAF1FF]">
+                    <th class="w-[42px] py-1.5 px-1 font-sans text-[10px] text-[#64748B]">项目</th>
+                    <th
+                      v-for="column in luckTableColumns"
+                      :key="`${column.label}-head`"
+                      class="py-1.5 px-0.5 font-serif text-[10.5px] font-bold"
+                      :class="column.isLuck ? 'bg-[#DBEAFE]/70 text-[#1D4ED8]' : 'text-[#334155]'"
+                    >
+                      {{ column.label }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="bg-[#F8FAFF]">
+                    <td class="luck-row-label">主星</td>
+                    <td v-for="column in luckTableColumns" :key="`${column.label}-god`" class="luck-cell font-serif font-bold" :class="column.isLuck ? 'bg-[#DBEAFE]/35 text-[#1D4ED8]' : 'text-[#334155]'">
+                      {{ column.stemTenGod }}
+                    </td>
+                  </tr>
+                  <tr class="bg-white">
+                    <td class="luck-row-label">天干</td>
+                    <td v-for="column in luckTableColumns" :key="`${column.label}-stem`" class="luck-cell" :class="column.isLuck ? 'bg-[#DBEAFE]/20' : ''">
+                      <span class="luck-glyph" :class="elementBadgeClass(column.stemElement)">{{ column.stem }}</span>
+                      <span class="luck-sub">{{ column.stemElement }}</span>
+                    </td>
+                  </tr>
+                  <tr class="bg-white">
+                    <td class="luck-row-label">地支</td>
+                    <td v-for="column in luckTableColumns" :key="`${column.label}-branch`" class="luck-cell" :class="column.isLuck ? 'bg-[#DBEAFE]/20' : ''">
+                      <span class="luck-glyph" :class="elementBadgeClass(column.branchElement)">{{ column.branch }}</span>
+                      <span class="luck-sub">{{ column.branchElement }}</span>
+                    </td>
+                  </tr>
+                  <tr class="bg-[#F8FAFF]">
+                    <td class="luck-row-label">藏干</td>
+                    <td v-for="column in luckTableColumns" :key="`${column.label}-hidden`" class="luck-cell" :class="column.isLuck ? 'bg-[#DBEAFE]/20' : ''">
+                      <span v-if="!column.hiddenStems.length" class="text-[10px] text-[#94A3B8]">-</span>
+                      <span v-for="hidden in column.hiddenStems" :key="`${column.label}-${hidden.stem}`" class="luck-mini">
+                        <span class="font-serif font-black" :class="elementBadgeClass(hidden.element)">{{ hidden.stem }}</span>
+                        <span>{{ hidden.ten_god }}</span>
+                      </span>
+                    </td>
+                  </tr>
+                  <tr class="bg-white">
+                    <td class="luck-row-label">地势</td>
+                    <td v-for="column in luckTableColumns" :key="`${column.label}-dishi`" class="luck-cell luck-text" :class="column.isLuck ? 'bg-[#DBEAFE]/25 text-[#1E3A8A]' : ''">
+                      {{ column.diShi }}
+                    </td>
+                  </tr>
+                  <tr class="bg-[#F8FAFF]">
+                    <td class="luck-row-label">自坐</td>
+                    <td v-for="column in luckTableColumns" :key="`${column.label}-sitting`" class="luck-cell luck-text" :class="column.isLuck ? 'bg-[#DBEAFE]/25 text-[#1E3A8A]' : ''">
+                      {{ column.selfSitting }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            <div class="flex gap-2 overflow-x-auto pb-1">
-              <button
-                v-for="cycle in luckCycles"
-                :key="cycle.cycle_key"
-                class="shrink-0 min-w-[94px] rounded-xl border px-3 py-2 text-left"
-                :class="cycle.cycle_key === selectedLuckCycle?.cycle_key ? 'bg-brand-primary text-white border-brand-primary' : 'bg-brand-paper border-transparent text-brand-ink-strong'"
-                @click="activeCycleKey = cycle.cycle_key; selectedLuckYear = cycle.year_items.find((item) => item.is_current)?.year || cycle.year_items[0]?.year || null"
-              >
-                <span class="block font-serif text-[17px] font-bold">{{ cycle.display_ganzhi || cycle.ganzhi || '起运前' }}</span>
-                <span class="block font-sans text-[10px] mt-1">{{ cycle.start_year }}-{{ cycle.end_year }}</span>
-                <span class="block font-sans text-[10px] mt-1">{{ cycle.is_current ? '当前大运' : luckStatusText(cycle.render_status) }}</span>
-              </button>
+
+            <div class="bg-[#F8FAFF]">
+              <div class="grid grid-cols-[34px_1fr]">
+                <div class="px-1 py-1.5 bg-[#F3F7FF] font-serif font-black text-[11px] text-[#1D4ED8] flex items-center justify-center">大运</div>
+                <div class="overflow-x-auto no-scrollbar">
+                  <div class="flex min-w-max">
+                    <button
+                      v-for="cycle in luckCycles"
+                      :key="cycle.cycle_key"
+                      class="w-[34px] min-h-[76px] py-1 px-0.5 transition-colors text-center flex flex-col items-center justify-center relative"
+                      :class="cycle.cycle_key === selectedLuckCycle?.cycle_key ? 'bg-[#DBEAFE] text-[#1D4ED8] font-black' : 'bg-white text-[#475569]'"
+                      @click="activeCycleKey = cycle.cycle_key; selectedLuckYear = cycle.year_items.find((item) => item.is_current)?.year || cycle.year_items[0]?.year || null"
+                    >
+                      <span v-if="cycle.is_current" class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
+                      <span class="font-mono text-[8px] leading-none">{{ cycle.start_age ?? '-' }}岁</span>
+                      <span class="font-serif text-[15px] font-black leading-none mt-1 vertical-ganzhi">{{ cycle.display_ganzhi || cycle.ganzhi || '-' }}</span>
+                      <span class="font-mono text-[7px] leading-none mt-1 text-[#64748B]">{{ cycle.start_year }}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="selectedLuckCycle" class="grid grid-cols-[34px_1fr]">
+                <div class="px-1 py-1.5 bg-[#F3F7FF] font-serif font-black text-[11px] text-[#1D4ED8] flex items-center justify-center">流年</div>
+                <div class="overflow-x-auto no-scrollbar">
+                  <div class="flex min-w-max">
+                    <button
+                      v-for="item in selectedLuckCycle.year_items"
+                      :key="item.year"
+                      class="w-[38px] py-1 px-0.5 transition-colors flex flex-col items-center text-center relative"
+                      :class="item.year === selectedLuckYear ? 'bg-[#DBEAFE] text-[#1D4ED8] font-black' : 'bg-white text-[#475569]'"
+                      @click="selectedLuckYear = item.year"
+                    >
+                      <span v-if="item.is_current" class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
+                      <span class="font-mono text-[8px] leading-none">{{ item.age ?? '-' }}岁</span>
+                      <span class="font-serif text-[12px] font-black leading-none mt-1">{{ item.ganzhi }}</span>
+                      <span class="font-mono text-[7px] leading-none mt-1 text-[#64748B]">{{ item.year }}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div v-if="selectedLuckCycle" class="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+          <div v-if="selectedLuckCycle" class="bg-white rounded-xl border border-[#D8E3F5] p-3 shadow-sm">
             <div class="flex items-start justify-between gap-3">
               <div>
                 <p class="font-sans text-[11px] text-brand-secondary font-bold">{{ selectedLuckCycle.start_year }}-{{ selectedLuckCycle.end_year }} · {{ selectedLuckCycle.start_age }}-{{ selectedLuckCycle.end_age }} 岁</p>
-                <h3 class="font-serif text-[19px] font-bold text-brand-ink-strong mt-1">{{ selectedLuckCycle.display_ganzhi || selectedLuckCycle.ganzhi || '起运前' }} 大运</h3>
+                <h3 class="font-serif text-[15px] font-bold text-[#1D4ED8] mt-1">大运中评 · {{ selectedLuckCycle.display_ganzhi || selectedLuckCycle.ganzhi || '起运前' }}</h3>
                 <p class="font-sans text-[12px] text-brand-secondary mt-1">{{ selectedLuckCycle.stem_ten_god || '过渡阶段' }} · {{ luckStatusText(selectedLuckCycle.render_status) }}</p>
               </div>
               <button
@@ -1015,41 +1232,24 @@ function sleep(ms: number): Promise<void> {
                 {{ selectedLuckCycle.render_status === 'completed' ? '重新查看' : selectedLuckCycle.render_status === 'failed' ? '重试' : '生成综评' }}
               </button>
             </div>
-            <div v-if="selectedLuckCycle.render?.result" class="mt-4 space-y-3">
-              <p class="font-serif text-[18px] font-bold text-brand-ink-strong leading-snug">{{ luckRenderText(selectedLuckCycle.render, 'title') }}</p>
-              <p class="font-sans text-[13px] text-brand-ink leading-relaxed">{{ luckRenderText(selectedLuckCycle.render, 'core_theme') }}</p>
-              <p class="font-sans text-[13px] text-emerald-700 leading-relaxed">{{ luckRenderText(selectedLuckCycle.render, 'opportunities') }}</p>
-              <p class="font-sans text-[13px] text-red-600 leading-relaxed">{{ luckRenderText(selectedLuckCycle.render, 'risks') }}</p>
-              <p class="font-sans text-[13px] text-brand-secondary leading-relaxed">{{ luckRenderText(selectedLuckCycle.render, 'action_guidance') }}</p>
+            <div v-if="selectedLuckCycle.render?.result" class="mt-3 space-y-2">
+              <p class="font-serif text-[15px] font-bold text-brand-ink-strong leading-snug">{{ luckRenderText(selectedLuckCycle.render, 'title') || luckRenderText(selectedLuckCycle.render, 'verdict') }}</p>
+              <p class="font-sans text-[12px] text-brand-ink leading-relaxed">{{ luckRenderText(selectedLuckCycle.render, 'core_theme') || luckRenderText(selectedLuckCycle.render, 'verdict') }}</p>
+              <p class="font-sans text-[12px] text-emerald-700 leading-relaxed">{{ luckRenderText(selectedLuckCycle.render, 'opportunities') }}</p>
+              <p class="font-sans text-[12px] text-red-600 leading-relaxed">{{ luckRenderText(selectedLuckCycle.render, 'risks') || luckRenderText(selectedLuckCycle.render, 'risk_warning') }}</p>
+              <p class="font-sans text-[12px] text-brand-secondary leading-relaxed">{{ luckRenderText(selectedLuckCycle.render, 'action_guidance') }}</p>
             </div>
             <p v-else class="font-sans text-[13px] text-brand-secondary leading-relaxed mt-4">
               {{ selectedLuckCycle.render_status === 'processing' ? '大运综评正在生成中。' : '点击生成后查看这一阶段的十年主轴、机会、风险和行动建议。' }}
             </p>
           </div>
 
-          <div v-if="selectedLuckCycle" class="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-            <div class="flex items-center justify-between mb-3">
-              <h3 class="font-serif text-[17px] font-bold text-brand-ink-strong">流年拆解</h3>
-              <span class="font-sans text-[11px] text-brand-secondary">{{ selectedLuckCycle.start_year }}-{{ selectedLuckCycle.end_year }}</span>
-            </div>
-            <div class="grid grid-cols-5 gap-2">
-              <button
-                v-for="item in selectedLuckCycle.year_items"
-                :key="item.year"
-                class="rounded-xl border px-2 py-2 text-center"
-                :class="item.year === selectedLuckYear ? 'bg-brand-primary text-white border-brand-primary' : 'bg-brand-paper border-transparent text-brand-ink-strong'"
-                @click="selectedLuckYear = item.year"
-              >
-                <span class="block font-sans text-[11px] font-bold">{{ item.year }}</span>
-                <span class="block font-serif text-[15px] font-bold mt-0.5">{{ item.ganzhi }}</span>
-              </button>
-            </div>
-
-            <div v-if="selectedLuckYearItem" class="mt-4 rounded-xl bg-brand-paper p-4">
+          <div v-if="selectedLuckCycle && selectedLuckYearItem" class="bg-white rounded-xl border border-[#D8E3F5] p-3 shadow-sm">
+            <div class="rounded-lg bg-[#F8FAFF] border border-[#D8E3F5] p-3">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <p class="font-sans text-[11px] text-brand-secondary font-bold">{{ selectedLuckYearItem.year }} · {{ selectedLuckYearItem.age }} 岁 · {{ selectedLuckYearItem.stem_ten_god }}</p>
-                  <h4 class="font-serif text-[18px] font-bold text-brand-ink-strong mt-1">{{ selectedLuckYearItem.ganzhi }} 流年</h4>
+                  <h4 class="font-serif text-[15px] font-bold text-[#1D4ED8] mt-1">流年中评 · {{ selectedLuckYearItem.ganzhi }}</h4>
                   <p class="font-sans text-[11px] text-brand-secondary mt-1">{{ luckStatusText(selectedLuckYearItem.render_status) }}</p>
                 </div>
                 <button
@@ -1062,12 +1262,12 @@ function sleep(ms: number): Promise<void> {
                   {{ selectedLuckYearItem.render_status === 'completed' ? '重新查看' : selectedLuckYearItem.render_status === 'failed' ? '重试' : '生成' }}
                 </button>
               </div>
-              <div v-if="selectedLuckYearItem.render?.result" class="mt-4 space-y-3">
-                <p class="font-serif text-[17px] font-bold text-brand-ink-strong leading-snug">{{ luckRenderText(selectedLuckYearItem.render, 'title') }}</p>
-                <p class="font-sans text-[13px] text-brand-ink leading-relaxed">{{ luckRenderText(selectedLuckYearItem.render, 'year_focus') }}</p>
-                <p class="font-sans text-[13px] text-emerald-700 leading-relaxed">{{ luckRenderText(selectedLuckYearItem.render, 'opportunities') }}</p>
-                <p class="font-sans text-[13px] text-red-600 leading-relaxed">{{ luckRenderText(selectedLuckYearItem.render, 'risks') }}</p>
-                <p class="font-sans text-[13px] text-brand-secondary leading-relaxed">{{ luckRenderText(selectedLuckYearItem.render, 'action_guidance') }}</p>
+              <div v-if="selectedLuckYearItem.render?.result" class="mt-3 space-y-2">
+                <p class="font-serif text-[15px] font-bold text-brand-ink-strong leading-snug">{{ luckRenderText(selectedLuckYearItem.render, 'title') || luckRenderText(selectedLuckYearItem.render, 'verdict') }}</p>
+                <p class="font-sans text-[12px] text-brand-ink leading-relaxed">{{ luckRenderText(selectedLuckYearItem.render, 'year_focus') || luckRenderText(selectedLuckYearItem.render, 'work_wealth') }}</p>
+                <p class="font-sans text-[12px] text-emerald-700 leading-relaxed">{{ luckRenderText(selectedLuckYearItem.render, 'opportunities') }}</p>
+                <p class="font-sans text-[12px] text-red-600 leading-relaxed">{{ luckRenderText(selectedLuckYearItem.render, 'risks') }}</p>
+                <p class="font-sans text-[12px] text-brand-secondary leading-relaxed">{{ luckRenderText(selectedLuckYearItem.render, 'action_guidance') || luckRenderText(selectedLuckYearItem.render, 'health_love') }}</p>
               </div>
               <p v-else class="font-sans text-[13px] text-brand-secondary leading-relaxed mt-3">
                 {{ selectedLuckYearItem.render_status === 'processing' ? '这一年正在生成中。' : '点击生成后查看这一年的事业、财富、关系和健康触发点。' }}
@@ -1089,5 +1289,103 @@ function sleep(ms: number): Promise<void> {
 .fade-slide-leave-to {
   opacity: 0;
   transform: translate(-50%, -12px);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.waiting-step {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: #F3F7FF;
+  color: #94A3B8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  border: 1px solid #E2E8F0;
+  flex-shrink: 0;
+}
+
+.waiting-step.is-active,
+.waiting-step.is-done {
+  background: #EAF1FF;
+  color: #1D4ED8;
+  border-color: #BFDBFE;
+}
+
+.luck-row-label {
+  background: #F3F7FF;
+  color: #1D4ED8;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 6px 3px;
+}
+
+.luck-cell {
+  min-height: 40px;
+  padding: 5px 3px;
+  font-size: 10.5px;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
+.luck-glyph {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border-width: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: serif;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.luck-sub {
+  display: block;
+  margin-top: 2px;
+  color: #64748B;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.vertical-ganzhi {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  letter-spacing: 0;
+}
+
+.luck-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid #D8E3F5;
+  border-radius: 5px;
+  background: #FFFFFF;
+  color: #64748B;
+  padding: 2px 3px;
+  margin: 1px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.luck-text {
+  color: #334155;
+  font-family: serif;
+  font-weight: 800;
 }
 </style>

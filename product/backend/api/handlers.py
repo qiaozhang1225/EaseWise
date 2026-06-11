@@ -2203,6 +2203,7 @@ def _build_four_pillars_review_record_response(
         score=_coerce_four_pillars_score(review, public_view),
         input_profile=input_profile,
         chart=public_view.get("chart") if public_view else _resolve_four_pillars_template_dict(review, "chart"),
+        chart_display=public_view.get("chart_display") if public_view and isinstance(public_view.get("chart_display"), dict) else None,
         summary=_build_four_pillars_summary_response(public_view.get("summary") if public_view else None),
         deterministic_facts=public_view.get("deterministic_facts") if public_view else (_resolve_four_pillars_template_dict(review, "deterministic_facts") or {}),
         aspects=_build_four_pillars_aspect_models(public_view),
@@ -2889,6 +2890,8 @@ def _four_pillars_product_view_needs_refresh(payload: dict[str, Any]) -> bool:
     if not isinstance(payload.get("input_profile"), dict):
         return True
     if not isinstance(payload.get("chart"), dict):
+        return True
+    if not isinstance(payload.get("chart_display"), dict):
         return True
     if not isinstance(payload.get("deterministic_facts"), dict):
         return True

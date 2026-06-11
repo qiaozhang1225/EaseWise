@@ -283,6 +283,7 @@ class FourPillarsReviewRecordResponse(BaseModel):
     score: int | None = None
     input_profile: dict[str, Any] = Field(default_factory=dict)
     chart: dict[str, Any] | None = None
+    chart_display: dict[str, Any] | None = None
     summary: FourPillarsSummaryResponse | None = None
     deterministic_facts: dict[str, Any] = Field(default_factory=dict)
     aspects: list[FourPillarsAspectResponse] = Field(default_factory=list)

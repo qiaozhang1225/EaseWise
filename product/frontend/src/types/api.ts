@@ -134,6 +134,50 @@ export interface FourPillarsSummary {
   elements_check: Record<string, string>;
 }
 
+export type FourPillarsPillarKey = 'year' | 'month' | 'day' | 'hour';
+
+export interface FourPillarsDisplayHiddenStem {
+  stem: string;
+  element: string;
+  ten_god: string;
+}
+
+export interface FourPillarsDisplayPillar {
+  key: FourPillarsPillarKey;
+  label: string;
+  ganzhi: string;
+  stem: string;
+  branch: string;
+  stem_element: string;
+  branch_element: string;
+  stem_ten_god: string;
+  branch_ten_gods: string[];
+  hidden_stems: FourPillarsDisplayHiddenStem[];
+  na_yin: string;
+  xun_kong: string;
+  di_shi: string;
+  self_sitting: string;
+  shen_sha: string[];
+}
+
+export interface FourPillarsChartDisplay {
+  profile: {
+    gender_label: string;
+    zodiac: string | null;
+    solar_datetime_text: string;
+    lunar_date: string;
+    lunar_full_text: string | null;
+    birth_place: string | null;
+    timezone: string;
+    solar_term_context: string | null;
+  };
+  pillars: Record<FourPillarsPillarKey, FourPillarsDisplayPillar>;
+  element_status: Array<{
+    element: '木' | '火' | '土' | '金' | '水';
+    status: '旺' | '相' | '休' | '囚' | '死' | '';
+  }>;
+}
+
 export interface FourPillarsAspect {
   aspect_key: string;
   title: string;
@@ -238,6 +282,7 @@ export interface FourPillarsReviewRecord {
   score: number | null;
   input_profile: Record<string, unknown>;
   chart: Record<string, unknown> | null;
+  chart_display: FourPillarsChartDisplay | null;
   summary: FourPillarsSummary | null;
   deterministic_facts: Record<string, unknown>;
   aspects: FourPillarsAspect[];

@@ -17,6 +17,8 @@ FOUR_PILLARS_ASPECTS: list[dict[str, str]] = [
 ]
 FOUR_PILLARS_ASPECT_ORDER = [item["aspect_key"] for item in FOUR_PILLARS_ASPECTS]
 
+PILLAR_KEYS = ("year", "month", "day", "hour")
+PILLAR_LABELS = {"year": "年柱", "month": "月柱", "day": "日柱", "hour": "时柱"}
 STEMS = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"]
 BRANCHES = ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"]
 ELEMENT_BY_STEM = {
@@ -159,6 +161,60 @@ LU_BRANCH_BY_DAY_STEM = {
     "壬": "亥",
     "癸": "子",
 }
+TWELVE_LIFE_STAGE_BY_STEM = {
+    "甲": {"亥": "长生", "子": "沐浴", "丑": "冠带", "寅": "临官", "卯": "帝旺", "辰": "衰", "巳": "病", "午": "死", "未": "墓", "申": "绝", "酉": "胎", "戌": "养"},
+    "乙": {"午": "长生", "巳": "沐浴", "辰": "冠带", "卯": "临官", "寅": "帝旺", "丑": "衰", "子": "病", "亥": "死", "戌": "墓", "酉": "绝", "申": "胎", "未": "养"},
+    "丙": {"寅": "长生", "卯": "沐浴", "辰": "冠带", "巳": "临官", "午": "帝旺", "未": "衰", "申": "病", "酉": "死", "戌": "墓", "亥": "绝", "子": "胎", "丑": "养"},
+    "丁": {"酉": "长生", "申": "沐浴", "未": "冠带", "午": "临官", "巳": "帝旺", "辰": "衰", "卯": "病", "寅": "死", "丑": "墓", "子": "绝", "亥": "胎", "戌": "养"},
+    "戊": {"寅": "长生", "卯": "沐浴", "辰": "冠带", "巳": "临官", "午": "帝旺", "未": "衰", "申": "病", "酉": "死", "戌": "墓", "亥": "绝", "子": "胎", "丑": "养"},
+    "己": {"酉": "长生", "申": "沐浴", "未": "冠带", "午": "临官", "巳": "帝旺", "辰": "衰", "卯": "病", "寅": "死", "丑": "墓", "子": "绝", "亥": "胎", "戌": "养"},
+    "庚": {"巳": "长生", "午": "沐浴", "未": "冠带", "申": "临官", "酉": "帝旺", "戌": "衰", "亥": "病", "子": "死", "丑": "墓", "寅": "绝", "卯": "胎", "辰": "养"},
+    "辛": {"子": "长生", "亥": "沐浴", "戌": "冠带", "酉": "临官", "申": "帝旺", "未": "衰", "午": "病", "巳": "死", "辰": "墓", "卯": "绝", "寅": "胎", "丑": "养"},
+    "壬": {"申": "长生", "酉": "沐浴", "戌": "冠带", "亥": "临官", "子": "帝旺", "丑": "衰", "寅": "病", "卯": "死", "辰": "墓", "巳": "绝", "午": "胎", "未": "养"},
+    "癸": {"卯": "长生", "寅": "沐浴", "丑": "冠带", "子": "临官", "亥": "帝旺", "戌": "衰", "酉": "病", "申": "死", "未": "墓", "午": "绝", "巳": "胎", "辰": "养"},
+}
+TIAN_YI_BRANCHES_BY_DAY_STEM = {
+    "甲": ["丑", "未"],
+    "戊": ["丑", "未"],
+    "庚": ["丑", "未"],
+    "乙": ["子", "申"],
+    "己": ["子", "申"],
+    "丙": ["亥", "酉"],
+    "丁": ["亥", "酉"],
+    "壬": ["卯", "巳"],
+    "癸": ["卯", "巳"],
+    "辛": ["寅", "午"],
+}
+TAI_JI_BRANCHES_BY_DAY_STEM = {
+    "甲": ["子", "午"],
+    "乙": ["子", "午"],
+    "丙": ["卯", "酉"],
+    "丁": ["卯", "酉"],
+    "戊": ["辰", "戌", "丑", "未"],
+    "己": ["辰", "戌", "丑", "未"],
+    "庚": ["寅", "亥"],
+    "辛": ["寅", "亥"],
+    "壬": ["巳", "申"],
+    "癸": ["巳", "申"],
+}
+WEN_CHANG_BRANCH_BY_DAY_STEM = {
+    "甲": "巳",
+    "乙": "午",
+    "丙": "申",
+    "丁": "酉",
+    "戊": "申",
+    "己": "酉",
+    "庚": "亥",
+    "辛": "子",
+    "壬": "寅",
+    "癸": "卯",
+}
+TRINITY_GROUP_TARGETS = (
+    ({"申", "子", "辰"}, {"桃花": "酉", "驿马": "寅", "华盖": "辰", "将星": "子", "亡神": "亥"}),
+    ({"亥", "卯", "未"}, {"桃花": "子", "驿马": "巳", "华盖": "未", "将星": "卯", "亡神": "寅"}),
+    ({"巳", "酉", "丑"}, {"桃花": "午", "驿马": "亥", "华盖": "丑", "将星": "酉", "亡神": "申"}),
+    ({"寅", "午", "戌"}, {"桃花": "卯", "驿马": "申", "华盖": "戌", "将星": "午", "亡神": "巳"}),
+)
 
 
 @dataclass(frozen=True)
@@ -226,6 +282,53 @@ def build_chart(input_profile: dict[str, Any]) -> dict[str, Any]:
         "pillars": pillars,
         "hidden_ten_gods": hidden_ten_gods,
         "ba_zi_wuxing": list(lunar.getBaZiWuXing()),
+    }
+
+
+def build_chart_display(
+    input_profile: dict[str, Any],
+    chart: dict[str, Any],
+    facts: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    birth_dt = _parse_birth_datetime(input_profile)
+    lunar = Solar.fromDate(birth_dt).getLunar()
+    eight_char = lunar.getEightChar()
+    ba_zi_na_yin = list(lunar.getBaZiNaYin())
+    pillars = chart.get("pillars") if isinstance(chart.get("pillars"), dict) else {}
+    day_stem = str(chart.get("day_master") or chart.get("day_ganzhi", " ")[0]).strip()
+    day_branch = str(chart.get("day_branch") or chart.get("day_ganzhi", "  ")[1]).strip()
+    year_branch = str(pillars.get("year", {}).get("branch") or chart.get("year_ganzhi", "  ")[1]).strip()
+    month_branch = str(pillars.get("month", {}).get("branch") or chart.get("month_ganzhi", "  ")[1]).strip()
+    empty_branches = []
+    if isinstance(facts, dict):
+        empty_branches = [str(item) for item in facts.get("empty_branches", []) if str(item).strip()]
+
+    return {
+        "profile": {
+            "gender_label": "男命" if str(input_profile.get("gender")) == "male" else "女命",
+            "zodiac": _lunar_zodiac(lunar),
+            "solar_datetime_text": birth_dt.strftime("%Y-%m-%d %H:%M"),
+            "lunar_date": str(chart.get("lunar_date") or lunar.toString()),
+            "lunar_full_text": str(chart.get("lunar_full_text") or lunar.toFullString()),
+            "birth_place": input_profile.get("birth_place"),
+            "timezone": str(input_profile.get("timezone") or "Asia/Shanghai"),
+            "solar_term_context": _solar_term_context(lunar),
+        },
+        "pillars": {
+            key: _build_display_pillar(
+                key=key,
+                pillar=as_pillar_dict(pillars.get(key)),
+                eight_char=eight_char,
+                na_yin_fallback=ba_zi_na_yin[index] if index < len(ba_zi_na_yin) else "",
+                day_stem=day_stem,
+                day_branch=day_branch,
+                year_branch=year_branch,
+                month_branch=month_branch,
+                empty_branches=empty_branches,
+            )
+            for index, key in enumerate(PILLAR_KEYS)
+        },
+        "element_status": resolve_element_status(month_branch),
     }
 
 
@@ -442,6 +545,120 @@ def _build_pillar(position: str, ganzhi: str, stem_ten_god: str, branch_ten_god:
     }
 
 
+def as_pillar_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _build_display_pillar(
+    *,
+    key: str,
+    pillar: dict[str, Any],
+    eight_char: Any,
+    na_yin_fallback: str,
+    day_stem: str,
+    day_branch: str,
+    year_branch: str,
+    month_branch: str,
+    empty_branches: list[str],
+) -> dict[str, Any]:
+    suffix = {"year": "Year", "month": "Month", "day": "Day", "hour": "Time"}[key]
+    ganzhi = str(pillar.get("ganzhi") or "").strip()
+    stem = str(pillar.get("stem") or (ganzhi[0] if len(ganzhi) >= 2 else "")).strip()
+    branch = str(pillar.get("branch") or (ganzhi[1] if len(ganzhi) >= 2 else "")).strip()
+    hidden_stems_raw = _safe_list_call(eight_char, f"get{suffix}HideGan") or list(HIDDEN_STEMS.get(branch, []))
+    branch_ten_gods = _safe_list_call(eight_char, f"get{suffix}ShiShenZhi")
+    if not branch_ten_gods:
+        branch_ten_gods = [ten_god(day_stem, item) for item in hidden_stems_raw if item in ELEMENT_BY_STEM]
+    hidden_stems = [
+        {
+            "stem": hidden_stem,
+            "element": ELEMENT_BY_STEM.get(hidden_stem, ""),
+            "ten_god": branch_ten_gods[index] if index < len(branch_ten_gods) else ten_god(day_stem, hidden_stem),
+        }
+        for index, hidden_stem in enumerate(hidden_stems_raw)
+        if hidden_stem in ELEMENT_BY_STEM
+    ]
+    return {
+        "key": key,
+        "label": PILLAR_LABELS[key],
+        "ganzhi": ganzhi,
+        "stem": stem,
+        "branch": branch,
+        "stem_element": ELEMENT_BY_STEM.get(stem, ""),
+        "branch_element": ELEMENT_BY_BRANCH.get(branch, ""),
+        "stem_ten_god": str(pillar.get("stem_ten_god") or ("日主" if key == "day" else "")).strip() or "-",
+        "branch_ten_gods": [item for item in branch_ten_gods if str(item).strip()],
+        "hidden_stems": hidden_stems,
+        "na_yin": str(_safe_call(eight_char, f"get{suffix}NaYin") or na_yin_fallback or "").strip(),
+        "xun_kong": str(_safe_call(eight_char, f"get{suffix}XunKong") or "").strip(),
+        "di_shi": str(_safe_call(eight_char, f"get{suffix}DiShi") or "").strip(),
+        "self_sitting": resolve_self_sitting(stem, branch),
+        "shen_sha": resolve_display_shen_sha(
+            branch=branch,
+            day_stem=day_stem,
+            day_branch=day_branch,
+            year_branch=year_branch,
+            month_branch=month_branch,
+            empty_branches=empty_branches,
+        ),
+    }
+
+
+def resolve_self_sitting(stem: str, branch: str) -> str:
+    return TWELVE_LIFE_STAGE_BY_STEM.get(stem, {}).get(branch, "")
+
+
+def resolve_element_status(month_branch: str) -> list[dict[str, str]]:
+    prosperous = SEASON_ELEMENT_BY_MONTH_BRANCH.get(month_branch)
+    if not prosperous:
+        return [{"element": element, "status": ""} for element in ("木", "火", "土", "金", "水")]
+    status_by_element = {
+        prosperous: "旺",
+        GENERATES[prosperous]: "相",
+        _generates_me(prosperous): "休",
+        _controls_me(prosperous): "囚",
+        CONTROLS[prosperous]: "死",
+    }
+    return [
+        {"element": element, "status": status}
+        for status in ("旺", "相", "休", "囚", "死")
+        for element, item_status in status_by_element.items()
+        if item_status == status
+    ]
+
+
+def resolve_display_shen_sha(
+    *,
+    branch: str,
+    day_stem: str,
+    day_branch: str,
+    year_branch: str,
+    month_branch: str,
+    empty_branches: list[str],
+) -> list[str]:
+    labels: list[str] = []
+    if branch in TIAN_YI_BRANCHES_BY_DAY_STEM.get(day_stem, []):
+        labels.append("天乙贵人")
+    if branch in TAI_JI_BRANCHES_BY_DAY_STEM.get(day_stem, []):
+        labels.append("太极贵人")
+    if branch == WEN_CHANG_BRANCH_BY_DAY_STEM.get(day_stem):
+        labels.append("文昌")
+    for basis_branch in (day_branch, year_branch):
+        targets = _trinity_targets(basis_branch)
+        for label in ("桃花", "驿马", "华盖", "将星", "亡神"):
+            if branch == targets.get(label):
+                labels.append(label)
+    if branch == LU_BRANCH_BY_DAY_STEM.get(day_stem):
+        labels.append("禄神")
+    if branch in empty_branches:
+        labels.append("空亡")
+    if branch in TOMB_BRANCHES:
+        labels.append("墓库")
+    if branch == FIVE_GHOST_BRANCH_BY_MONTH_BRANCH.get(month_branch):
+        labels.append("五鬼")
+    return list(dict.fromkeys(labels))
+
+
 def ten_god(day_stem: str, target_stem: str) -> str:
     if day_stem == target_stem:
         return "比肩"
@@ -600,6 +817,53 @@ def _controls_me(element: str) -> str:
 def _optional_text(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _safe_call(source: Any, method_name: str) -> Any:
+    method = getattr(source, method_name, None)
+    if not callable(method):
+        return None
+    try:
+        return method()
+    except Exception:
+        return None
+
+
+def _safe_list_call(source: Any, method_name: str) -> list[str]:
+    value = _safe_call(source, method_name)
+    if not isinstance(value, list):
+        try:
+            value = list(value) if value is not None else []
+        except Exception:
+            value = []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _lunar_zodiac(lunar: Any) -> str | None:
+    value = _safe_call(lunar, "getYearShengXiaoByLiChun") or _safe_call(lunar, "getYearShengXiao")
+    text = str(value or "").strip()
+    return text or None
+
+
+def _solar_term_context(lunar: Any) -> str | None:
+    previous = _safe_call(lunar, "getPrevJieQi")
+    next_item = _safe_call(lunar, "getNextJieQi")
+    previous_name = str(_safe_call(previous, "getName") or previous or "").strip()
+    next_name = str(_safe_call(next_item, "getName") or next_item or "").strip()
+    if previous_name and next_name:
+        return f"{previous_name}后，{next_name}前"
+    if previous_name:
+        return f"{previous_name}后"
+    if next_name:
+        return f"{next_name}前"
+    return None
+
+
+def _trinity_targets(branch: str) -> dict[str, str]:
+    for branches, targets in TRINITY_GROUP_TARGETS:
+        if branch in branches:
+            return targets
+    return {}
 
 
 def _build_luck_year_item(liu_nian: Any, day_stem: str, current_year: int) -> dict[str, Any]:
