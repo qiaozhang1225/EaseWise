@@ -1,0 +1,50 @@
+{
+  "source_zip": ".aistudio-sync/aistudio-latest/source.zip",
+  "sha256": "475b1745f0459379df28815be2043dc2bdbadf6045eb05e4d2e5be3ab94aac91",
+  "extracted_file_count": 36,
+  "text_file_count": 34,
+  "pages": [
+    "src/App.vue",
+    "src/components/points-claim/PointsClaimPage.vue",
+    "src/components/recharge/RechargePage.vue"
+  ],
+  "components": [
+    "src/components/admin/AdminWorkspace.vue",
+    "src/components/ai-agent/AIAgent.vue",
+    "src/components/analysis/Analysis.vue",
+    "src/components/auth/AuthModal.vue",
+    "src/components/four-pillars/FourPillarsAnalysis.vue",
+    "src/components/four-pillars/FourPillarsNatalTable.vue",
+    "src/components/home/Home.vue",
+    "src/components/layout/BottomNav.vue",
+    "src/components/layout/Header.vue",
+    "src/components/points-claim/PointsClaimPage.vue",
+    "src/components/profile/AmbassadorDetail.vue",
+    "src/components/profile/Profile.vue",
+    "src/components/profile/SystemIntro.vue",
+    "src/components/recharge/RechargePage.vue",
+    "src/components/support/ContactServiceModal.vue"
+  ],
+  "behavior_sources": [
+    "src/components/auth/AuthModal.vue",
+    "src/components/support/ContactServiceModal.vue",
+    "src/lib/api.ts",
+    "src/types/api.ts"
+  ],
+  "mock_sources": [
+    ".env.example"
+  ],
+  "state_signals": {
+    "auth": 10,
+    "permission": 1,
+    "empty": 2,
+    "error": 13,
+    "success": 5,
+    "disabled": 10,
+    "login": 7,
+    "payment": 5,
+    "invalid": 3,
+    "loading": 6,
+    "expired": 1
+  }
+}

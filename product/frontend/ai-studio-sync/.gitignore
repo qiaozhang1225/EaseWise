@@ -1,0 +1,33 @@
+# Keep this archive lightweight and diffable.
+
+# Local OS/editor noise
+.DS_Store
+*.log
+
+# Secrets and local env
+.env
+.env.*
+!.env.example
+
+# AI Studio binary/cache artifacts
+*.zip
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.mp4
+*.mov
+*.pdf
+
+# Dependency and build output that can appear inside exported projects
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+build/
+**/build/
+.vite/
+**/.vite/
+coverage/
+**/coverage/

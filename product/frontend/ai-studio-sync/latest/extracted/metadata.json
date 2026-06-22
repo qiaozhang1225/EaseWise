@@ -1,0 +1,6 @@
+{
+  "name": "EaseWise",
+  "description": "基于传统数字奇门与四柱八字的中华玄学智能评测与命理分析移动 H5 平台。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,1164 @@
+--- previous/src/components/profile/AmbassadorDetail.vue
++++ latest/src/components/profile/AmbassadorDetail.vue
+@@ -1,126 +1,113 @@
+ <script setup lang="ts">
+-import { ref } from 'vue';
+-import { Award, Share2, Clipboard, Users, Coins, Download, ShieldCheck, CheckCircle2 } from 'lucide-vue-next';
++import { Award, ShieldCheck, HelpCircle, ArrowRight, UserPlus, Coins, Percent } from 'lucide-vue-next';
+
+-const props = defineProps<{
++defineProps<{
+   userUid: string;
+   isPromoter: boolean;
+ }>();
+
+-const emit = defineEmits<{
++defineEmits<{
+   (e: 'close'): void;
+ }>();
+-
+-const copied = ref(false);
+-const posterGenerating = ref(false);
+-const posterSuccess = ref(false);
+-
+-const inviteCode = `EW-AMB-${props.userUid.substring(3, 11) || '0724'}`;
+-const inviteUrl = `https://easewise.test/claim?claim_code=${inviteCode}`;
+-
+-function copyInviteLink() {
+-  navigator.clipboard.writeText(inviteUrl);
+-  copied.value = true;
+-  setTimeout(() => copied.value = false, 2000);
+-}
+-
+-function handleGeneratePoster() {
+-  posterGenerating.value = true;
+-  setTimeout(() => {
+-    posterGenerating.value = false;
+-    posterSuccess.value = true;
+-    setTimeout(() => posterSuccess.value = false, 3000);
+-  }, 1500);
+-}
+ </script>
+
+ <template>
+-  <div class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+-    <div class="bg-white rounded-3xl w-full max-w-sm p-6 border border-brand-paper shadow-2xl relative max-h-[85vh] overflow-y-auto no-scrollbar">
++  <div class="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4 backdrop-blur-sm">
++    <div class="bg-white rounded-3xl w-full max-w-sm p-6 border border-brand-paper shadow-2xl relative max-h-[85vh] overflow-y-auto no-scrollbar flex flex-col">
+       <!-- Header -->
+-      <div class="flex items-center gap-3 mb-5 border-b pb-3 border-gray-100">
++      <div class="flex items-center gap-3 mb-5 border-b pb-3 border-gray-100 shrink-0">
+         <div class="w-10 h-10 rounded-xl bg-brand-primary/10 flex items-center justify-center shrink-0">
+           <Award :size="20" class="text-brand-primary" />
+         </div>
+         <div>
+-          <h3 class="font-serif text-[16px] font-bold text-brand-ink-strong">推广同修·合伙尊殿</h3>
+-          <p class="font-sans text-[11px] text-brand-secondary leading-none">分享福禄，结缘共修</p>
++          <h3 class="font-serif text-[16px] font-bold text-brand-ink-strong">推广大使</h3>
++          <p class="font-sans text-[11px] text-brand-secondary leading-none">分甘同味，结缘互励</p>
+         </div>
+       </div>
+
+-      <!-- Live statistics mock -->
+-      <div class="grid grid-cols-2 gap-3 mb-5">
+-        <div class="bg-brand-paper/50 rounded-2xl p-3.5 border border-brand-paper flex flex-col justify-center items-center text-center">
+-          <span class="font-sans text-[10px] text-brand-secondary font-bold flex items-center gap-1">
+-            <Users :size="11" class="text-brand-primary" />
+-            <span>结缘信徒数</span>
+-          </span>
+-          <span class="font-serif text-[18px] font-black text-brand-ink-strong mt-1">5 位</span>
+-        </div>
++      <!-- Scrollable content area -->
++      <div class="space-y-5 text-left font-sans text-[12px] leading-relaxed text-brand-ink flex-1">
++        <!-- Benefit Section -->
++        <div>
++          <h4 class="font-serif text-[12.5px] font-bold text-brand-ink-strong mb-2.5 flex items-center gap-1">
++            <Coins :size="13" class="text-brand-primary" />
++            <span>核心权益</span>
++          </h4>
++          <div class="grid grid-cols-1 gap-2.5">
++            <div class="p-3 bg-brand-paper/40 rounded-xl border border-gray-100 flex items-start gap-2.5">
++              <div class="w-6 h-6 rounded-lg bg-orange-100 flex items-center justify-center shrink-0 text-orange-600 font-bold text-[11px]">
++                1
++              </div>
++              <div>
++                <p class="font-serif text-[12px] font-extrabold text-brand-ink-strong">专属推广身份</p>
++                <p class="text-[10.5px] text-brand-secondary leading-normal mt-0.5">获得系统专属推广标识，开启合伙人分销渠道。</p>
++              </div>
++            </div>
+
+-        <div class="bg-brand-paper/50 rounded-2xl p-3.5 border border-brand-paper flex flex-col justify-center items-center text-center">
+-          <span class="font-sans text-[10px] text-brand-secondary font-bold flex items-center gap-1">
+-            <Coins :size="11" class="text-brand-gold-fixed" />
+-            <span>反哺佣金福券</span>
+-          </span>
+-          <span class="font-serif text-[18px] font-black text-brand-gold-fixed mt-1">450 灵币</span>
+-        </div>
+-      </div>
++            <div class="p-3 bg-brand-paper/40 rounded-xl border border-gray-100 flex items-start gap-2.5">
++              <div class="w-6 h-6 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0 text-emerald-600 font-bold text-[11px]">
++                2
++              </div>
++              <div>
++                <p class="font-serif text-[12px] font-extrabold text-brand-ink-strong">邀请收益返佣</p>
++                <p class="text-[10.5px] text-brand-secondary leading-normal mt-0.5">直邀新用户在平台充值时，按一定比例获取丰厚积分返佣。</p>
++              </div>
++            </div>
+
+-      <div class="space-y-4 text-left font-sans text-[12px] leading-relaxed text-brand-ink">
+-        <!-- Invite Code block -->
+-        <div class="bg-amber-50/50 p-4 rounded-2xl border border-amber-100">
+-          <p class="font-serif text-[13px] font-bold text-[#B45309] mb-1">您的独享同修结缘令：</p>
+-          <div class="flex items-center justify-between gap-2 mt-2 bg-white px-3 py-2 rounded-xl border border-amber-150">
+-            <span class="font-mono text-[13px] font-extrabold text-[#B45309]">{{ inviteCode }}</span>
+-            <button
+-              @click="copyInviteLink"
+-              class="bg-[#B45309] hover:bg-[#92400E] text-white text-[10px] font-black px-3 py-1.5 rounded-lg border-none cursor-pointer flex items-center gap-1 outline-none"
+-            >
+-              <span>{{ copied ? '已复制' : '复制密码' }}</span>
+-            </button>
++            <div class="p-3 bg-brand-paper/40 rounded-xl border border-gray-100 flex items-start gap-2.5">
++              <div class="w-6 h-6 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0 text-indigo-600 font-bold text-[11px]">
++                3
++              </div>
++              <div>
++                <p class="font-serif text-[12px] font-extrabold text-brand-ink-strong">收益灵活处理</p>
++                <p class="text-[10.5px] text-brand-secondary leading-normal mt-0.5">可在合伙后台自助申请提现、转存积分等灵活核算形式。</p>
++              </div>
++            </div>
+           </div>
+         </div>
+
+-        <!-- Partnership description -->
++        <!-- Tier Threshold Section -->
+         <div>
+-          <p class="font-serif font-bold text-brand-ink-strong mb-1">结缘反哺佣金规则：</p>
+-          <ul class="space-y-2 text-[11px] text-zinc-500 pl-0.5 select-none">
+-            <li class="flex items-start gap-1.5">
+-              <span class="w-1.5 h-1.5 rounded-full bg-brand-primary mt-1.5 shrink-0"></span>
+-              <span>每位经您宣发的同修<b>微信/手机号</b>首次成功注册，对方可领取 50 灵币！</span>
+-            </li>
+-            <li class="flex items-start gap-1.5">
+-              <span class="w-1.5 h-1.5 rounded-full bg-brand-primary mt-1.5 shrink-0"></span>
+-              <span>被推荐人在易如反掌充值，您将立即享有充值积分 <b>15%</b> 的永久连带福报反哺。</span>
+-            </li>
+-          </ul>
++          <h4 class="font-serif text-[12.5px] font-bold text-brand-ink-strong mb-2.5 flex items-center gap-1">
++            <Percent :size="13" class="text-brand-primary" />
++            <span>等级晋升与考核 threshold</span>
++          </h4>
++          <div class="grid grid-cols-2 gap-2.5">
++            <div class="p-3 bg-zinc-50 border border-thin rounded-xl text-center flex flex-col justify-center">
++              <span class="text-[11px] font-serif font-extrabold text-brand-ink-strong">推广大使</span>
++              <span class="text-[10px] text-amber-700 font-bold mt-1">累计充值 398 元</span>
++            </div>
++            <div class="p-3 bg-zinc-50 border border-thin rounded-xl text-center flex flex-col justify-center">
++              <span class="text-[11px] font-serif font-extrabold text-brand-ink-strong">尊享合伙人</span>
++              <span class="text-[10px] text-amber-700 font-bold mt-1">累计充值 3980 元</span>
++            </div>
++          </div>
++          <p class="text-[10.5px] text-brand-secondary text-center mt-2.5">
++            * 最终门槛、特许权限均<b>以后台规则为准</b>，视阶段性调整
++          </p>
+         </div>
+
+-        <!-- Generate Poster button -->
+-        <div class="pt-2">
+-          <button
+-            @click="handleGeneratePoster"
+-            :disabled="posterGenerating"
+-            class="w-full bg-brand-paper hover:bg-zinc-100 text-brand-ink px-4 py-3 rounded-2xl font-serif text-[12.5px] font-extrabold border border-gray-150 cursor-pointer flex items-center justify-center gap-1.5 outline-none relative"
+-          >
+-            <Share2 :size="14" class="text-brand-primary" />
+-            <span>{{ posterGenerating ? '结缘金令海报铸造中...' : '生成独属推广结缘海报' }}</span>
+-          </button>
+-
+-          <p v-if="posterSuccess" class="text-emerald-600 text-[11px] text-center mt-2 flex items-center justify-center gap-1">
+-            <CheckCircle2 :size="12" />
+-            <span>海报已成功铸造并下载至您的相册！</span>
+-          </p>
++        <!-- Standard Rules Text Area -->
++        <div class="p-3.5 bg-brand-paper/30 rounded-2xl border border-gray-100 space-y-2">
++          <h4 class="font-serif text-[12px] font-extrabold text-brand-ink-strong mb-1 h-fit flex items-center gap-1">
++            <ShieldCheck :size="13" class="text-brand-primary" />
++            <span>推广规则与说明</span>
++          </h4>
++          <ul class="space-y-1.5 text-[11px] text-brand-secondary leading-relaxed pl-1.5 list-disc select-none">
++            <li>推广身份需要用户主动申请，并由后台审核通过后生效。</li>
++            <li>推广收益只计算直邀用户，不存在团队层级收益。</li>
++            <li>返佣比例、提现门槛和结算周期以后台正式配置为准。</li>
++            <li>前台默认只展示服务积分，推广收益仅在推广大使相关页面展示。</li>
++          </ul>
+         </div>
+       </div>
+
+       <!-- Footer button -->
+       <button
+         @click="$emit('close')"
+-        class="mt-6 w-full py-3 bg-brand-primary text-white text-[12.5px] font-bold rounded-2xl cursor-pointer hover:bg-brand-primary/95 shadow-md outline-none border-none"
++        class="mt-6 w-full py-3 bg-brand-primary text-white text-[12.5px] font-black rounded-2xl cursor-pointer hover:bg-brand-primary/95 shadow-md outline-none border-none active:scale-[0.98] transition-transform"
+       >
+-        合什离开
++        我已晓悟退出
+       </button>
+     </div>
+   </div>
+--- previous/src/components/profile/Profile.vue
++++ latest/src/components/profile/Profile.vue
+@@ -2,9 +2,10 @@
+ import { ref, onMounted, computed, watch } from 'vue';
+ import {
+   User, Shield, Coins, History, LogOut, ArrowRight, Camera, Key, CheckCircle2,
+-  Phone, Calendar, Star, Compass, AlertCircle, MessageSquare, Info
++  Phone, Calendar, Star, Compass, AlertCircle, MessageSquare, Info, X
+ } from 'lucide-vue-next';
+ import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
++import { resolveApiAssetUrl } from '../../lib/api';
+ import SystemIntro from './SystemIntro.vue';
+ import AmbassadorDetail from './AmbassadorDetail.vue';
+
+@@ -19,7 +20,7 @@
+   refreshCurrentFourPillarsReview, requestRegisteredUser
+ } = useEaseWiseApp();
+
+-const activeHistoryTab = ref<'phone' | 'bazi' | 'points'>('phone');
++const activeHistoryTab = ref<'phone' | 'bazi'>('phone');
+
+ // Modal States
+ const showNicknameModal = ref(false);
+@@ -29,6 +30,10 @@
+ const showIntroModal = ref(false);
+ const showAmbassadorModal = ref(false);
+
++const showLedgerModal = ref(false);
++const showHistoryModal = ref(false);
++
++// Form Fields
+ const nicknameForm = ref('');
+ const passwordForm = ref({ current: '', next: '', confirm: '' });
+ const feedbackText = ref('');
+@@ -36,15 +41,19 @@
+ const toastError = ref<string | null>(null);
+ const toastSuccess = ref<string | null>(null);
+
++// File ref for Local Avatar Input
++const avatarFileInputRef = ref<HTMLInputElement | null>(null);
++
+ // Computeds
+ const isLoggedIn = computed(() => Boolean(state.user));
+
+ const userIdentityLabel = computed(() => {
+-  if (!state.user) return '缘起游客';
++  if (!state.user) return '游客';
+   const level = state.user.identity_level || 'standard';
+-  if (level === 'admin') return '灵台元老';
+-  if (level === 'promoter') return '推广同修';
+-  return '普通同修';
++  if (level === 'admin') return 'SVIP 推广大使';
++  if (level === 'vip') return 'VIP 推广大使';
++  if (level === 'promoter') return '推广大使';
++  return '普通用户';
+ });
+
+ const userUid = computed(() => {
+@@ -66,7 +75,7 @@
+   try {
+     await updateProfile({ nickname: nicknameForm.value.trim() });
+     showNicknameModal.value = false;
+-    showToast("修证：昵称更易成功！");
++    showToast("个人信息修改成功！");
+   } catch (error: any) {
+     showToast(error.message || "更新失败", 'error');
+   }
+@@ -75,20 +84,20 @@
+ async function handleUpdatePassword() {
+   const f = passwordForm.value;
+   if (!f.current || !f.next || !f.confirm) {
+-    showToast("请完整填入各项密码密令", 'error');
++    showToast("请完整填入各项密码", 'error');
+     return;
+   }
+   if (f.next !== f.confirm) {
+-    showToast("两次填入的新密码不一致", 'error');
++    showToast("两次新密码输入不一致", 'error');
+     return;
+   }
+   try {
+     await changePassword(f.current, f.next, f.confirm);
+     showPasswordModal.value = false;
+     passwordForm.value = { current: '', next: '', confirm: '' };
+-    showToast("安全密令重置成功！");
++    showToast("登录密码修改成功！");
+   } catch (error: any) {
+-    showToast(error.message || "旧密码鉴别失败", 'error');
++    showToast(error.message || "当前密码输入有误", 'error');
+   }
+ }
+
+@@ -96,15 +105,71 @@
+   if (!feedbackText.value.trim()) return;
+   showFeedbackModal.value = false;
+   feedbackText.value = '';
+-  showToast("反馈信息已传达至灵门，我们将用心修润！");
+-}
+-
+-async function handlePresetAvatar(url: string) {
++  showToast("谢谢您的建言！反馈已送达平台客服。");
++}
++
++function triggerAvatarFileSelect() {
++  if (!isLoggedIn.value) {
++    triggerGuestLogin();
++    return;
++  }
++  avatarFileInputRef.value?.click();
++}
++
++async function handleAvatarFileChange(e: Event) {
++  const target = e.target as HTMLInputElement;
++  const file = target.files?.[0];
++  if (!file) return;
++
++  const allowed = ['image/jpeg', 'image/png', 'image/webp'];
++  if (!allowed.includes(file.type)) {
++    showToast("只支持 jpg, png, webp 格式的图片", 'error');
++    return;
++  }
++
++  const maxSize = 5 * 1024 * 1024;
++  if (file.size > maxSize) {
++    showToast("头像图片大小不能超过 5MB", 'error');
++    return;
++  }
++
++  const reader = new FileReader();
++  reader.onload = async (event) => {
++    const dataUrl = event.target?.result as string;
++    try {
++      await uploadAvatar(dataUrl);
++      showToast("个人头像更新成功！");
++    } catch (err: any) {
++      showToast(err.message || "上传头像失败", 'error');
++    }
++  };
++  reader.readAsDataURL(file);
++}
++
++async function handleOpenLedgerModal() {
++  if (!isLoggedIn.value) {
++    await requestRegisteredUser('查看积分记录列表');
++    return;
++  }
+   try {
+-    await uploadAvatar(url);
+-    showToast("灵缘太极头像更变成功！");
+-  } catch (error: any) {
+-    showToast("头像更新失败", 'error');
++    await refreshPointsLedger();
++    showLedgerModal.value = true;
++  } catch (err) {
++    showToast("积分账单载入失败", 'error');
++  }
++}
++
++async function handleOpenHistoryModal() {
++  if (!isLoggedIn.value) {
++    await requestRegisteredUser('查看过往评测历史');
++    return;
++  }
++  try {
++    await refreshReviewHistory();
++    await refreshFourPillarsHistory();
++    showHistoryModal.value = true;
++  } catch (err) {
++    showToast("评测历史载入失败", 'error');
+   }
+ }
+
+@@ -127,13 +192,13 @@
+ }
+
+ async function triggerGuestLogin() {
+-  await requestRegisteredUser('个人主页同修绑定');
++  await requestRegisteredUser('同步数据或开启充值特权');
+ }
+
+ async function confirmLogout() {
+   await logout();
+   showLogoutConfirmModal.value = false;
+-  showToast("已成功注销同修登录。");
++  showToast("已成功退出登录。");
+ }
+
+ const loadUserData = async () => {
+@@ -174,16 +239,30 @@
+       </div>
+     </transition>
+
+-    <!-- Header Stats card: GUEST OR LOGGED IN -->
++    <!-- Profile Header Section -->
+     <section class="mb-5 bg-white rounded-2xl p-5 border border-brand-paper shadow-sm">
+-      <!-- LOGGED IN VIEW -->
++      <!-- REGISTERED VIEW -->
+       <div v-if="isLoggedIn">
+-        <div class="flex items-center gap-4 border-b border-gray-50 pb-4 relative">
+-          <!-- Avatar Block -->
+-          <div class="w-16 h-16 rounded-full bg-brand-primary text-white flex items-center justify-center font-serif text-2xl font-bold select-none border-2 border-brand-paper shadow-md relative shrink-0">
+-            <img v-if="state.user?.avatar_url" :src="state.user.avatar_url" class="w-full h-full object-cover rounded-full" />
++        <div class="flex items-center gap-4 relative">
++          <!-- Local File Upload Clickable Target with hover effect -->
++          <div
++            @click="triggerAvatarFileSelect"
++            class="w-16 h-16 rounded-full bg-brand-primary text-white flex items-center justify-center font-serif text-2xl font-bold select-none border-2 border-brand-paper shadow-md relative shrink-0 cursor-pointer overflow-hidden group"
++          >
++            <img v-if="state.user?.avatar_url" :src="resolveApiAssetUrl(state.user.avatar_url)" class="w-full h-full object-cover rounded-full" />
+             <span v-else>{{ displayAvatarText }}</span>
+-          </div>
++            <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
++              <Camera :size="16" class="text-white" />
++            </div>
++          </div>
++          <!-- Hidden Native File Input -->
++          <input
++            type="file"
++            ref="avatarFileInputRef"
++            @change="handleAvatarFileChange"
++            accept="image/jpeg,image/png,image/webp"
++            class="hidden"
++          />
+
+           <div class="flex-1 min-w-[120px]">
+             <h3 class="font-serif text-[17px] font-bold text-brand-ink-strong truncate">{{ displayNickname }}</h3>
+@@ -200,16 +279,16 @@
+             class="bg-brand-paper hover:bg-zinc-100 text-brand-ink px-3 py-1.5 rounded-xl font-sans text-[11px] font-bold border border-gray-150 cursor-pointer flex items-center gap-1 shrink-0 outline-none"
+           >
+             <Camera :size="12" />
+-            <span>改昵称</span>
++            <span>修改昵称</span>
+           </button>
+         </div>
+
+-        <!-- Quick Credits Dashboard -->
+-        <div class="grid grid-cols-2 gap-4 pt-4 text-center">
++        <!-- My Points Balance Card -->
++        <div class="grid grid-cols-2 gap-4 mt-5 pt-4 border-t border-gray-50 text-center">
+           <div class="bg-brand-paper/40 rounded-xl p-3 border border-brand-paper/70 flex flex-col justify-center items-center">
+             <span class="font-sans text-[11px] text-brand-secondary/85 font-extrabold flex items-center gap-1">
+-              <Coins :size="13" class="text-brand-gold-fixed" />
+-              <span>灵台余币</span>
++              <Coins :size="13" class="text-brand-primary" />
++              <span>我的积分结存</span>
+             </span>
+             <span class="font-serif text-[24px] font-extrabold text-brand-secondary mt-1">
+               {{ state.points?.balance ?? 0 }}
+@@ -218,383 +297,418 @@
+
+           <div class="flex flex-col justify-center items-center">
+             <button
+-              @click="emit('navigate-to-tab', 'recharge')"
++              @click="emit('navigate-to-tab', 'recharge', { source: 'profile', return_to: 'profile' })"
+               class="w-full h-full bg-brand-primary text-white font-sans text-[13px] font-bold rounded-xl cursor-pointer hover:bg-brand-primary/95 shadow-sm active:scale-95 transition-transform border-none flex items-center justify-center gap-1.5 py-4 outline-none"
+             >
+-              <span>充值充盈积分</span>
++              <span>去充值</span>
+               <ArrowRight :size="15" />
+             </button>
+           </div>
+         </div>
+       </div>
+
+-      <!-- GUEST MODE FALLBACK VIEW -->
++      <!-- GUEST / ANONYMOUS FALLBACK VIEW -->
+       <div v-else class="text-center py-4">
+         <div class="w-14 h-14 bg-brand-paper text-brand-secondary rounded-full flex items-center justify-center mx-auto mb-3 border shadow-inner">
+           <User :size="26" />
+         </div>
+-        <h3 class="font-serif text-[17px] font-bold text-brand-ink-strong">易客同修（尚未登录）</h3>
+-        <p class="font-sans text-[11.5px] text-brand-secondary max-w-xs mx-auto mt-2 leading-relaxed">
+-          绑定您的手机号，即可在云端灵台长久同步所有的手机号奇门及四柱卦象排盘，并获得 <strong>50 点</strong> 体验积分！
++        <h3 class="font-serif text-[17px] font-bold text-brand-ink-strong">游客用户</h3>
++        <p class="font-sans text-[11.5px] text-brand-secondary max-w-sm mx-auto mt-2 leading-relaxed">
++          注册并绑定手机号，获取初始体验积分，并长久同步您的手机格局与一生身运排盘数据。
+         </p>
+         <button
+           @click="triggerGuestLogin"
+           class="mt-4 bg-brand-primary hover:bg-brand-primary/95 text-white font-sans text-[13px] font-bold px-6 py-2.5 rounded-xl shadow-md cursor-pointer inline-flex items-center gap-1.5 active:scale-95 transition-transform outline-none border-none"
+         >
+-          <span>立即登录 / 注册同修灵台</span>
++          <span>立即登录 / 注册</span>
+           <ArrowRight :size="14" />
+         </button>
+       </div>
+     </section>
+
+-    <!-- Presets Avatars selection (Only shown if Logged-in) -->
+-    <section v-if="isLoggedIn" class="mb-5 bg-white rounded-2xl p-4 border border-brand-paper shadow-sm">
+-      <h4 class="font-serif text-[13px] font-bold text-brand-ink-strong mb-3">首选太极气场假身头像</h4>
+-      <div class="flex gap-3 overflow-x-auto pb-1.5 no-scrollbar">
+-        <button
+-          v-for="(PresetUrl, i) in [
+-            'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80',
+-            'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80',
+-            'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=100&q=80',
+-            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80',
+-          ]"
+-          :key="i"
+-          @click="handlePresetAvatar(PresetUrl)"
+-          class="w-11 h-11 rounded-full overflow-hidden border-2 cursor-pointer hover:scale-105 active:scale-95 transition-all outline-none flex-shrink-0"
+-          :class="state.user?.avatar_url === PresetUrl ? 'border-brand-primary ring-2 ring-brand-primary/20 bg-brand-primary/10' : 'border-gray-200'"
+-        >
+-          <img :src="PresetUrl" class="w-full h-full object-cover" />
+-        </button>
+-      </div>
+-    </section>
+-
+-    <!-- Security, Password & Support buttons -->
++    <!-- Main Compact Action List (Replaces inline tabs as required locally) -->
+     <section class="mb-5 bg-white rounded-2xl p-4 border border-brand-paper shadow-sm text-left">
+-      <h4 class="font-serif text-[13px] font-bold text-brand-ink-strong mb-3">灵阁管理与支持</h4>
+       <div class="space-y-2.5">
++
++        <!-- Action Row 1: 合伙与推广说明书 -->
+         <button
+           @click="showIntroModal = true"
+-          class="w-full bg-brand-paper/40 hover:bg-brand-paper/80 border border-gray-100/60 rounded-xl p-3 flex items-center justify-between cursor-pointer outline-none font-sans text-[12.5px] font-bold text-brand-secondary"
++          class="w-full bg-brand-paper/40 hover:bg-brand-paper/85 border border-gray-100/60 rounded-xl p-3.5 flex items-center justify-between cursor-pointer outline-none font-sans text-[12.5px] font-bold text-brand-secondary"
+         >
+-          <span class="flex items-center gap-2">
++          <span class="flex items-center gap-2.5">
+             <Info :size="15" class="text-brand-primary" />
+-            <span>关于易如反掌与算法源流</span>
++            <span>合伙与推广说明书</span>
+           </span>
+-          <ArrowRight :size="14" class="text-brand-secondary/50" />
++          <ArrowRight :size="14" class="text-brand-secondary/40" />
+         </button>
+
++        <!-- Action Row 2: 推广提成与规则门槛 (Visible only if logged-in) -->
+         <button
+           v-if="isLoggedIn"
+           @click="showAmbassadorModal = true"
+-          class="w-full bg-brand-paper/40 hover:bg-brand-paper/80 border border-gray-100/60 rounded-xl p-3 flex items-center justify-between cursor-pointer outline-none font-sans text-[12.5px] font-bold text-brand-secondary"
++          class="w-full bg-brand-paper/40 hover:bg-brand-paper/85 border border-gray-100/60 rounded-xl p-3.5 flex items-center justify-between cursor-pointer outline-none font-sans text-[12.5px] font-bold text-brand-secondary"
+         >
+-          <span class="flex items-center gap-2">
++          <span class="flex items-center gap-2.5">
+             <Star :size="15" class="text-brand-primary" />
+-            <span>推广大使福恩分说</span>
++            <span>推广大使</span>
+           </span>
+-          <ArrowRight :size="14" class="text-brand-secondary/50" />
++          <ArrowRight :size="14" class="text-brand-secondary/40" />
+         </button>
+
++        <!-- Action Row 3: 积分记录 overlay -->
++        <button
++          @click="handleOpenLedgerModal"
++          class="w-full bg-brand-paper/40 hover:bg-brand-paper/85 border border-gray-100/60 rounded-xl p-3.5 flex items-center justify-between cursor-pointer outline-none font-sans text-[12.5px] font-bold text-brand-secondary"
++        >
++          <span class="flex items-center gap-2.5">
++            <Coins :size="15" class="text-brand-primary" />
++            <span>积分记录</span>
++          </span>
++          <ArrowRight :size="14" class="text-brand-secondary/40" />
++        </button>
++
++        <!-- Action Row 4: 评测记录 overlay -->
++        <button
++          @click="handleOpenHistoryModal"
++          class="w-full bg-brand-paper/40 hover:bg-brand-paper/85 border border-gray-100/60 rounded-xl p-3.5 flex items-center justify-between cursor-pointer outline-none font-sans text-[12.5px] font-bold text-brand-secondary"
++        >
++          <span class="flex items-center gap-2.5">
++            <History :size="15" class="text-brand-primary" />
++            <span>评测记录</span>
++          </span>
++          <ArrowRight :size="14" class="text-brand-secondary/40" />
++        </button>
++
++        <!-- Action Row 5: 修改密码 (Visible if logged-in) -->
+         <button
+           v-if="isLoggedIn"
+           @click="showPasswordModal = true"
+-          class="w-full bg-brand-paper/40 hover:bg-brand-paper/80 border border-gray-100/60 rounded-xl p-3 flex items-center justify-between cursor-pointer outline-none font-sans text-[12.5px] font-bold text-brand-secondary"
++          class="w-full bg-brand-paper/40 hover:bg-brand-paper/85 border border-gray-100/60 rounded-xl p-3.5 flex items-center justify-between cursor-pointer outline-none font-sans text-[12.5px] font-bold text-brand-secondary"
+         >
+-          <span class="flex items-center gap-2">
++          <span class="flex items-center gap-2.5">
+             <Key :size="15" class="text-brand-primary" />
+-            <span>修改个人登录安全密码</span>
++            <span>修改密码</span>
+           </span>
+-          <ArrowRight :size="14" class="text-brand-secondary/50" />
++          <ArrowRight :size="14" class="text-brand-secondary/40" />
+         </button>
+
++        <!-- Action Row 6: 反馈问题 -->
+         <button
+           @click="showFeedbackModal = true"
+-          class="w-full bg-brand-paper/40 hover:bg-brand-paper/80 border border-gray-100/60 rounded-xl p-3 flex items-center justify-between cursor-pointer outline-none font-sans text-[12.5px] font-bold text-brand-secondary"
++          class="w-full bg-brand-paper/40 hover:bg-brand-paper/85 border border-gray-100/60 rounded-xl p-3.5 flex items-center justify-between cursor-pointer outline-none font-sans text-[12.5px] font-bold text-brand-secondary"
+         >
+-          <span class="flex items-center gap-2">
++          <span class="flex items-center gap-2.5">
+             <MessageSquare :size="15" class="text-brand-primary" />
+-            <span>同修反馈与产品建议</span>
++            <span>反馈问题</span>
+           </span>
+-          <ArrowRight :size="14" class="text-brand-secondary/50" />
++          <ArrowRight :size="14" class="text-brand-secondary/40" />
+         </button>
+
++        <!-- Action Row 7: 退出登录 (Visible if logged-in) -->
+         <button
+           v-if="isLoggedIn"
+           @click="showLogoutConfirmModal = true"
+-          class="w-full bg-rose-50 hover:bg-rose-100 border border-thin border-rose-100 rounded-xl p-3 flex items-center justify-between cursor-pointer outline-none font-sans text-[12.5px] font-bold text-rose-600"
++          class="w-full bg-rose-50 hover:bg-rose-100 border border-thin border-rose-100 rounded-xl p-3.5 flex items-center justify-between cursor-pointer outline-none font-sans text-[12.5px] font-bold text-rose-600"
+         >
+-          <span class="flex items-center gap-2">
++          <span class="flex items-center gap-2.5">
+             <LogOut :size="15" />
+-            <span>注销当前账户登录</span>
++            <span>退出登录</span>
+           </span>
+           <ArrowRight :size="14" class="text-rose-400" />
+         </button>
+       </div>
+     </section>
+
+-    <!-- Tabs of historical results (Only visible if logged in, otherwise show mock message) -->
+-    <section class="bg-white rounded-2xl border border-brand-paper shadow-sm overflow-hidden text-left">
+-      <!-- Tabs header -->
+-      <div class="flex border-b border-gray-100/80 bg-brand-paper/20 shrink-0 font-sans text-[12px] font-extrabold select-none">
+-        <button
+-          @click="activeHistoryTab = 'phone'"
+-          class="flex-1 py-3 cursor-pointer outline-none border-b-2 text-center"
+-          :class="activeHistoryTab === 'phone' ? 'border-brand-primary text-brand-primary-strong font-extrabold' : 'border-transparent text-brand-secondary'"
+-        >
+-          手机奇门历史
+-        </button>
+-        <button
+-          @click="activeHistoryTab = 'bazi'"
+-          class="flex-1 py-3 cursor-pointer outline-none border-b-2 text-center"
+-          :class="activeHistoryTab === 'bazi' ? 'border-brand-primary text-brand-primary-strong font-extrabold' : 'border-transparent text-brand-secondary'"
+-        >
+-          命盘八字历史
+-        </button>
+-        <button
+-          @click="activeHistoryTab = 'points'"
+-          class="flex-1 py-3 cursor-pointer outline-none border-b-2 text-center"
+-          :class="activeHistoryTab === 'points' ? 'border-brand-primary text-brand-primary-strong font-extrabold' : 'border-transparent text-brand-secondary'"
+-        >
+-          灵币账变流水
+-        </button>
+-      </div>
+-
+-      <!-- Tab body -->
+-      <div class="p-4 min-h-[200px] max-h-[380px] overflow-y-auto">
+-        <div v-if="!isLoggedIn" class="flex flex-col items-center justify-center py-10 text-gray-400 text-center">
+-          <Info :size="24" class="text-brand-secondary/40 mb-2" />
+-          <span class="text-[11.5px] font-serif font-bold text-zinc-500">登录同修即可鉴查过往修演历史</span>
+-          <p class="text-[10px] text-zinc-400 max-w-[200px] mt-1 leading-normal">
+-            系统会保障您的全部奇门八字算例，一经绑定永久入灵。
++    <!-- Centered Brand Footer -->
++    <footer class="text-center py-6 select-none shrink-0">
++      <p class="font-serif text-[11px] font-extrabold text-zinc-400 tracking-wider">
++        易如反掌 / EaseWise
++      </p>
++    </footer>
++
++    <!-- PROFILE EDITOR MODAL -->
++    <transition name="fade">
++      <div v-if="showNicknameModal" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
++        <div class="bg-white rounded-3xl w-full max-w-sm p-5 border border-brand-paper shadow-2xl relative">
++          <h3 class="font-serif text-[16px] font-bold text-brand-ink-strong mb-4">修改昵称</h3>
++          <input
++            v-model="nicknameForm"
++            type="text"
++            placeholder="请输入您新的雅致昵称..."
++            class="w-full bg-brand-paper/40 px-3.5 py-3 rounded-2xl border border-gray-150 outline-none text-[13px] text-brand-ink font-sans mb-4"
++          />
++          <div class="flex gap-3">
++            <button
++              @click="showNicknameModal = false"
++              class="flex-1 py-3 bg-brand-paper hover:bg-zinc-100 text-brand-secondary text-[12.5px] font-bold rounded-2xl cursor-pointer border border-gray-150 outline-none"
++            >
++              取消
++            </button>
++            <button
++              @click="handleUpdateProfile"
++              class="flex-1 py-3 bg-brand-primary text-white text-[12.5px] font-bold rounded-2xl cursor-pointer hover:bg-brand-primary/95 shadow-md outline-none border-none"
++            >
++              完成修改
++            </button>
++          </div>
++        </div>
++      </div>
++    </transition>
++
++    <!-- PASSWORD CHANGE MODAL -->
++    <transition name="fade">
++      <div v-if="showPasswordModal" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
++        <div class="bg-white rounded-3xl w-full max-w-sm p-5 border border-brand-paper shadow-2xl relative">
++          <h3 class="font-serif text-[16px] font-bold text-brand-ink-strong mb-4">修改密码</h3>
++          <div class="space-y-3 mb-4">
++            <input
++              v-model="passwordForm.current"
++              type="password"
++              placeholder="当前旧登录密码..."
++              class="w-full bg-brand-paper/40 px-3.5 py-3 rounded-2xl border border-gray-150 outline-none text-[13px] text-brand-ink font-sans"
++            />
++            <input
++              v-model="passwordForm.next"
++              type="password"
++              placeholder="设置新登录密码..."
++              class="w-full bg-brand-paper/40 px-3.5 py-3 rounded-2xl border border-gray-150 outline-none text-[13px] text-brand-ink font-sans"
++            />
++            <input
++              v-model="passwordForm.confirm"
++              type="password"
++              placeholder="再次确认新密码确认..."
++              class="w-full bg-brand-paper/40 px-3.5 py-3 rounded-2xl border border-gray-150 outline-none text-[13px] text-brand-ink font-sans"
++            />
++          </div>
++          <div class="flex gap-3">
++            <button
++              @click="showPasswordModal = false"
++              class="flex-1 py-3 bg-brand-paper hover:bg-zinc-100 text-brand-secondary text-[12.5px] font-bold rounded-2xl cursor-pointer border border-gray-150 outline-none"
++            >
++              取消
++            </button>
++            <button
++              @click="handleUpdatePassword"
++              class="flex-1 py-3 bg-brand-primary text-white text-[12.5px] font-bold rounded-2xl cursor-pointer hover:bg-brand-primary/95 shadow-md outline-none border-none"
++            >
++              重设密码
++            </button>
++          </div>
++        </div>
++      </div>
++    </transition>
++
++    <!-- PRODUCT FEEDBACK MODAL -->
++    <transition name="fade">
++      <div v-if="showFeedbackModal" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
++        <div class="bg-white rounded-3xl w-full max-w-sm p-5 border border-brand-paper shadow-2xl relative">
++          <h3 class="font-serif text-[16px] font-bold text-brand-ink-strong mb-2 flex items-center gap-1.5 leading-tight">
++            <span>反馈问题</span>
++          </h3>
++          <p class="font-sans text-[11.5px] text-brand-secondary leading-relaxed mb-3">
++            产品使用中遇到任何问题或体验不佳，请随时向我们反馈，开发团队将用心改进。
+           </p>
+-        </div>
+-
+-        <div v-else>
+-          <!-- Phone evaluations list -->
+-          <div v-if="activeHistoryTab === 'phone'" class="space-y-2.5">
+-            <div v-if="state.reviewHistory.length === 0" class="flex flex-col items-center justify-center py-10 text-gray-400">
+-              <Compass :size="28" class="text-gray-300 animate-pulse" />
+-              <span class="text-[11px] font-serif font-bold mt-2">暂无手机号奇门推断记录</span>
+-            </div>
+-            <div
+-              v-else
+-              v-for="item in state.reviewHistory"
+-              :key="item.id"
+-              @click="handleLoadHistoryPhone(item.id)"
+-              class="bg-brand-paper/30 hover:bg-brand-paper/85 rounded-xl p-3 border border-gray-100 cursor-pointer transition-colors flex items-center justify-between"
+-            >
+-              <div>
+-                <p class="font-serif text-[13.5px] font-extrabold text-brand-ink-strong flex items-center gap-1.5">
+-                  <Phone :size="13" class="text-brand-primary shrink-0" />
+-                  <span>{{ item.masked_phone }}</span>
+-                  <span class="text-[11px] font-sans px-1.5 py-0.5 bg-brand-primary/10 text-brand-primary-strong rounded">
+-                    {{ item.gender === 'male' ? '乾造' : '坤造' }}
+-                  </span>
+-                </p>
+-                <p class="font-sans text-[10.5px] text-brand-secondary mt-1">
+-                  评析大分：{{ item.score }} · {{ new Date(item.created_at).toLocaleDateString() }}
+-                </p>
+-              </div>
+-              <ArrowRight :size="14" class="text-brand-secondary/40" />
+-            </div>
+-          </div>
+-
+-          <!-- Bazi evaluations list -->
+-          <div v-if="activeHistoryTab === 'bazi'" class="space-y-2.5">
+-            <div v-if="state.fourPillarsHistory.length === 0" class="flex flex-col items-center justify-center py-10 text-gray-400">
+-              <Calendar :size="28" class="text-gray-300" />
+-              <span class="text-[11px] font-serif font-bold mt-2">暂无四柱八字神气排盘</span>
+-            </div>
+-            <div
+-              v-else
+-              v-for="item in state.fourPillarsHistory"
+-              :key="item.id"
+-              @click="handleLoadHistoryBazi(item.id)"
+-              class="bg-brand-paper/30 hover:bg-brand-paper/85 rounded-xl p-3 border border-gray-100 cursor-pointer transition-colors flex items-center justify-between"
+-            >
+-              <div>
+-                <p class="font-serif text-[13.5px] font-extrabold text-brand-ink-strong flex items-center gap-1.5">
+-                  <Calendar :size="13" class="text-brand-primary shrink-0" />
+-                  <span>公历生辰: {{ item.birth_date }}</span>
+-                  <span class="text-[11px] font-sans px-1.5 py-0.5 bg-brand-primary/10 text-brand-primary-strong rounded">
+-                    {{ item.gender === 'male' ? '乾造' : '坤造' }}
+-                  </span>
+-                </p>
+-                <p class="font-sans text-[10.5px] text-brand-secondary mt-1">
+-                  局神大分：{{ item.score }}
+-                </p>
+-              </div>
+-              <ArrowRight :size="14" class="text-brand-secondary/40" />
+-            </div>
+-          </div>
+-
+-          <!-- Ledger table list -->
+-          <div v-if="activeHistoryTab === 'points'" class="space-y-2.5">
+-            <div v-if="state.pointsLedger.length === 0" class="flex flex-col items-center justify-center py-10 text-gray-400">
+-              <Coins :size="28" class="text-gray-300" />
+-              <span class="text-[11px] font-serif font-bold mt-2">暂无积分账变流转信息</span>
++
++          <textarea
++            v-model="feedbackText"
++            placeholder="请输入您对 EaseWise 的反馈与产品建议..."
++            rows="4"
++            class="w-full bg-brand-paper/35 p-3 rounded-2xl border border-gray-150 outline-none text-[12.5px] text-brand-ink font-sans mb-4 resize-none leading-relaxed"
++          ></textarea>
++
++          <div class="flex gap-3">
++            <button
++              @click="showFeedbackModal = false"
++              class="flex-1 py-3 bg-brand-paper hover:bg-zinc-100 text-brand-secondary text-[12.5px] font-bold rounded-2xl cursor-pointer border border-gray-150 outline-none"
++            >
++              取消
++            </button>
++            <button
++              @click="handleSendFeedback"
++              :disabled="!feedbackText.trim()"
++              class="flex-1 py-3 bg-brand-primary text-white text-[12.5px] font-bold rounded-2xl cursor-pointer hover:bg-brand-primary/95 shadow-md outline-none border-none disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
++            >
++              提交反馈
++            </button>
++          </div>
++        </div>
++      </div>
++    </transition>
++
++    <!-- LOGOUT CONFIRM MODAL -->
++    <transition name="fade">
++      <div v-if="showLogoutConfirmModal" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
++        <div class="bg-white rounded-3xl w-full max-w-sm p-5 border border-brand-paper shadow-2xl relative">
++          <h3 class="font-serif text-[16.5px] font-bold text-brand-ink-strong mb-2">退出登录</h3>
++          <p class="font-sans text-[11.5px] text-brand-secondary leading-relaxed mb-4">
++            确定要注销当前账号并退出登录吗？您将回到游客模式，可以在之后随时重新登录。
++          </p>
++          <div class="flex gap-3">
++            <button
++              @click="showLogoutConfirmModal = false"
++              class="flex-1 py-3 bg-brand-paper hover:bg-zinc-100 text-brand-secondary text-[12px] font-bold rounded-2xl cursor-pointer border border-gray-150 outline-none"
++            >
++              取消
++            </button>
++            <button
++              @click="confirmLogout"
++              class="flex-1 py-3 bg-rose-500 hover:bg-rose-600 text-white text-[12px] font-bold rounded-2xl cursor-pointer shadow-md outline-none border-none"
++            >
++              确认退出
++            </button>
++          </div>
++        </div>
++      </div>
++    </transition>
++
++    <!-- LEDGER RECORD MODAL OVERLAY -->
++    <transition name="fade">
++      <div v-if="showLedgerModal" class="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4 backdrop-blur-sm">
++        <div class="bg-white rounded-3xl w-full max-w-sm p-6 border border-brand-paper shadow-2xl relative max-h-[80vh] flex flex-col">
++          <h3 class="font-serif text-[16px] font-extrabold text-brand-ink-strong mb-4 pb-2 border-b shrink-0 flex items-center justify-between">
++            <span>积分记录</span>
++            <button @click="showLedgerModal = false" class="text-zinc-400 hover:text-zinc-600 outline-none border-none bg-transparent cursor-pointer p-1">
++              <X :size="18" />
++            </button>
++          </h3>
++
++          <div class="flex-1 overflow-y-auto no-scrollbar pr-0.5 space-y-2.5">
++            <div v-if="state.pointsLedger.length === 0" class="flex flex-col items-center justify-center py-12 text-gray-400">
++              <Coins :size="28" class="text-zinc-300 mb-2 animate-pulse" />
++              <span class="text-[11.5px] font-serif font-bold text-zinc-500">暂无积分收支流水</span>
+             </div>
+             <div
+               v-else
+               v-for="item in state.pointsLedger"
+               :key="item.ledger_id"
+-              class="bg-brand-paper/20 rounded-xl p-3 border border-gray-50 flex justify-between items-center"
+-            >
+-              <div>
+-                <p class="font-serif text-[12.5px] font-extrabold text-brand-ink-strong">{{ item.remark || '灵台账变' }}</p>
+-                <p class="font-sans text-[10px] text-brand-secondary/70 mt-0.5">{{ new Date(item.created_at).toLocaleString() }}</p>
++              class="bg-brand-paper/25 rounded-xl p-3 border border-gray-50 flex justify-between items-center"
++            >
++              <div class="text-left">
++                <p class="font-serif text-[12.5px] font-extrabold text-brand-ink-strong">{{ item.remark || '系统礼包积分' }}</p>
++                <p class="font-sans text-[10px] text-zinc-400 mt-0.5">{{ new Date(item.created_at).toLocaleString() }}</p>
+               </div>
+               <span
+-                class="font-mono text-[14px] font-extrabold shrink-0 pl-2"
++                class="font-mono text-[13.5px] font-black shrink-0 pl-2"
+                 :class="item.delta > 0 ? 'text-emerald-600' : 'text-rose-500'"
+               >
+                 {{ item.delta > 0 ? `+${item.delta}` : item.delta }}
+               </span>
+             </div>
+           </div>
+-        </div>
+-      </div>
+-    </section>
+-
+-    <!-- NICKNAME UPDATE MODAL -->
++
++          <button
++            @click="showLedgerModal = false"
++            class="mt-5 w-full py-3 bg-brand-primary text-white text-[12.5px] font-bold rounded-2xl cursor-pointer hover:bg-brand-primary/95 shadow-md border-none outline-none shrink-0"
++          >
++            完成鉴阅
++          </button>
++        </div>
++      </div>
++    </transition>
++
++    <!-- REVIEW HISTORY MODAL OVERLAY -->
+     <transition name="fade">
+-      <div v-if="showNicknameModal" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+-        <div class="bg-white rounded-3xl w-full max-w-sm p-5 border border-brand-paper shadow-2xl relative">
+-          <h3 class="font-serif text-[16px] font-bold text-brand-ink-strong mb-4">修改掌门修称昵称</h3>
+-          <input
+-            v-model="nicknameForm"
+-            type="text"
+-            placeholder="请输入新的雅致同修昵称..."
+-            class="w-full bg-brand-paper/40 px-3.5 py-3 rounded-2xl border border-gray-150 outline-none text-[13px] text-brand-ink font-sans mb-4"
+-          />
+-          <div class="flex gap-3">
+-            <button
+-              @click="showNicknameModal = false"
+-              class="flex-1 py-3 bg-brand-paper hover:bg-zinc-100 text-brand-secondary text-[12.5px] font-bold rounded-2xl cursor-pointer border border-gray-150 outline-none"
+-            >
+-              取消
+-            </button>
+-            <button
+-              @click="handleUpdateProfile"
+-              class="flex-1 py-3 bg-brand-primary text-white text-[12.5px] font-bold rounded-2xl cursor-pointer hover:bg-brand-primary/95 shadow-md outline-none border-none"
+-            >
+-              完成修持
+-            </button>
+-          </div>
++      <div v-if="showHistoryModal" class="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4 backdrop-blur-sm">
++        <div class="bg-white rounded-3xl w-full max-w-sm p-6 border border-brand-paper shadow-2xl relative max-h-[80vh] flex flex-col">
++          <h3 class="font-serif text-[16px] font-extrabold text-brand-ink-strong mb-3 pb-2 border-b shrink-0 flex items-center justify-between">
++            <span>评测记录</span>
++            <button @click="showHistoryModal = false" class="text-zinc-400 hover:text-zinc-600 outline-none border-none bg-transparent cursor-pointer p-1">
++              <X :size="18" />
++            </button>
++          </h3>
++
++          <!-- Sub-selection tabs inside the history modal -->
++          <div class="flex border border-gray-150 rounded-xl overflow-hidden shrink-0 font-sans text-[11.5px] font-bold select-none mb-4.5 bg-zinc-50">
++            <button
++              @click="activeHistoryTab = 'phone'"
++              class="flex-1 py-2 cursor-pointer outline-none border-none font-bold"
++              :class="activeHistoryTab === 'phone' ? 'bg-brand-primary text-white font-black' : 'bg-transparent text-brand-secondary hover:bg-zinc-100'"
++            >
++              手机奇门
++            </button>
++            <button
++              @click="activeHistoryTab = 'bazi'"
++              class="flex-1 py-2 cursor-pointer outline-none border-none font-bold"
++              :class="activeHistoryTab === 'bazi' ? 'bg-brand-primary text-white font-black' : 'bg-transparent text-brand-secondary hover:bg-zinc-100'"
++            >
++              生辰八字
++            </button>
++          </div>
++
++          <div class="flex-1 overflow-y-auto no-scrollbar pr-0.5 space-y-2.5">
++            <!-- Case 1: Phone evaluations list -->
++            <div v-if="activeHistoryTab === 'phone'" class="space-y-2.5">
++              <div v-if="state.reviewHistory.length === 0" class="flex flex-col items-center justify-center py-12 text-gray-400">
++                <Compass :size="28" class="text-zinc-300 animate-pulse mb-2" />
++                <span class="text-[11.5px] font-serif font-bold text-zinc-500">暂无手机格局评断记录</span>
++              </div>
++              <div
++                v-else
++                v-for="item in state.reviewHistory"
++                :key="item.id"
++                @click="handleLoadHistoryPhone(item.id); showHistoryModal = false"
++                class="bg-brand-paper/25 hover:bg-brand-paper/70 rounded-xl p-3 border border-gray-100 cursor-pointer transition-colors flex items-center justify-between"
++              >
++                <div class="text-left">
++                  <p class="font-serif text-[13px] font-bold text-brand-ink-strong flex items-center gap-1.5">
++                    <Phone :size="12" class="text-brand-primary shrink-0" />
++                    <span class="font-mono font-bold">{{ item.masked_phone }}</span>
++                    <span class="text-[9.5px] font-sans px-1.5 py-0.5 bg-brand-primary/10 text-brand-primary-strong rounded">
++                      {{ item.gender === 'female' ? '坤造' : '乾造' }}
++                    </span>
++                  </p>
++                  <p class="font-sans text-[10px] text-zinc-400 mt-1">
++                    评析得分: {{ item.score }} 分 · {{ new Date(item.created_at).toLocaleDateString() }}
++                  </p>
++                </div>
++                <ArrowRight :size="13" class="text-zinc-400 shrink-0" />
++              </div>
++            </div>
++
++            <!-- Case 2: Bazi evaluations list -->
++            <div v-if="activeHistoryTab === 'bazi'" class="space-y-2.5">
++              <div v-if="state.fourPillarsHistory.length === 0" class="flex flex-col items-center justify-center py-12 text-gray-400">
++                <Calendar :size="28" class="text-zinc-300 mb-2" />
++                <span class="text-[11.5px] font-serif font-bold text-zinc-500">暂无八字排命盘记录</span>
++              </div>
++              <div
++                v-else
++                v-for="item in state.fourPillarsHistory"
++                :key="item.id"
++                @click="handleLoadHistoryBazi(item.id); showHistoryModal = false"
++                class="bg-brand-paper/25 hover:bg-brand-paper/70 rounded-xl p-3 border border-gray-100 cursor-pointer transition-colors flex items-center justify-between"
++              >
++                <div class="text-left">
++                  <p class="font-serif text-[13px] font-bold text-brand-ink-strong flex items-center gap-1.5">
++                    <Calendar :size="12" class="text-brand-primary shrink-0" />
++                    <span class="font-mono">{{ item.birth_date }}</span>
++                    <span class="text-[9.5px] font-sans px-1.5 py-0.5 bg-brand-primary/10 text-brand-primary-strong rounded">
++                      {{ item.gender === 'female' ? '坤造' : '乾造' }}
++                    </span>
++                  </p>
++                  <p class="font-sans text-[10px] text-zinc-400 mt-1">
++                    排盘总分: {{ item.score }} 分
++                  </p>
++                </div>
++                <ArrowRight :size="13" class="text-zinc-400 shrink-0" />
++              </div>
++            </div>
++          </div>
++
++          <button
++            @click="showHistoryModal = false"
++            class="mt-5 w-full py-3 bg-brand-primary text-white text-[12.5px] font-bold rounded-2xl cursor-pointer hover:bg-brand-primary/95 shadow-md border-none outline-none shrink-0"
++          >
++            完成鉴阅
++          </button>
+         </div>
+       </div>
+     </transition>
+
+-    <!-- PASSWORD CHANGE MODAL -->
+-    <transition name="fade">
+-      <div v-if="showPasswordModal" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+-        <div class="bg-white rounded-3xl w-full max-w-sm p-5 border border-brand-paper shadow-2xl relative">
+-          <h3 class="font-serif text-[16px] font-bold text-brand-ink-strong mb-4">重设修证登录安全密令</h3>
+-          <div class="space-y-3 mb-4">
+-            <input
+-              v-model="passwordForm.current"
+-              type="password"
+-              placeholder="当前使用的旧登录密钥..."
+-              class="w-full bg-brand-paper/40 px-3.5 py-3 rounded-2xl border border-gray-150 outline-none text-[13px] text-brand-ink font-sans"
+-            />
+-            <input
+-              v-model="passwordForm.next"
+-              type="password"
+-              placeholder="设置新的强登录密钥..."
+-              class="w-full bg-brand-paper/40 px-3.5 py-3 rounded-2xl border border-gray-150 outline-none text-[13px] text-brand-ink font-sans"
+-            />
+-            <input
+-              v-model="passwordForm.confirm"
+-              type="password"
+-              placeholder="再次填入新密钥确认..."
+-              class="w-full bg-brand-paper/40 px-3.5 py-3 rounded-2xl border border-gray-150 outline-none text-[13px] text-brand-ink font-sans"
+-            />
+-          </div>
+-          <div class="flex gap-3">
+-            <button
+-              @click="showPasswordModal = false"
+-              class="flex-1 py-3 bg-brand-paper hover:bg-zinc-100 text-brand-secondary text-[12.5px] font-bold rounded-2xl cursor-pointer border border-gray-150 outline-none"
+-            >
+-              取消
+-            </button>
+-            <button
+-              @click="handleUpdatePassword"
+-              class="flex-1 py-3 bg-brand-primary text-white text-[12.5px] font-bold rounded-2xl cursor-pointer hover:bg-brand-primary/95 shadow-md outline-none border-none"
+-            >
+-              重订密令
+-            </button>
+-          </div>
+-        </div>
+-      </div>
+-    </transition>
+-
+-    <!-- PROUDCT FEEDBACK MODAL -->
+-    <transition name="fade">
+-      <div v-if="showFeedbackModal" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+-        <div class="bg-white rounded-3xl w-full max-w-sm p-5 border border-brand-paper shadow-2xl relative">
+-          <h3 class="font-serif text-[16px] font-bold text-brand-ink-strong mb-2 flex items-center gap-1.5 leading-tight">
+-            <span>留笔同修建议反馈</span>
+-          </h3>
+-          <p class="font-sans text-[11px] text-brand-secondary leading-normal mb-3">
+-            修行路上离不开您的提灯指路。我们会认真感悟每一条提议。
+-          </p>
+-
+-          <textarea
+-            v-model="feedbackText"
+-            placeholder="请在此留笔您的感悟或功能诉求，易如反掌将以此而更精进..."
+-            rows="4"
+-            class="w-full bg-brand-paper/35 p-3 rounded-2xl border border-gray-150 outline-none text-[12.5px] text-brand-ink font-sans mb-4 resize-none leading-relaxed"
+-          ></textarea>
+-
+-          <div class="flex gap-3">
+-            <button
+-              @click="showFeedbackModal = false"
+-              class="flex-1 py-3 bg-brand-paper hover:bg-zinc-100 text-brand-secondary text-[12.5px] font-bold rounded-2xl cursor-pointer border border-gray-150 outline-none"
+-            >
+-              取消
+-            </button>
+-            <button
+-              @click="handleSendFeedback"
+-              :disabled="!feedbackText.trim()"
+-              class="flex-1 py-3 bg-brand-primary text-white text-[12.5px] font-bold rounded-2xl cursor-pointer hover:bg-brand-primary/95 shadow-md outline-none border-none disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
+-            >
+-              呈递玄想
+-            </button>
+-          </div>
+-        </div>
+-      </div>
+-    </transition>
+-
+-    <!-- LOGOUT CONFIRM MODAL -->
+-    <transition name="fade">
+-      <div v-if="showLogoutConfirmModal" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+-        <div class="bg-white rounded-3xl w-full max-w-sm p-5 border border-brand-paper shadow-2xl relative">
+-          <h3 class="font-serif text-[16.5px] font-bold text-brand-ink-strong mb-2">安全退出确认</h3>
+-          <p class="font-sans text-[11.5px] text-brand-secondary leading-relaxed mb-4">
+-            确定注销当前的同修账号并退出本设备的灵台登录吗？在您重新登录前，历史算例及所余灵币将暂时尘封。
+-          </p>
+-          <div class="flex gap-3">
+-            <button
+-              @click="showLogoutConfirmModal = false"
+-              class="flex-1 py-3 bg-brand-paper hover:bg-zinc-100 text-brand-secondary text-[12px] font-bold rounded-2xl cursor-pointer border border-gray-150 outline-none"
+-            >
+-              我再想想
+-            </button>
+-            <button
+-              @click="confirmLogout"
+-              class="flex-1 py-3 bg-rose-500 hover:bg-rose-600 text-white text-[12px] font-bold rounded-2xl cursor-pointer shadow-md outline-none border-none"
+-            >
+-              确认退出
+-            </button>
+-          </div>
+-        </div>
+-      </div>
+-    </transition>
+-
+-    <!-- SYSTEM INTRO MODAL -->
++    <!-- SYSTEM INTRO SCREEN OVERLAY -->
+     <SystemIntro v-if="showIntroModal" @close="showIntroModal = false" />
+
+-    <!-- AMBASSADOR DETAIL MODAL -->
++    <!-- AMBASSADOR DETAIL SCREEN OVERLAY -->
+     <AmbassadorDetail v-if="showAmbassadorModal" :is-promoter="state.user?.identity_level === 'promoter'" :user-uid="userUid" @close="showAmbassadorModal = false" />
+   </div>
+ </template>
+...[truncated]
