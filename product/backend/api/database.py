@@ -24,6 +24,7 @@ USER_IDENTITY_LEVEL_ALIASES = {
     "senior_promotion_ambassador": "vip_promoter",
     "svip_promotion_ambassador": "svip_promoter",
 }
+REVIEW_ASPECT_UNLOCK_PROCESSING_TTL = timedelta(minutes=20)
 
 CREATE_REVIEWS_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS reviews (
@@ -284,7 +285,11 @@ CREATE TABLE IF NOT EXISTS review_aspect_unlocks (
     aspect_key TEXT NOT NULL,
     points_cost INTEGER NOT NULL,
     usage_record_id TEXT,
+    status TEXT NOT NULL DEFAULT 'completed',
+    error_message TEXT,
+    refunded_at TEXT,
     unlocked_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
     UNIQUE(review_id, user_id, aspect_key),
     FOREIGN KEY(review_id) REFERENCES reviews(id),
     FOREIGN KEY(user_id) REFERENCES users(id)
@@ -646,6 +651,19 @@ def _ensure_usage_records_columns(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE usage_records ADD COLUMN llm_error_message TEXT")
 
 
+def _ensure_review_aspect_unlock_columns(connection: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(review_aspect_unlocks)").fetchall()}
+    if "status" not in columns:
+        connection.execute("ALTER TABLE review_aspect_unlocks ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'")
+    if "error_message" not in columns:
+        connection.execute("ALTER TABLE review_aspect_unlocks ADD COLUMN error_message TEXT")
+    if "refunded_at" not in columns:
+        connection.execute("ALTER TABLE review_aspect_unlocks ADD COLUMN refunded_at TEXT")
+    if "updated_at" not in columns:
+        connection.execute("ALTER TABLE review_aspect_unlocks ADD COLUMN updated_at TEXT")
+        connection.execute("UPDATE review_aspect_unlocks SET updated_at = unlocked_at WHERE updated_at IS NULL OR TRIM(updated_at) = ''")
+
+
 def _ensure_recharge_orders_columns(connection: sqlite3.Connection) -> None:
     columns = {row["name"] for row in connection.execute("PRAGMA table_info(recharge_orders)").fetchall()}
     if "paid_at" not in columns:
@@ -743,6 +761,7 @@ def ensure_schema() -> None:
         _ensure_llm_api_keys_columns(connection)
         connection.execute(CREATE_RUNTIME_CONFIG_ENTRIES_TABLE_SQL)
         connection.execute(CREATE_REVIEW_ASPECT_UNLOCKS_TABLE_SQL)
+        _ensure_review_aspect_unlock_columns(connection)
         connection.execute(CREATE_FOUR_PILLARS_ASPECT_UNLOCKS_TABLE_SQL)
         connection.execute(CREATE_FOUR_PILLARS_LUCK_RENDERS_TABLE_SQL)
         _ensure_four_pillars_luck_renders_columns(connection)
@@ -1174,7 +1193,7 @@ def get_internal_phone_qimen_summary() -> dict[str, Any]:
             """
         ).fetchone()
         unlock_row = connection.execute(
-            "SELECT COUNT(*) AS unlock_count, COUNT(DISTINCT review_id) AS unlocked_review_count FROM review_aspect_unlocks"
+            "SELECT COUNT(*) AS unlock_count, COUNT(DISTINCT review_id) AS unlocked_review_count FROM review_aspect_unlocks WHERE status = 'completed'"
         ).fetchone()
         voice_row = connection.execute(
             "SELECT COUNT(*) AS voice_request_count FROM usage_records WHERE scene = 'voice_tts'"
@@ -1260,6 +1279,7 @@ def _internal_phone_qimen_review_from_clause() -> str:
         LEFT JOIN (
             SELECT review_id, COUNT(*) AS unlock_count
             FROM review_aspect_unlocks
+            WHERE status = 'completed'
             GROUP BY review_id
         ) unlocks ON unlocks.review_id = r.id
         LEFT JOIN (
@@ -3815,7 +3835,9 @@ def create_review_aspect_unlock(*, review_id: str, user_id: str, aspect_key: str
     usage_record_id = uuid4().hex
     with open_connection() as connection:
         existing = _get_review_aspect_unlock_in_connection(connection, review_id=review_id, user_id=user_id, aspect_key=aspect_key)
-        if existing is not None:
+        if existing is not None and str(existing.get("status") or "completed") == "completed":
+            return existing
+        if existing is not None and str(existing.get("status") or "") == "processing":
             return existing
         if normalized_points_cost > 0:
             _spend_points_in_connection(
@@ -3824,14 +3846,28 @@ def create_review_aspect_unlock(*, review_id: str, user_id: str, aspect_key: str
                 points_cost=normalized_points_cost,
                 biz_type=usage_scene,
                 biz_id=review_id,
-                idempotency_key=f"review:aspect_unlock:{review_id}:{aspect_key}",
+                idempotency_key=f"review:aspect_unlock:{review_id}:{aspect_key}:{usage_record_id}",
                 remark=f"phone_review_aspect_unlock:{aspect_key}",
                 now_text=now_text,
             )
-        connection.execute(
-            "INSERT INTO review_aspect_unlocks (id, review_id, user_id, aspect_key, points_cost, usage_record_id, unlocked_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (uuid4().hex, review_id, user_id, aspect_key, normalized_points_cost, usage_record_id, now_text),
-        )
+        if existing is None:
+            connection.execute(
+                """
+                INSERT INTO review_aspect_unlocks
+                    (id, review_id, user_id, aspect_key, points_cost, usage_record_id, status, error_message, refunded_at, unlocked_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+                """,
+                (uuid4().hex, review_id, user_id, aspect_key, normalized_points_cost, usage_record_id, "completed", now_text, now_text),
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE review_aspect_unlocks
+                SET points_cost = ?, usage_record_id = ?, status = ?, error_message = NULL, refunded_at = NULL, unlocked_at = ?, updated_at = ?
+                WHERE review_id = ? AND user_id = ? AND aspect_key = ?
+                """,
+                (normalized_points_cost, usage_record_id, "completed", now_text, now_text, review_id, user_id, aspect_key),
+            )
         _create_usage_record_in_connection(
             connection,
             usage_record_id=usage_record_id,
@@ -3846,19 +3882,194 @@ def create_review_aspect_unlock(*, review_id: str, user_id: str, aspect_key: str
             created_at=now_text,
             updated_at=now_text,
         )
-        row = connection.execute(
-            "SELECT id, review_id, user_id, aspect_key, points_cost, usage_record_id, unlocked_at FROM review_aspect_unlocks WHERE review_id = ? AND user_id = ? AND aspect_key = ?",
-            (review_id, user_id, aspect_key),
-        ).fetchone()
+        row = _get_review_aspect_unlock_row(connection, review_id=review_id, user_id=user_id, aspect_key=aspect_key)
     if row is None:
         raise RuntimeError("review_aspect_unlock_create_failed")
     return _deserialize_review_aspect_unlock_row(row)
 
 
+def begin_review_aspect_unlock_generation(*, review_id: str, user_id: str, aspect_key: str, points_cost: int, usage_scene: str, request_payload_summary: dict[str, Any] | None, now_text: str, channel: str | None = None, force_generation: bool = False) -> dict[str, Any]:
+    normalized_points_cost = max(0, int(points_cost))
+    usage_record_id = uuid4().hex
+    with open_connection() as connection:
+        existing = _get_review_aspect_unlock_in_connection(connection, review_id=review_id, user_id=user_id, aspect_key=aspect_key)
+        if existing is not None:
+            existing_status = str(existing.get("status") or "completed")
+            if existing_status == "completed" and not force_generation:
+                existing["_generation_claimed"] = False
+                return existing
+            if existing_status == "completed" and force_generation:
+                normalized_points_cost = 0
+            if existing_status == "processing" and not _review_aspect_unlock_processing_expired(existing, now_text=now_text):
+                existing["_generation_claimed"] = False
+                return existing
+            if existing_status == "processing":
+                _refund_stale_review_aspect_unlock_in_connection(
+                    connection,
+                    existing=existing,
+                    aspect_key=aspect_key,
+                    now_text=now_text,
+                )
+
+        if normalized_points_cost > 0:
+            _spend_points_in_connection(
+                connection,
+                user_id=user_id,
+                points_cost=normalized_points_cost,
+                biz_type=usage_scene,
+                biz_id=review_id,
+                idempotency_key=f"review:aspect_unlock:{review_id}:{aspect_key}:{usage_record_id}",
+                remark=f"phone_review_aspect_unlock:{aspect_key}",
+                now_text=now_text,
+            )
+
+        if existing is None:
+            connection.execute(
+                """
+                INSERT INTO review_aspect_unlocks
+                    (id, review_id, user_id, aspect_key, points_cost, usage_record_id, status, error_message, refunded_at, unlocked_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+                """,
+                (uuid4().hex, review_id, user_id, aspect_key, normalized_points_cost, usage_record_id, "processing", now_text, now_text),
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE review_aspect_unlocks
+                SET points_cost = ?, usage_record_id = ?, status = ?, error_message = NULL, refunded_at = NULL, unlocked_at = ?, updated_at = ?
+                WHERE review_id = ? AND user_id = ? AND aspect_key = ?
+                """,
+                (normalized_points_cost, usage_record_id, "processing", now_text, now_text, review_id, user_id, aspect_key),
+            )
+        _create_usage_record_in_connection(
+            connection,
+            usage_record_id=usage_record_id,
+            user_id=user_id,
+            scene=usage_scene,
+            channel=channel,
+            target_id=review_id,
+            points_cost=normalized_points_cost,
+            status="processing",
+            request_payload_summary=request_payload_summary,
+            result_summary={"status": "processing", "aspect_key": aspect_key},
+            created_at=now_text,
+            updated_at=now_text,
+        )
+        row = _get_review_aspect_unlock_row(connection, review_id=review_id, user_id=user_id, aspect_key=aspect_key)
+    if row is None:
+        raise RuntimeError("review_aspect_unlock_create_failed")
+    unlock = _deserialize_review_aspect_unlock_row(row)
+    unlock["_generation_claimed"] = True
+    return unlock
+
+
+def complete_review_aspect_unlock_generation(*, review_id: str, user_id: str, aspect_key: str, result_summary: dict[str, Any] | None, now_text: str) -> dict[str, Any] | None:
+    with open_connection() as connection:
+        existing = _get_review_aspect_unlock_in_connection(connection, review_id=review_id, user_id=user_id, aspect_key=aspect_key)
+        if existing is None:
+            return None
+        connection.execute(
+            """
+            UPDATE review_aspect_unlocks
+            SET status = ?, error_message = NULL, updated_at = ?
+            WHERE review_id = ? AND user_id = ? AND aspect_key = ?
+            """,
+            ("completed", now_text, review_id, user_id, aspect_key),
+        )
+        usage_record_id = str(existing.get("usage_record_id") or "")
+        if usage_record_id:
+            connection.execute(
+                "UPDATE usage_records SET status = ?, result_summary = ?, updated_at = ? WHERE id = ?",
+                ("completed", _serialize_json_value(result_summary or {"status": "completed", "aspect_key": aspect_key}), now_text, usage_record_id),
+            )
+        row = _get_review_aspect_unlock_row(connection, review_id=review_id, user_id=user_id, aspect_key=aspect_key)
+    return _deserialize_review_aspect_unlock_row(row) if row is not None else None
+
+
+def fail_review_aspect_unlock_generation(*, review_id: str, user_id: str, aspect_key: str, error_message: str, now_text: str, refund_biz_type: str = "phone_review_aspect_unlock_refund") -> dict[str, Any] | None:
+    with open_connection() as connection:
+        existing = _get_review_aspect_unlock_in_connection(connection, review_id=review_id, user_id=user_id, aspect_key=aspect_key)
+        if existing is None:
+            return None
+        usage_record_id = str(existing.get("usage_record_id") or "")
+        points_cost = int(existing.get("points_cost") or 0)
+        should_refund = points_cost > 0 and not str(existing.get("refunded_at") or "").strip()
+        if should_refund:
+            _credit_points_in_connection(
+                connection,
+                user_id=user_id,
+                points_amount=points_cost,
+                change_type="refund",
+                biz_type=refund_biz_type,
+                biz_id=review_id,
+                idempotency_key=f"review:aspect_unlock_refund:{review_id}:{aspect_key}:{usage_record_id or existing.get('unlock_id')}",
+                remark=f"phone_review_aspect_unlock_refund:{aspect_key}",
+                now_text=now_text,
+            )
+        connection.execute(
+            """
+            UPDATE review_aspect_unlocks
+            SET status = ?, error_message = ?, refunded_at = CASE WHEN ? THEN ? ELSE refunded_at END, updated_at = ?
+            WHERE review_id = ? AND user_id = ? AND aspect_key = ?
+            """,
+            ("failed", str(error_message)[:500], 1 if should_refund else 0, now_text, now_text, review_id, user_id, aspect_key),
+        )
+        if usage_record_id:
+            connection.execute(
+                "UPDATE usage_records SET status = ?, result_summary = ?, updated_at = ? WHERE id = ?",
+                ("failed", _serialize_json_value({"status": "failed", "aspect_key": aspect_key, "error_message": str(error_message)[:500], "refunded": should_refund}), now_text, usage_record_id),
+            )
+        row = _get_review_aspect_unlock_row(connection, review_id=review_id, user_id=user_id, aspect_key=aspect_key)
+    return _deserialize_review_aspect_unlock_row(row) if row is not None else None
+
+
+def _refund_stale_review_aspect_unlock_in_connection(
+    connection: sqlite3.Connection,
+    *,
+    existing: dict[str, Any],
+    aspect_key: str,
+    now_text: str,
+) -> None:
+    usage_record_id = str(existing.get("usage_record_id") or "")
+    points_cost = int(existing.get("points_cost") or 0)
+    user_id = str(existing.get("user_id") or "")
+    review_id = str(existing.get("review_id") or "")
+    if points_cost > 0 and user_id and not str(existing.get("refunded_at") or "").strip():
+        _credit_points_in_connection(
+            connection,
+            user_id=user_id,
+            points_amount=points_cost,
+            change_type="refund",
+            biz_type="phone_review_aspect_unlock_refund",
+            biz_id=review_id,
+            idempotency_key=f"review:aspect_unlock_refund:{review_id}:{aspect_key}:{usage_record_id or existing.get('unlock_id')}:stale",
+            remark=f"phone_review_aspect_unlock_refund:{aspect_key}:stale",
+            now_text=now_text,
+        )
+    if usage_record_id:
+        connection.execute(
+            "UPDATE usage_records SET status = ?, result_summary = ?, updated_at = ? WHERE id = ? AND status = 'processing'",
+            ("failed", _serialize_json_value({"status": "failed", "aspect_key": aspect_key, "error_message": "stale_processing_refunded", "refunded": points_cost > 0}), now_text, usage_record_id),
+        )
+    connection.execute(
+        """
+        UPDATE review_aspect_unlocks
+        SET status = ?, error_message = ?, refunded_at = CASE WHEN ? THEN ? ELSE refunded_at END, updated_at = ?
+        WHERE id = ?
+        """,
+        ("failed", "stale_processing_refunded", 1 if points_cost > 0 else 0, now_text, now_text, str(existing.get("unlock_id") or "")),
+    )
+
+
 def list_review_aspect_unlocks(*, review_id: str, user_id: str) -> list[dict[str, Any]]:
     with open_connection() as connection:
         rows = connection.execute(
-            "SELECT id, review_id, user_id, aspect_key, points_cost, usage_record_id, unlocked_at FROM review_aspect_unlocks WHERE review_id = ? AND user_id = ? ORDER BY unlocked_at DESC, id DESC",
+            """
+            SELECT id, review_id, user_id, aspect_key, points_cost, usage_record_id, status, error_message, refunded_at, unlocked_at, updated_at
+            FROM review_aspect_unlocks
+            WHERE review_id = ? AND user_id = ? AND status = 'completed'
+            ORDER BY unlocked_at DESC, id DESC
+            """,
             (review_id, user_id),
         ).fetchall()
     return [_deserialize_review_aspect_unlock_row(row) for row in rows]
@@ -4719,7 +4930,11 @@ def _deserialize_review_aspect_unlock_row(row: sqlite3.Row) -> dict[str, Any]:
         "aspect_key": row["aspect_key"],
         "points_cost": row["points_cost"],
         "usage_record_id": row["usage_record_id"],
+        "status": row["status"] if "status" in row.keys() else "completed",
+        "error_message": row["error_message"] if "error_message" in row.keys() else None,
+        "refunded_at": row["refunded_at"] if "refunded_at" in row.keys() else None,
         "unlocked_at": row["unlocked_at"],
+        "updated_at": row["updated_at"] if "updated_at" in row.keys() else row["unlocked_at"],
     }
 
 
@@ -5462,11 +5677,32 @@ def _create_points_account_with_initial_grant_in_connection(connection: sqlite3.
 
 
 def _get_review_aspect_unlock_in_connection(connection: sqlite3.Connection, *, review_id: str, user_id: str, aspect_key: str) -> dict[str, Any] | None:
+    row = _get_review_aspect_unlock_row(connection, review_id=review_id, user_id=user_id, aspect_key=aspect_key)
+    return _deserialize_review_aspect_unlock_row(row) if row is not None else None
+
+
+def _get_review_aspect_unlock_row(connection: sqlite3.Connection, *, review_id: str, user_id: str, aspect_key: str) -> sqlite3.Row | None:
     row = connection.execute(
-        "SELECT id, review_id, user_id, aspect_key, points_cost, usage_record_id, unlocked_at FROM review_aspect_unlocks WHERE review_id = ? AND user_id = ? AND aspect_key = ?",
+        """
+        SELECT id, review_id, user_id, aspect_key, points_cost, usage_record_id, status, error_message, refunded_at, unlocked_at, updated_at
+        FROM review_aspect_unlocks
+        WHERE review_id = ? AND user_id = ? AND aspect_key = ?
+        """,
         (review_id, user_id, aspect_key),
     ).fetchone()
-    return _deserialize_review_aspect_unlock_row(row) if row is not None else None
+    return row
+
+
+def _review_aspect_unlock_processing_expired(item: dict[str, Any], *, now_text: str) -> bool:
+    updated_at = str(item.get("updated_at") or item.get("unlocked_at") or "").strip()
+    if not updated_at:
+        return True
+    try:
+        now_dt = _parse_iso_datetime(now_text)
+        updated_dt = _parse_iso_datetime(updated_at)
+    except Exception:
+        return True
+    return now_dt - updated_dt > REVIEW_ASPECT_UNLOCK_PROCESSING_TTL
 
 
 def _get_four_pillars_aspect_unlock_in_connection(connection: sqlite3.Connection, *, review_id: str, user_id: str, aspect_key: str) -> dict[str, Any] | None:

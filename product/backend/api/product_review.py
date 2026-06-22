@@ -11,6 +11,7 @@ from features.phone_qimen.rendering import (
     render_aspects_from_package,
     render_phone_summary_from_package,
     render_stability_from_package,
+    stream_aspect_from_package,
 )
 from product.backend.llm import DeepSeekAPIError, DeepSeekClient, load_env_file
 
@@ -18,7 +19,7 @@ PHONE_SUMMARY_MODEL = "deepseek-v4-pro"
 
 
 def build_product_review_render(package: dict[str, Any], *, tone_pack: str = "customer") -> dict[str, Any]:
-    return build_product_review_core_render(package, tone_pack=tone_pack, include_aspects=True)
+    return build_product_review_core_render(package, tone_pack=tone_pack, include_aspects=False)
 
 
 def build_product_review_core_render(
@@ -48,7 +49,7 @@ def build_product_review_core_render(
         "configured_model": configured_model,
         "generated_at": _utc_now(),
         "tone_pack": tone_pack,
-        "llm_sections": ["phone_summary", "stability", *[item["aspect_key"] for item in ASPECT_SPECS]],
+        "llm_sections": ["phone_summary", "stability", *([item["aspect_key"] for item in ASPECT_SPECS] if include_aspects else [])],
         "used_llm": True,
     }
 
@@ -85,6 +86,28 @@ def build_product_review_aspects_render(
         key: _strip_internal_render_fields(value.to_dict())
         for key, value in rendered_aspects.items()
     }
+
+
+def stream_product_review_aspect_render(
+    package: dict[str, Any],
+    *,
+    aspect_key: str,
+    tone_pack: str = "customer",
+    user_id: str | None = None,
+    request_id: str | None = None,
+):
+    client, configured_model = _resolve_render_client()
+    return stream_aspect_from_package(
+        package,
+        aspect_key=aspect_key,
+        tone_pack=tone_pack,  # type: ignore[arg-type]
+        client=client,
+        model=configured_model,
+        thinking_enabled=False,
+        max_tokens=_get_aspects_max_tokens(),
+        user_id=user_id,
+        request_id=request_id,
+    )
 
 
 def _render_core_sections_v2(

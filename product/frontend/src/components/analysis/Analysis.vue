@@ -27,7 +27,7 @@ import { EASEWISE_STORAGE_KEYS } from '../../constants/storage';
 import { ApiError } from '../../lib/api';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 import { useVoicePlayback, type VoiceSpeakResult } from '../../composables/useVoicePlayback';
-import type { Gender, ReviewAspect, ReviewProgressStage, ReviewRecord } from '../../types/api';
+import type { Gender, PhoneReviewAspectStreamDeltaData, ReviewAspect, ReviewProgressStage, ReviewRecord } from '../../types/api';
 
 const emit = defineEmits<{
   (e: 'back-to-home'): void;
@@ -48,6 +48,11 @@ type DisplayAspect = ReviewAspect & {
   icon: Component;
   tint: string;
   textTint: string;
+  is_streaming?: boolean;
+};
+
+type AspectStreamDraft = Partial<Pick<ReviewAspect, 'title' | 'risk' | 'content'>> & {
+  is_streaming: boolean;
 };
 
 type BoardSinglePalaceDisplay = {
@@ -85,7 +90,7 @@ const {
   isGuestUser,
   submitPhoneReview,
   refreshCurrentReview,
-  unlockAspect,
+  streamUnlockAspect,
   requestRegisteredUser,
   reviewBasePointsCost,
   aspectUnlockPointsCost,
@@ -124,7 +129,7 @@ const skipFutureReviewConfirm = ref(
 const pollingReviewId = ref<string | null>(null);
 const unlockingAspectKey = ref<string | null>(null);
 const unlockWaitingAspectKey = ref<string | null>(null);
-const unlockWaitingAttempt = ref(0);
+const aspectStreamDrafts = ref<Record<string, AspectStreamDraft>>({});
 let disposed = false;
 let pollingPromise: Promise<ReviewRecord> | null = null;
 let lastCompletedReviewId: string | null = null;
@@ -132,9 +137,8 @@ let waitingVisualTimers: ReturnType<typeof setTimeout>[] = [];
 let waitingPoemTimer: ReturnType<typeof setInterval> | null = null;
 let waitingProgressTimer: ReturnType<typeof setInterval> | null = null;
 let waitingStartedAt = 0;
+let aspectUnlockAbortController: AbortController | null = null;
 
-const ASPECT_UNLOCK_RETRY_LIMIT = 45;
-const ASPECT_UNLOCK_RETRY_DELAY_MS = 2000;
 const REVIEW_READY_RETRY_LIMIT = 180;
 const REVIEW_READY_RETRY_DELAY_MS = 1000;
 const REVIEW_TIMEOUT_MESSAGE = '评测时间比预期更长，请稍后在“我的”页面查看结果。';
@@ -165,8 +169,8 @@ const waitingSteps = [
     desc: '智能体正在通过大模型生成总评和长期使用建议',
   },
   {
-    title: '专项内容预热中',
-    desc: '智能体正在准备十二项专题评测',
+    title: '结果即将呈现',
+    desc: '核心评测完成后，十二项专题可按需实时生成',
   },
 ];
 
@@ -237,17 +241,30 @@ const activeBoardGridCell = computed(() => {
   return board?.grid_cells.find((cell) => cell.is_active) ?? null;
 });
 const reviewAspects = computed<DisplayAspect[]>(() =>
-  (currentReview.value?.aspects ?? []).map((aspect) => ({
-    ...aspect,
-    ...(aspectUiMap[aspect.aspect_key] || {
-      icon: Sparkles,
-      tint: 'bg-brand-paper text-brand-secondary',
-      textTint: 'text-brand-secondary',
-    }),
-  })),
+  (currentReview.value?.aspects ?? []).map((aspect) => {
+    const draft = aspectStreamDrafts.value[aspect.aspect_key];
+    return {
+      ...aspect,
+      ...(draft
+        ? {
+            title: draft.title || aspect.title,
+            risk: draft.risk ?? aspect.risk,
+            content: draft.content ?? aspect.content,
+            is_unlocked: true,
+            is_streaming: draft.is_streaming,
+          }
+        : {}),
+      ...(aspectUiMap[aspect.aspect_key] || {
+        icon: Sparkles,
+        tint: 'bg-brand-paper text-brand-secondary',
+        textTint: 'text-brand-secondary',
+      }),
+    };
+  }),
 );
 const selectedAspect = computed(() => reviewAspects.value[activeAspect.value] || null);
 const selectedAspectUnlockPending = computed(() => selectedAspect.value ? isAspectUnlockPending(selectedAspect.value) : false);
+const selectedAspectDetailReady = computed(() => selectedAspect.value ? hasAspectDetail(selectedAspect.value) : false);
 const selectedAspectWaitingForGeneration = computed(
   () => Boolean(selectedAspect.value && unlockWaitingAspectKey.value === selectedAspect.value.aspect_key),
 );
@@ -283,12 +300,9 @@ const unlockProcessingTitle = computed(
 );
 const unlockWaitingMessage = computed(() => {
   if (!selectedAspectWaitingForGeneration.value) {
-    return '正在读取已经预热的专项结果，完成后会立即展示。';
+    return '正在确认解锁状态，完成后会立即展示。';
   }
-  if (unlockWaitingAttempt.value <= 1) {
-    return '这部分内容正在后台整理，完成后会自动解锁展示。';
-  }
-  return `专项内容仍在生成中，系统正在自动等待第 ${unlockWaitingAttempt.value} 次确认。`;
+  return 'AI 正在实时生成这部分内容，文字会逐步出现在这里。';
 });
 const unlockProcessingHeading = computed(
   () => selectedAspectWaitingForGeneration.value ? `正在生成「${unlockWaitingAspectTitle.value}」` : `正在解锁「${unlockProcessingTitle.value}」`,
@@ -531,6 +545,14 @@ function autoSpeakUnlockedAspect(review: ReviewRecord, aspectKey: string): void 
   });
 }
 
+function hasAspectDetail(aspect: Pick<ReviewAspect, 'content' | 'risk'> | null | undefined): boolean {
+  return Boolean(String(aspect?.content || '').trim() || String(aspect?.risk || '').trim());
+}
+
+function resolveAspectUnlockCost(aspect: Pick<ReviewAspect, 'unlock_points'> | null | undefined): number {
+  return aspect?.unlock_points ?? effectiveAspectUnlockPoints.value;
+}
+
 function isAspectUnlockPending(aspect: DisplayAspect): boolean {
   return unlockingAspectKey.value === aspect.aspect_key || unlockWaitingAspectKey.value === aspect.aspect_key;
 }
@@ -556,16 +578,8 @@ function resolveScoreBadgeClass(score: number | null | undefined, active: boolea
   return 'text-emerald-600 bg-emerald-50 border-emerald-200/40';
 }
 
-function isAspectNotReadyError(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 409 && error.detail === 'aspect_not_ready';
-}
-
-function isAspectUnlockTimeoutError(error: unknown): boolean {
-  return error instanceof Error && error.message === 'aspect_unlock_timeout';
-}
-
 function isAspectUnlockCancelledError(error: unknown): boolean {
-  return error instanceof Error && error.message === 'aspect_unlock_cancelled';
+  return error instanceof Error && (error.message === 'aspect_unlock_cancelled' || error.name === 'AbortError');
 }
 
 function resolveHarmToneClass(value: string): string {
@@ -691,13 +705,37 @@ function resetToInput(): void {
   pendingCompletedReview.value = null;
   pendingCompletedReviewShouldToast.value = false;
   clearWaitingTimers();
-  clearUnlockState();
+  clearUnlockState({ abort: true });
 }
 
-function clearUnlockState(): void {
+function clearUnlockState(options: { abort?: boolean } = {}): void {
+  if (options.abort && aspectUnlockAbortController) {
+    aspectUnlockAbortController.abort();
+    aspectUnlockAbortController = null;
+  }
   unlockingAspectKey.value = null;
   unlockWaitingAspectKey.value = null;
-  unlockWaitingAttempt.value = 0;
+}
+
+function applyAspectStreamDelta(aspectKey: string, data: PhoneReviewAspectStreamDeltaData): void {
+  const currentDraft = aspectStreamDrafts.value[aspectKey] || { is_streaming: true };
+  aspectStreamDrafts.value = {
+    ...aspectStreamDrafts.value,
+    [aspectKey]: {
+      ...currentDraft,
+      [data.field]: data.text,
+      is_streaming: true,
+    },
+  };
+}
+
+function clearAspectStreamDraft(aspectKey: string): void {
+  if (!aspectStreamDrafts.value[aspectKey]) {
+    return;
+  }
+  const nextDrafts = { ...aspectStreamDrafts.value };
+  delete nextDrafts[aspectKey];
+  aspectStreamDrafts.value = nextDrafts;
 }
 
 function resolveDefaultAspectIndex(aspects: DisplayAspect[]): number {
@@ -937,7 +975,7 @@ onMounted(() => {
 onUnmounted(() => {
   disposed = true;
   voicePlayback.stop();
-  clearUnlockState();
+  clearUnlockState({ abort: true });
   clearWaitingTimers();
 });
 
@@ -1091,7 +1129,7 @@ async function handleUnlockAspect(index: number): Promise<void> {
 
   activeAspect.value = index;
 
-  if (aspect.is_unlocked) {
+  if (aspect.is_unlocked && hasAspectDetail(aspect)) {
     return;
   }
   const authenticated = await ensureRegisteredForAction('专项解锁');
@@ -1100,13 +1138,9 @@ async function handleUnlockAspect(index: number): Promise<void> {
   }
 
   try {
-    await tryUnlockAspectWithWait(review.id, aspect.aspect_key, aspect.title);
+    await streamUnlockAspectForDisplay(review.id, aspect.aspect_key, aspect.title);
   } catch (error) {
     if (isAspectUnlockCancelledError(error)) {
-      return;
-    }
-    if (isAspectUnlockTimeoutError(error)) {
-      showToast('专项内容还在生成中，请稍后再试。');
       return;
     }
     if (error instanceof ApiError && error.status === 402) {
@@ -1122,69 +1156,50 @@ async function handleUnlockAspect(index: number): Promise<void> {
     if (unlockingAspectKey.value === aspect.aspect_key) {
       unlockingAspectKey.value = null;
     }
+    if (unlockWaitingAspectKey.value === aspect.aspect_key) {
+      unlockWaitingAspectKey.value = null;
+    }
   }
 }
 
-async function tryUnlockAspectWithWait(reviewId: string, aspectKey: string, title: string): Promise<void> {
+async function streamUnlockAspectForDisplay(reviewId: string, aspectKey: string, title: string): Promise<void> {
+  if (aspectUnlockAbortController) {
+    aspectUnlockAbortController.abort();
+  }
+  const controller = new AbortController();
+  aspectUnlockAbortController = controller;
   unlockingAspectKey.value = aspectKey;
-  unlockWaitingAspectKey.value = null;
-  unlockWaitingAttempt.value = 0;
+  unlockWaitingAspectKey.value = aspectKey;
+  clearAspectStreamDraft(aspectKey);
+  currentProgressStage.value = 'rendering';
+  currentProgressMessage.value = `正在实时生成「${title}」专项内容`;
 
   try {
-    const refreshedReview = await unlockAspect(reviewId, aspectKey);
-    persistCompletedReviewState(refreshedReview);
+    const result = await streamUnlockAspect(reviewId, aspectKey, {
+      signal: controller.signal,
+      onStatus: (data) => {
+        currentProgressMessage.value = data.message || `正在实时生成「${title}」专项内容`;
+      },
+      onDelta: (data) => {
+        applyAspectStreamDelta(aspectKey, data);
+      },
+    });
+    clearAspectStreamDraft(aspectKey);
+    persistCompletedReviewState(result.review);
     clearUnlockState();
     showToast(`已解锁「${title}」详细分析。`);
-    autoSpeakUnlockedAspect(refreshedReview, aspectKey);
-    return;
+    autoSpeakUnlockedAspect(result.review, aspectKey);
   } catch (error) {
-    if (!isAspectNotReadyError(error)) {
-      throw error;
-    }
-  }
-
-  unlockWaitingAspectKey.value = aspectKey;
-  unlockingAspectKey.value = null;
-  currentProgressStage.value = 'rendering';
-  currentProgressMessage.value = `「${title}」正在后台生成中，马上就好。`;
-
-  for (let attempt = 1; attempt <= ASPECT_UNLOCK_RETRY_LIMIT; attempt += 1) {
-    if (disposed || currentReview.value?.id !== reviewId) {
+    clearAspectStreamDraft(aspectKey);
+    if (disposed || controller.signal.aborted) {
       throw new Error('aspect_unlock_cancelled');
     }
-
-    unlockWaitingAttempt.value = attempt;
-    const latestReview = await refreshCurrentReview(reviewId);
-    persistCompletedReviewState(latestReview);
-    const latestAspect = latestReview.aspects.find((item) => item.aspect_key === aspectKey);
-    if (latestAspect?.is_unlocked && latestAspect.content && latestAspect.risk) {
-      clearUnlockState();
-      showToast(`已解锁「${title}」详细分析。`);
-      autoSpeakUnlockedAspect(latestReview, aspectKey);
-      return;
+    throw error;
+  } finally {
+    if (aspectUnlockAbortController === controller) {
+      aspectUnlockAbortController = null;
     }
-
-    try {
-      const refreshedReview = await unlockAspect(reviewId, aspectKey);
-      persistCompletedReviewState(refreshedReview);
-      const unlockedAspect = refreshedReview.aspects.find((item) => item.aspect_key === aspectKey);
-      if (unlockedAspect?.is_unlocked) {
-        clearUnlockState();
-        showToast(`已解锁「${title}」详细分析。`);
-        autoSpeakUnlockedAspect(refreshedReview, aspectKey);
-        return;
-      }
-    } catch (error) {
-      if (!isAspectNotReadyError(error)) {
-        throw error;
-      }
-    }
-
-    await sleep(ASPECT_UNLOCK_RETRY_DELAY_MS);
   }
-
-  clearUnlockState();
-  throw new Error('aspect_unlock_timeout');
 }
 
 function handleOpenServiceContact(scene = 'review_support'): void {
@@ -1192,9 +1207,9 @@ function handleOpenServiceContact(scene = 'review_support'): void {
 }
 
 function handleSelectNextLockedAspect(): void {
-  const nextLockedIndex = reviewAspects.value.findIndex((aspect) => !aspect.is_unlocked);
+  const nextLockedIndex = reviewAspects.value.findIndex((aspect) => !hasAspectDetail(aspect));
   if (nextLockedIndex === -1) {
-    showToast('当前十二个专项均已预生成。');
+    showToast('当前十二个专项均已生成。');
     void scrollToAspectSection();
     return;
   }
@@ -2258,7 +2273,7 @@ function sleep(ms: number): Promise<void> {
               :key="selectedAspect.aspect_key"
               class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-4 text-left"
             >
-              <div v-if="selectedAspectUnlockPending" class="py-12 flex flex-col items-center justify-center space-y-4 text-center">
+              <div v-if="selectedAspectUnlockPending && !selectedAspectDetailReady" class="py-12 flex flex-col items-center justify-center space-y-4 text-center">
                 <div class="relative w-14 h-14 flex items-center justify-center">
                   <div class="absolute inset-0 border-4 border-brand-primary/10 rounded-full animate-pulse"></div>
                   <div class="absolute inset-0 border-4 border-brand-primary border-t-transparent rounded-full animate-spin"></div>
@@ -2274,7 +2289,7 @@ function sleep(ms: number): Promise<void> {
                 </div>
               </div>
 
-              <div v-else-if="selectedAspect.is_unlocked" class="space-y-4">
+              <div v-else-if="selectedAspectDetailReady" class="space-y-4">
                 <div class="flex justify-between items-center pb-3 border-b border-gray-50 gap-2">
                   <div class="flex items-center gap-2">
                     <component :is="selectedAspect.icon" :size="16" class="text-brand-primary shrink-0" />
@@ -2318,7 +2333,7 @@ function sleep(ms: number): Promise<void> {
                       class="px-2.5 py-1 rounded-full font-sans text-[11px] font-bold border"
                       :class="resolveScoreBadgeClass(selectedAspect.score, false)"
                     >
-                      专项评分：{{ selectedAspect.score != null ? `${selectedAspect.score}分` : '已解锁' }}
+                      {{ selectedAspectUnlockPending ? '实时生成中' : `专项评分：${selectedAspect.score != null ? `${selectedAspect.score}分` : '已解锁'}` }}
                     </span>
                   </div>
                 </div>
@@ -2352,10 +2367,10 @@ function sleep(ms: number): Promise<void> {
                 </div>
                 <div class="max-w-[85%] mx-auto">
                   <h5 class="font-serif font-bold text-[15px] text-brand-ink-strong leading-tight">
-                    查看「{{ selectedAspect.title }}」详细分析
+                    生成「{{ selectedAspect.title }}」详细分析
                   </h5>
                   <p class="font-sans text-[13px] text-brand-secondary mt-1 leading-relaxed">
-                    该维度属于深度内容，默认需要额外消耗 <span class="font-sans">{{ selectedAspect.unlock_points || effectiveAspectUnlockPoints }}</span> 积分后查看。
+                    点击后将实时生成该维度的深度内容<span v-if="resolveAspectUnlockCost(selectedAspect) > 0">，默认需要消耗 <span class="font-sans">{{ resolveAspectUnlockCost(selectedAspect) }}</span> 积分</span>。
                   </p>
                 </div>
                 <button
@@ -2371,8 +2386,9 @@ function sleep(ms: number): Promise<void> {
                   <span>
                     <span v-if="selectedAspectWaitingForGeneration">正在生成专项内容</span>
                     <span v-else-if="selectedAspectUnlockPending">正在读取专项内容</span>
+                    <span v-else-if="resolveAspectUnlockCost(selectedAspect) <= 0">免费生成并解锁</span>
                     <span v-else>
-                      消耗 <span class="font-sans">{{ selectedAspect.unlock_points || effectiveAspectUnlockPoints }}</span> 积分立即解锁
+                      消耗 <span class="font-sans">{{ resolveAspectUnlockCost(selectedAspect) }}</span> 积分立即解锁
                     </span>
                   </span>
                 </button>

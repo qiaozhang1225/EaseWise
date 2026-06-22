@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 import html
+import json
 import re
 import secrets
 import threading
@@ -15,9 +16,9 @@ from zoneinfo import ZoneInfo
 
 from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 
-from product.backend.llm import get_deepseek_governor_status, load_env_file
+from product.backend.llm import DeepSeekAPIError, get_deepseek_governor_status, load_env_file
 from features.almanac.engine import build_almanac_for_date, build_today_almanac
 from features.four_pillars.engine import FOUR_PILLARS_ASPECT_ORDER, FOUR_PILLARS_ASPECTS, build_dayun_facts, build_four_pillars_review, build_liunian_facts
 from features.four_pillars.rendering import (
@@ -35,12 +36,15 @@ from .auth import build_session_expiry, exchange_wechat_code, hash_access_token,
 from .config import APP_TITLE, APP_VERSION, allow_mock_wechat_login, get_cors_origins, get_database_path, get_public_base_url, get_uploads_dir, get_wechat_oa_app_id
 from .database import InsufficientPointsError, adjust_points, adjust_rebate_points, claim_points_from_link, complete_recharge_order_manually, complete_review, complete_review_with_message, complete_usage_record, count_internal_phone_qimen_reviews, count_points_claim_links, count_points_claim_records, count_users, create_payment_transaction, create_phone_user, create_points_claim_link, create_recharge_order, create_refund_request, create_review_aspect_unlock, create_review_with_charge, create_session, create_usage_record, delete_llm_api_key, disable_points_claim_link, ensure_schema, fail_review, fail_usage_record, get_dashboard_summary, get_internal_phone_qimen_review, get_internal_phone_qimen_summary as get_internal_phone_qimen_summary_data, get_internal_user, get_latest_payment_transaction_for_order, get_llm_api_key, get_phone_identity_by_normalized_phone, get_points_account, get_points_claim_link, get_points_claim_link_by_code, get_primary_phone_identity_by_user_id, get_promotion_application, get_promotion_commission, get_promotion_rules, get_promotion_withdrawal, get_recharge_order, get_review, get_usage_record, get_user, get_user_current_week_points_claim, list_internal_phone_qimen_reviews, list_llm_api_keys, list_payment_transactions_for_order, list_points_claim_links, list_points_claim_records, list_points_ledger, list_promotion_applications, list_promotion_commissions, list_promotion_withdrawals, list_recharge_orders, list_recent_recharge_orders_for_user, list_refund_requests_for_order, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, list_voice_usage_records_for_review, mark_phone_identity_login, mark_promotion_withdrawal_paid, record_points_claim_duplicate_link_visit, refund_points, revoke_session_by_token_hash, retry_promotion_withdrawal_payout, retry_refund_request, review_promotion_application, review_promotion_withdrawal, review_recharge_order, review_refund_request, settle_payment_transaction, update_initial_points_config, update_phone_identity_password, update_review_generation_payload, update_review_progress, update_review_score_template, update_usage_record_llm_metrics, update_user_identity, update_user_profile, update_user_promoter_parent, update_user_status, upsert_llm_api_key, upsert_runtime_config_entry, upsert_wechat_user
 from .database import (
+    begin_review_aspect_unlock_generation,
     complete_four_pillars_review_with_message,
     complete_four_pillars_luck_render,
+    complete_review_aspect_unlock_generation,
     count_internal_four_pillars_reviews,
     create_four_pillars_aspect_unlock,
     create_four_pillars_luck_render_request,
     create_four_pillars_review_with_charge,
+    fail_review_aspect_unlock_generation,
     fail_four_pillars_luck_render,
     fail_four_pillars_review,
     get_four_pillars_review,
@@ -58,7 +62,7 @@ from .database import (
 )
 from .phone_review_view import PUBLIC_ASPECT_ORDER, build_phone_review_product_view
 from .payments import create_payment_request
-from .product_review import build_product_review_aspects_render, build_product_review_core_render
+from .product_review import build_product_review_aspects_render, build_product_review_core_render, stream_product_review_aspect_render
 from .runtime_config import get_runtime_agent_metaphysics_skill_enabled, get_runtime_available_recharge_packages, get_runtime_four_pillars_aspect_order, get_runtime_four_pillars_aspect_unlock_points_cost, get_runtime_four_pillars_base_points_cost, get_runtime_four_pillars_free_aspect_keys, get_runtime_four_pillars_luck_cycle_points_cost, get_runtime_four_pillars_luck_generation_enabled, get_runtime_four_pillars_luck_year_points_cost, get_runtime_four_pillars_unlock_enforcement_enabled, get_runtime_initial_points, get_runtime_phone_review_aspect_order, get_runtime_phone_review_aspect_unlock_points_cost, get_runtime_phone_review_base_points_cost, get_runtime_phone_review_free_aspect_keys, get_runtime_phone_review_unlock_enforcement_enabled, get_runtime_voice_cache_enabled, get_runtime_voice_default_voice_key, get_runtime_voice_max_chars_per_request, get_runtime_voice_provider, is_module_enabled, normalize_channel_key, normalize_config_key, normalize_scope_key, normalize_scope_type, resolve_public_runtime_config
 from .schemas import AdminReviewRequest, AgentReplyRequest, AgentReplyResponse, AlmanacResponse, AuthLoginResponse, AvatarUploadRequest, ComplianceConfigResponse, CurrentUserResponse, CustomerServiceConfigResponse, CustomerServiceQrCodeUploadRequest, DashboardResponse, DashboardMetricResponse, DashboardSectionResponse, InternalPhoneQimenAspectUnlockRecordResponse, InternalPhoneQimenReviewDetailResponse, InternalPhoneQimenReviewItemResponse, InternalPhoneQimenReviewListResponse, InternalPhoneQimenSummaryResponse, InternalUserAdminSummaryResponse, InternalUserListResponse, InternalUserResponse, LlmApiKeyListResponse, LlmApiKeyResponse, LlmApiKeyUpsertRequest, LlmConcurrencyStatusResponse, ManualPointsAdjustRequest, ManualPointsAdjustResponse, ModuleRuntimeConfigResponse, PasswordChangeRequest, PasswordChangeResponse, PaymentNotifyResponse, PaymentTransactionCreateRequest, PaymentTransactionResponse, PhonePasswordLoginRequest, PhonePasswordRegisterRequest, PhoneStatusRequest, PhoneStatusResponse, PointsAccountResponse, PointsClaimLinkCreateRequest, PointsClaimLinkDisableRequest, PointsClaimLinkListResponse, PointsClaimLinkResponse, PointsClaimRecordListResponse, PointsClaimRecordResponse, PointsClaimSubmitResponse, PointsLedgerEntryResponse, PointsLedgerListResponse, PublicPointsClaimLinkResponse, PublicRuntimeConfigResponse, PromotionApplicationListResponse, PromotionApplicationResponse, PromotionCommissionListResponse, PromotionCommissionResponse, PromotionRulesResponse, PromotionRulesUpdateRequest, PromotionWithdrawalListResponse, PromotionWithdrawalPayoutRequest, PromotionWithdrawalResponse, RebatePointsAdjustRequest, RebatePointsAdjustResponse, RebatePointsAccountResponse, RefundCreateRequest, RefundRequestResponse, RefundRetryRequest, RechargeOrderCreateRequest, RechargeOrderListResponse, RechargeOrderManualCompleteRequest, RechargeOrderManualCompleteResponse, RechargeOrderPaymentStatusResponse, RechargeOrderResponse, RechargeOrderReviewRequest, RechargeOrderReviewResponse, RechargeOrderSummaryResponse, RechargePackageListResponse, RechargePackageResponse, ReviewAspectResponse, ReviewAspectUnlockListResponse, ReviewAspectUnlockRequest, ReviewAspectUnlockResponse, ReviewBoardResponse, ReviewCreateRequest, ReviewListResponse, ReviewPhoneSummaryResponse, ReviewRecordResponse, ReviewStabilityDetailResponse, ReviewSummaryResponse, RuntimeConfigEntryResponse, RuntimeConfigListResponse, RuntimeConfigSchemaItemResponse, RuntimeConfigSchemaResponse, RuntimeConfigUpsertRequest, RuntimeInitialPointsUpdateRequest, RuntimeInitialPointsUpdateResponse, RuntimeModulesConfigResponse, RuntimePointsConfigResponse, RuntimeRechargeConfigResponse, UsageRecordDetailResponse, UsageRecordListResponse, UsageRecordResponse, UserIdentityUpdateRequest, UserPromoterParentUpdateRequest, UserProfileUpdateRequest, UserResponse, UserStatusUpdateRequest, VoiceNarrationRequest, VoiceNarrationResponse, VoiceRuntimeConfigResponse, WeChatLoginRequest
 from .schemas import (
@@ -1780,7 +1784,8 @@ def create_review_aspect_unlock_record(
         raise HTTPException(status_code=422, detail="invalid_aspect_key")
     if not _review_aspect_detail_ready(review, normalized_aspect_key):
         raise HTTPException(status_code=409, detail="aspect_not_ready")
-    points_cost = get_runtime_phone_review_aspect_unlock_points_cost(channel_key)
+    free_aspect_keys = _resolve_review_free_aspect_keys(available_aspect_keys, channel_key=channel_key)
+    points_cost = 0 if normalized_aspect_key in free_aspect_keys else get_runtime_phone_review_aspect_unlock_points_cost(channel_key)
     try:
         unlock = create_review_aspect_unlock(
             review_id=review_id,
@@ -1794,6 +1799,8 @@ def create_review_aspect_unlock_record(
         )
     except InsufficientPointsError as exc:
         raise HTTPException(status_code=402, detail="insufficient_points") from exc
+    if str(unlock.get("status") or "completed") != "completed":
+        raise HTTPException(status_code=409, detail="aspect_generation_in_progress")
     public_view = _resolve_review_public_view(review, current_user_id=current_user_id, channel_key=channel_key)
     aspect_map = {item.aspect_key: item for item in _build_review_aspect_models(public_view)}
     points_account = get_points_account(current_user_id)
@@ -1801,6 +1808,137 @@ def create_review_aspect_unlock_record(
         unlock,
         points=_build_points_account_response(points_account) if points_account is not None else None,
         aspect=aspect_map.get(normalized_aspect_key),
+    )
+
+
+def stream_review_aspect_unlock_record(
+    review_id: str,
+    aspect_key: str,
+    request: Request,
+    current_user: dict[str, object] = Depends(require_registered_user),
+) -> StreamingResponse:
+    _ensure_module_available(module_key="phone_review", request=request)
+    current_user_id = str(current_user["user_id"])
+    review = _require_owned_review(review_id, current_user_id=current_user_id)
+    channel_key = _resolve_request_channel(request)
+    available_aspect_keys = _resolve_review_aspect_keys(review, channel_key=channel_key)
+    normalized_aspect_key = aspect_key.strip().lower()
+    if normalized_aspect_key not in available_aspect_keys:
+        raise HTTPException(status_code=422, detail="invalid_aspect_key")
+    if not isinstance(review.get("score_result"), dict) or not isinstance(review.get("score_template"), dict):
+        raise HTTPException(status_code=409, detail="review_not_ready_for_unlock")
+
+    def event_stream():
+        unlock: dict[str, Any] | None = None
+        generation_claimed = False
+        try:
+            latest_review = get_review(review_id) or review
+            if _review_aspect_detail_ready(latest_review, normalized_aspect_key):
+                unlock = _create_completed_review_aspect_unlock_for_stream(
+                    latest_review,
+                    current_user_id=current_user_id,
+                    aspect_key=normalized_aspect_key,
+                    available_aspect_keys=available_aspect_keys,
+                    channel_key=channel_key,
+                )
+                yield _sse_event("unlock", _build_review_aspect_stream_unlock_data(unlock, current_user_id=current_user_id))
+                yield _sse_event("complete", _build_review_aspect_stream_complete_data(review_id, current_user_id=current_user_id, channel_key=channel_key, aspect_key=normalized_aspect_key))
+                return
+
+            free_aspect_keys = _resolve_review_free_aspect_keys(available_aspect_keys, channel_key=channel_key)
+            points_cost = 0 if normalized_aspect_key in free_aspect_keys else get_runtime_phone_review_aspect_unlock_points_cost(channel_key)
+            unlock = begin_review_aspect_unlock_generation(
+                review_id=review_id,
+                user_id=current_user_id,
+                aspect_key=normalized_aspect_key,
+                points_cost=points_cost,
+                usage_scene=PHONE_REVIEW_ASPECT_UNLOCK_SCENE,
+                request_payload_summary={"aspect_key": normalized_aspect_key, "phone": latest_review["phone"], "stream": True},
+                now_text=_utc_now(),
+                channel=channel_key,
+                force_generation=True,
+            )
+            generation_claimed = bool(unlock.get("_generation_claimed"))
+            if not generation_claimed:
+                if str(unlock.get("status") or "") == "processing":
+                    yield _sse_event("error", {"detail": "aspect_generation_in_progress", "refunded": False})
+                    return
+                yield _sse_event("error", {"detail": "aspect_not_ready", "refunded": False})
+                return
+
+            yield _sse_event("unlock", _build_review_aspect_stream_unlock_data(unlock, current_user_id=current_user_id))
+            package = {
+                "score_result": latest_review["score_result"],
+                "score_template": latest_review["score_template"],
+            }
+            for render_event in stream_product_review_aspect_render(
+                package,
+                aspect_key=normalized_aspect_key,
+                user_id=current_user_id,
+                request_id=str(unlock.get("usage_record_id") or unlock.get("unlock_id") or review_id),
+            ):
+                event_name = str(render_event.get("event") or "")
+                event_data = render_event.get("data") if isinstance(render_event.get("data"), dict) else {}
+                if event_name in {"status", "delta"}:
+                    yield _sse_event(event_name, event_data)
+                    continue
+                if event_name == "result":
+                    aspect = event_data.get("aspect") if isinstance(event_data, dict) else None
+                    if not isinstance(aspect, dict):
+                        raise DeepSeekAPIError("aspect_stream_missing_result")
+                    _persist_review_aspect_render(review_id=review_id, aspect_key=normalized_aspect_key, rendered_aspect=aspect)
+                    complete_review_aspect_unlock_generation(
+                        review_id=review_id,
+                        user_id=current_user_id,
+                        aspect_key=normalized_aspect_key,
+                        result_summary={"status": "completed", "aspect_key": normalized_aspect_key, "model_name": event_data.get("model_name")},
+                        now_text=_utc_now(),
+                    )
+                    generation_claimed = False
+                    yield _sse_event(
+                        "complete",
+                        _build_review_aspect_stream_complete_data(
+                            review_id,
+                            current_user_id=current_user_id,
+                            channel_key=channel_key,
+                            aspect_key=normalized_aspect_key,
+                            rendered_aspect=aspect,
+                        ),
+                    )
+                    return
+            raise DeepSeekAPIError("aspect_stream_missing_result")
+        except GeneratorExit:
+            if generation_claimed:
+                fail_review_aspect_unlock_generation(
+                    review_id=review_id,
+                    user_id=current_user_id,
+                    aspect_key=normalized_aspect_key,
+                    error_message="client_disconnected",
+                    now_text=_utc_now(),
+                )
+            raise
+        except InsufficientPointsError:
+            yield _sse_event("error", {"detail": "insufficient_points", "refunded": False})
+        except Exception as exc:
+            refunded = False
+            if generation_claimed:
+                failed = fail_review_aspect_unlock_generation(
+                    review_id=review_id,
+                    user_id=current_user_id,
+                    aspect_key=normalized_aspect_key,
+                    error_message=str(exc),
+                    now_text=_utc_now(),
+                )
+                refunded = bool(failed and failed.get("refunded_at"))
+            yield _sse_event("error", {"detail": "aspect_generation_failed", "message": str(exc), "refunded": refunded})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -2671,6 +2809,104 @@ def _extract_user_phone_from_usage_record(item: dict[str, object]) -> str | None
     return None
 
 
+def _sse_event(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, separators=(',', ':'))}\n\n"
+
+
+def _create_completed_review_aspect_unlock_for_stream(
+    review: dict[str, object],
+    *,
+    current_user_id: str,
+    aspect_key: str,
+    available_aspect_keys: list[str],
+    channel_key: str | None,
+) -> dict[str, Any]:
+    free_aspect_keys = _resolve_review_free_aspect_keys(available_aspect_keys, channel_key=channel_key)
+    points_cost = 0 if aspect_key in free_aspect_keys else get_runtime_phone_review_aspect_unlock_points_cost(channel_key)
+    unlock = create_review_aspect_unlock(
+        review_id=str(review["id"]),
+        user_id=current_user_id,
+        aspect_key=aspect_key,
+        points_cost=points_cost,
+        usage_scene=PHONE_REVIEW_ASPECT_UNLOCK_SCENE,
+        request_payload_summary={"aspect_key": aspect_key, "phone": review["phone"], "stream": True, "cached": True},
+        now_text=_utc_now(),
+        channel=channel_key,
+    )
+    if str(unlock.get("status") or "completed") != "completed":
+        raise HTTPException(status_code=409, detail="aspect_generation_in_progress")
+    return unlock
+
+
+def _build_review_aspect_stream_unlock_data(unlock: dict[str, Any], *, current_user_id: str) -> dict[str, Any]:
+    points_account = get_points_account(current_user_id)
+    points = _build_points_account_response(points_account).model_dump() if points_account is not None else None
+    return {
+        "unlock_id": str(unlock.get("unlock_id") or ""),
+        "review_id": str(unlock.get("review_id") or ""),
+        "user_id": str(unlock.get("user_id") or ""),
+        "aspect_key": str(unlock.get("aspect_key") or ""),
+        "points_cost": int(unlock.get("points_cost") or 0),
+        "usage_record_id": str(unlock.get("usage_record_id") or ""),
+        "unlocked_at": str(unlock.get("unlocked_at") or ""),
+        "status": str(unlock.get("status") or "processing"),
+        "points": points,
+    }
+
+
+def _build_review_aspect_stream_complete_data(
+    review_id: str,
+    *,
+    current_user_id: str,
+    channel_key: str | None,
+    aspect_key: str,
+    rendered_aspect: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    review = get_review(review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="review_not_found")
+    response = _build_review_record_response(review, channel_key=channel_key, current_user_id=current_user_id)
+    aspect_map = {item.aspect_key: item for item in response.aspects}
+    points_account = get_points_account(current_user_id)
+    aspect = aspect_map.get(aspect_key)
+    aspect_payload = aspect.model_dump() if aspect is not None else None
+    if isinstance(rendered_aspect, dict):
+        aspect_payload = {
+            **(aspect_payload or {}),
+            **rendered_aspect,
+            "aspect_key": aspect_key,
+            "is_unlocked": True,
+        }
+    review_payload = response.model_dump()
+    if aspect_payload and isinstance(review_payload.get("aspects"), list):
+        review_payload["aspects"] = [
+            {**item, **aspect_payload} if isinstance(item, dict) and item.get("aspect_key") == aspect_key else item
+            for item in review_payload["aspects"]
+        ]
+    return {
+        "aspect": aspect_payload,
+        "review": review_payload,
+        "points": _build_points_account_response(points_account).model_dump() if points_account is not None else None,
+    }
+
+
+def _persist_review_aspect_render(*, review_id: str, aspect_key: str, rendered_aspect: dict[str, Any]) -> None:
+    current_review = get_review(review_id)
+    if current_review is None or not isinstance(current_review.get("score_template"), dict):
+        raise HTTPException(status_code=404, detail="review_not_found")
+    current_score_result = current_review.get("score_result")
+    if not isinstance(current_score_result, dict):
+        raise HTTPException(status_code=409, detail="review_not_ready_for_unlock")
+    current_template = dict(current_review["score_template"])
+    current_render = current_template.get("product_aspects_render") if isinstance(current_template.get("product_aspects_render"), dict) else {}
+    next_render = dict(current_render)
+    next_render[aspect_key] = rendered_aspect
+    current_template["product_aspects_render"] = next_render
+    current_template["product_view"] = build_phone_review_product_view(current_score_result, current_template)
+    current_template["product_view"]["rules_version"] = RULES.get("version")
+    update_review_score_template(review_id=review_id, score_template=current_template, updated_at=_utc_now())
+
+
 
 def _build_review_aspect_unlock_response(
     item: dict[str, object],
@@ -3521,7 +3757,6 @@ def _coerce_four_pillars_score(review: dict[str, object], public_view: dict[str,
 
 
 def _run_review_generation(*, review_id: str, phone: str, gender: str, include_markdown: bool, user_id: str | None = None, points_cost: int = 0, channel_key: str | None = None) -> None:
-    aspect_prefetch_started = False
     try:
         update_review_progress(review_id=review_id, progress_stage="scoring", progress_message="正在计算基础盘面", updated_at=_utc_now())
         result = score_phone(phone, gender, RULES)
@@ -3535,22 +3770,14 @@ def _run_review_generation(*, review_id: str, phone: str, gender: str, include_m
             score_template=bundle["score_template"],
             score_markdown=bundle.get("score_markdown"),
             progress_stage="scoring",
-            progress_message="基础盘面已完成，智能体正在同步生成总评和专项内容",
+            progress_message="基础盘面已完成，智能体正在生成总评和长期建议",
             updated_at=_utc_now(),
         )
-        _start_review_aspect_prefetch(review_id=review_id)
-        aspect_prefetch_started = True
 
         update_review_progress(review_id=review_id, progress_stage="scoring", progress_message="基础评分已完成，正在生成总评", updated_at=_utc_now())
         bundle["score_template"]["product_render"] = build_product_review_core_render(bundle)
         if isinstance(bundle["score_template"]["product_render"].get("phone_summary"), dict):
             bundle["score_template"]["phone_summary"] = bundle["score_template"]["product_render"]["phone_summary"]
-        current_review = get_review(review_id)
-        if current_review is not None and isinstance(current_review.get("score_template"), dict):
-            current_template = current_review["score_template"]
-            current_aspects = current_template.get("product_aspects_render") if isinstance(current_template.get("product_aspects_render"), dict) else {}
-            if current_aspects:
-                bundle["score_template"]["product_aspects_render"] = dict(current_aspects)
         bundle["score_template"]["product_view"] = build_phone_review_product_view(bundle["score_result"], bundle["score_template"])
         bundle["score_template"]["product_view"]["rules_version"] = RULES.get("version")
 
@@ -3559,7 +3786,7 @@ def _run_review_generation(*, review_id: str, phone: str, gender: str, include_m
             score_result=bundle["score_result"],
             score_template=bundle["score_template"],
             score_markdown=bundle.get("score_markdown"),
-            progress_message="总评和长期使用建议已完成，专项内容正在后台生成",
+            progress_message="总评和长期使用建议已完成，可按需解锁专项",
             updated_at=_utc_now(),
         )
         _start_review_voice_preheat(review_id=review_id, channel_key=channel_key)
@@ -3580,9 +3807,6 @@ def _run_review_generation(*, review_id: str, phone: str, gender: str, include_m
 
     if user_id and points_cost > 0:
         complete_usage_record(usage_record_id=review_id, result_summary={"status": "completed"}, updated_at=_utc_now())
-
-    if not aspect_prefetch_started:
-        _start_review_aspect_prefetch(review_id=review_id)
 
 
 def _start_review_aspect_prefetch(*, review_id: str) -> None:

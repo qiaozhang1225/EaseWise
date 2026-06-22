@@ -4,7 +4,7 @@ import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Iterator, Literal
 
 from features.phone_qimen.knowledge import (
     load_aspect_section_knowledge,
@@ -15,7 +15,7 @@ from features.phone_qimen.knowledge import (
     load_section_knowledge,
     load_shared_foundation,
 )
-from product.backend.llm import DeepSeekAPIError, DeepSeekClient
+from product.backend.llm import DeepSeekAPIError, DeepSeekClient, build_messages
 from features.phone_qimen.scoring.dimensions import score_phone_dimensions
 from features.phone_qimen.scoring.total_score.engine import load_rules
 from features.phone_qimen.scoring.total_score.labels import CAP_REASON_LABELS, EDGE_FLAG_LABELS, PATTERN_LABELS, RELATION_LABELS
@@ -180,6 +180,90 @@ def render_aspect_from_package(
         tone_pack=tone_pack,
         model_name=model_name,
     )
+
+
+def stream_aspect_from_package(
+    package: dict[str, Any],
+    *,
+    aspect_key: str,
+    tone_pack: TonePack = "customer",
+    client: DeepSeekClient | None = None,
+    model: str = "deepseek-v4-pro",
+    thinking_enabled: bool = False,
+    max_tokens: int = 1800,
+    user_id: str | None = None,
+    request_id: str | None = None,
+) -> Iterator[dict[str, Any]]:
+    score_template = package.get("score_template")
+    if not isinstance(score_template, dict):
+        raise DeepSeekAPIError(DEEPSEEK_ASPECT_ERROR)
+
+    client = client or DeepSeekClient.from_env()
+    dimension_result = _resolve_dimension_result(package)
+    payload = _build_aspect_payload(dimension_result, score_template, aspect_key)
+    system_prompt, user_prompt, json_example = build_aspect_prompts(aspect_key, payload, tone_pack=tone_pack)
+    json_instruction = (
+        "Return valid json only. The final answer must be a single json object.\n"
+        f"JSON shape example:\n{json.dumps(json_example, ensure_ascii=False, indent=2)}"
+    )
+    final_system = f"{system_prompt.rstrip()}\n\n{json_instruction}"
+    messages = build_messages(system_prompt=final_system, user_prompt=user_prompt)
+
+    raw_content = ""
+    emitted_fields = {"title": "", "risk": "", "content": ""}
+    model_name = model
+    try:
+        yield {"event": "status", "data": {"message": "正在生成专项判断"}}
+        for chunk in client.stream_chat(
+            messages,
+            model=model,
+            thinking_enabled=thinking_enabled,
+            temperature=0.25,
+            max_tokens=max_tokens,
+            response_format={"type": "json_object"},
+            llm_scene=f"phone_qimen.aspect_unlock.{aspect_key}",
+            priority_class="foreground_interactive",
+            user_id=user_id,
+            request_id=request_id,
+        ):
+            if chunk.raw.get("model"):
+                model_name = str(chunk.raw.get("model") or model_name)
+            if not chunk.content_delta:
+                continue
+            raw_content += chunk.content_delta
+            for field in ("title", "risk", "content"):
+                current_text = _extract_partial_json_string_field(raw_content, field)
+                if current_text is None:
+                    continue
+                previous_text = emitted_fields[field]
+                if current_text == previous_text:
+                    continue
+                delta = current_text[len(previous_text):] if current_text.startswith(previous_text) else current_text
+                emitted_fields[field] = current_text
+                if delta:
+                    yield {"event": "delta", "data": {"field": field, "delta": delta, "text": current_text}}
+
+        model_output = _loads_streamed_json_object(raw_content)
+        valid, reason = validate_model_output(aspect_key, payload, model_output)
+        if not valid:
+            raise DeepSeekAPIError(DEEPSEEK_ASPECT_ERROR) from ValueError(f"aspect_invalid_output:{reason}")
+
+        public_output = _public_output(model_output, aspect_key=aspect_key)
+        result = AspectRenderResult(
+            aspect_key=str(public_output["aspect_key"]),
+            title=str(public_output["title"]).strip(),
+            score=int(public_output["score"]),
+            content=str(public_output["content"]).strip(),
+            risk=str(public_output["risk"]).strip(),
+            elements_check=dict(public_output["elements_check"]),
+            tone_pack=tone_pack,
+            model_name=model_name,
+        )
+        yield {"event": "result", "data": {"aspect": result.to_dict(), "model_name": result.model_name}}
+    except Exception as exc:
+        if isinstance(exc, DeepSeekAPIError):
+            raise
+        raise DeepSeekAPIError(DEEPSEEK_ASPECT_ERROR) from exc
 
 
 def build_aspect_prompts(
@@ -398,6 +482,73 @@ def _public_output(model_output: dict[str, Any], *, aspect_key: str) -> dict[str
         "risk": str(model_output["risk"]).strip(),
         "elements_check": dict(model_output["elements_check"]),
     }
+
+
+def _loads_streamed_json_object(raw_content: str) -> dict[str, Any]:
+    text = raw_content.strip()
+    if not text:
+        raise DeepSeekAPIError("DeepSeek returned empty content; cannot parse JSON.")
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise DeepSeekAPIError(f"DeepSeek content is not valid JSON: {text}") from exc
+    if not isinstance(parsed, dict):
+        raise DeepSeekAPIError(f"DeepSeek JSON response is not an object: {parsed}")
+    return parsed
+
+
+def _extract_partial_json_string_field(raw_content: str, field: str) -> str | None:
+    key = json.dumps(field, ensure_ascii=False)
+    key_index = raw_content.find(key)
+    if key_index < 0:
+        return None
+    colon_index = raw_content.find(":", key_index + len(key))
+    if colon_index < 0:
+        return None
+    value_index = colon_index + 1
+    while value_index < len(raw_content) and raw_content[value_index].isspace():
+        value_index += 1
+    if value_index >= len(raw_content) or raw_content[value_index] != '"':
+        return None
+
+    chars: list[str] = []
+    index = value_index + 1
+    while index < len(raw_content):
+        char = raw_content[index]
+        if char == '"':
+            return "".join(chars)
+        if char != "\\":
+            chars.append(char)
+            index += 1
+            continue
+
+        if index + 1 >= len(raw_content):
+            break
+        escaped = raw_content[index + 1]
+        if escaped == "u":
+            hex_text = raw_content[index + 2:index + 6]
+            if len(hex_text) < 4:
+                break
+            try:
+                chars.append(chr(int(hex_text, 16)))
+            except ValueError:
+                chars.append("\\u" + hex_text)
+            index += 6
+            continue
+        chars.append(
+            {
+                '"': '"',
+                "\\": "\\",
+                "/": "/",
+                "b": "\b",
+                "f": "\f",
+                "n": "\n",
+                "r": "\r",
+                "t": "\t",
+            }.get(escaped, escaped)
+        )
+        index += 2
+    return "".join(chars)
 
 
 def render_aspect_from_phone(

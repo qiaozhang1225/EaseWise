@@ -23,6 +23,8 @@ import {
   resolveApiAssetUrl,
   changeMyPassword,
   registerPhoneWithPassword,
+  streamPhoneReviewAspectUnlock,
+  type PhoneReviewAspectStreamHandlers,
   uploadMyAvatar,
   updateMyProfile,
   unlockFourPillarsReviewAspect,
@@ -40,9 +42,11 @@ import type {
   Gender,
   PhoneStatusResponse,
   PasswordChangeResponse,
+  PhoneReviewAspectStreamCompleteData,
   PointsAccountResponse,
   PointsLedgerEntryResponse,
   PublicRuntimeConfigResponse,
+  ReviewAspect,
   ReviewRecord,
   ReviewSummary,
   UserResponse,
@@ -237,6 +241,30 @@ function persistCurrentReview(review: ReviewRecord | null): void {
     return;
   }
   writeStorage(EASEWISE_STORAGE_KEYS.lastReviewId, null);
+}
+
+function mergeUnlockedAspectIntoReview(review: ReviewRecord, aspectKey: string, aspect: ReviewAspect | null | undefined): ReviewRecord {
+  if (!aspect) {
+    return review;
+  }
+  return {
+    ...review,
+    aspects: review.aspects.map((item) => {
+      if (item.aspect_key !== aspectKey) {
+        return item;
+      }
+      return {
+        ...item,
+        ...aspect,
+        aspect_key: item.aspect_key,
+        short_title: aspect.short_title ?? item.short_title,
+        score: aspect.score ?? item.score,
+        is_unlocked: true,
+        unlock_points: item.unlock_points,
+        elements_check: aspect.elements_check ?? item.elements_check,
+      };
+    }),
+  };
 }
 
 function persistCurrentFourPillarsReview(review: FourPillarsReviewRecord | null): void {
@@ -565,6 +593,48 @@ async function unlockAspect(reviewId: string, aspectKey: string): Promise<Review
   });
 }
 
+async function streamUnlockAspect(
+  reviewId: string,
+  aspectKey: string,
+  handlers: PhoneReviewAspectStreamHandlers = {},
+): Promise<PhoneReviewAspectStreamCompleteData> {
+  return withAuthRetry(async (accessToken) => {
+    const result = await streamPhoneReviewAspectUnlock(accessToken, reviewId, aspectKey, {
+      ...handlers,
+      onUnlock: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        handlers.onUnlock?.(data);
+      },
+      onComplete: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        const completedData = data.review
+          ? { ...data, review: mergeUnlockedAspectIntoReview(data.review, aspectKey, data.aspect) }
+          : data;
+        if (completedData.review) {
+          persistCurrentReview(completedData.review);
+        }
+        handlers.onComplete?.(completedData);
+      },
+    });
+    const completedResult = result.review
+      ? { ...result, review: mergeUnlockedAspectIntoReview(result.review, aspectKey, result.aspect) }
+      : result;
+    if (result.points) {
+      persistPoints(result.points);
+    }
+    if (completedResult.review) {
+      persistCurrentReview(completedResult.review);
+    }
+    await Promise.allSettled([refreshPointsLedger(), refreshReviewHistory()]);
+    clearConnectionError();
+    return completedResult;
+  });
+}
+
 async function unlockFourPillarsAspect(reviewId: string, aspectKey: string): Promise<FourPillarsReviewRecord> {
   return withAuthRetry(async (accessToken) => {
     const unlockResponse = await unlockFourPillarsReviewAspect(accessToken, reviewId, aspectKey);
@@ -742,6 +812,9 @@ function humanizeError(error: unknown): string {
       invalid_birth_datetime: '请输入有效的出生日期和出生时间。',
       invalid_timezone: '请输入有效的时区。',
       aspect_not_ready: '专项内容还在生成中，请稍后再试。',
+      aspect_generation_failed: '专项内容生成失败，积分已按规则退回，请稍后重试。',
+      aspect_generation_in_progress: '该专项正在生成中，请稍后再试。',
+      aspect_generation_incomplete: '专项内容生成未完成，请稍后重试。',
       session_not_found: '当前登录态已失效，请重新登录。',
       claim_link_not_found: '领取链接不存在，请确认链接是否完整。',
       claim_link_expired: '领取链接已过期。',
@@ -794,6 +867,7 @@ export function useEaseWiseApp() {
     submitPhoneReview,
     submitFourPillarsReview,
     unlockAspect,
+    streamUnlockAspect,
     unlockFourPillarsAspect,
     generateFourPillarsLuckCycle,
     generateFourPillarsLuckYear,

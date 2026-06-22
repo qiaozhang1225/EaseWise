@@ -40,6 +40,11 @@ import type {
   PhoneStatusResponse,
   PasswordChangeRequest,
   PasswordChangeResponse,
+  PhoneReviewAspectStreamCompleteData,
+  PhoneReviewAspectStreamDeltaData,
+  PhoneReviewAspectStreamErrorData,
+  PhoneReviewAspectStreamStatusData,
+  PhoneReviewAspectStreamUnlockData,
   RebatePointsAdjustResponse,
   PointsClaimLinkListResponse,
   PointsClaimLinkResponse,
@@ -90,6 +95,15 @@ type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
   accessToken?: string | null;
   adminToken?: string | null;
+};
+
+export type PhoneReviewAspectStreamHandlers = {
+  signal?: AbortSignal;
+  onUnlock?: (data: PhoneReviewAspectStreamUnlockData) => void;
+  onStatus?: (data: PhoneReviewAspectStreamStatusData) => void;
+  onDelta?: (data: PhoneReviewAspectStreamDeltaData) => void;
+  onComplete?: (data: PhoneReviewAspectStreamCompleteData) => void;
+  onError?: (data: PhoneReviewAspectStreamErrorData) => void;
 };
 
 async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -348,6 +362,114 @@ export function unlockPhoneReviewAspect(accessToken: string, reviewId: string, a
       aspect_key: aspectKey,
     },
   });
+}
+
+export async function streamPhoneReviewAspectUnlock(
+  accessToken: string,
+  reviewId: string,
+  aspectKey: string,
+  handlers: PhoneReviewAspectStreamHandlers = {},
+): Promise<PhoneReviewAspectStreamCompleteData> {
+  const headers = new Headers();
+  headers.set('Accept', 'text/event-stream');
+  headers.set('X-Client-Platform', 'h5');
+  headers.set('X-Client-Channel', 'h5');
+  headers.set('X-Client-Version', 'easewise-local-frontend');
+  headers.set('Authorization', `Bearer ${accessToken}`);
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/phone-qimen/reviews/${encodeURIComponent(reviewId)}/aspect-unlocks/${encodeURIComponent(aspectKey)}/stream`,
+    {
+      method: 'POST',
+      headers,
+      signal: handlers.signal,
+    },
+  );
+
+  if (!response.ok) {
+    const rawText = await response.text();
+    const payload = rawText ? tryParseJson(rawText) : null;
+    throw new ApiError(response.status, resolveApiErrorDetail(payload, response.statusText), payload);
+  }
+  if (!response.body) {
+    throw new ApiError(500, 'stream_body_missing', null);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let completePayload: PhoneReviewAspectStreamCompleteData | null = null;
+
+  const processBlock = (block: string) => {
+    const lines = block.split(/\r?\n/);
+    let eventName = 'message';
+    const dataLines: string[] = [];
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim();
+        continue;
+      }
+      if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trimStart());
+      }
+    }
+    if (!dataLines.length) {
+      return;
+    }
+    const payload = tryParseJson(dataLines.join('\n'));
+    if (!payload || typeof payload !== 'object') {
+      return;
+    }
+
+    if (eventName === 'unlock') {
+      handlers.onUnlock?.(payload as PhoneReviewAspectStreamUnlockData);
+      return;
+    }
+    if (eventName === 'status') {
+      handlers.onStatus?.(payload as PhoneReviewAspectStreamStatusData);
+      return;
+    }
+    if (eventName === 'delta') {
+      handlers.onDelta?.(payload as PhoneReviewAspectStreamDeltaData);
+      return;
+    }
+    if (eventName === 'complete') {
+      completePayload = payload as PhoneReviewAspectStreamCompleteData;
+      handlers.onComplete?.(completePayload);
+      return;
+    }
+    if (eventName === 'error') {
+      const errorPayload = payload as PhoneReviewAspectStreamErrorData;
+      handlers.onError?.(errorPayload);
+      const status = errorPayload.detail === 'insufficient_points' ? 402 : 409;
+      throw new ApiError(status, errorPayload.detail || 'aspect_generation_failed', errorPayload);
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    let separatorIndex = buffer.search(/\r?\n\r?\n/);
+    while (separatorIndex >= 0) {
+      const block = buffer.slice(0, separatorIndex);
+      const separatorLength = buffer[separatorIndex] === '\r' ? 4 : 2;
+      buffer = buffer.slice(separatorIndex + separatorLength);
+      processBlock(block);
+      separatorIndex = buffer.search(/\r?\n\r?\n/);
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    processBlock(buffer.trim());
+  }
+  if (!completePayload) {
+    throw new ApiError(409, 'aspect_generation_incomplete', null);
+  }
+  return completePayload;
 }
 
 export function createFourPillarsReview(accessToken: string, payload: FourPillarsCreatePayload): Promise<FourPillarsReviewRecord> {

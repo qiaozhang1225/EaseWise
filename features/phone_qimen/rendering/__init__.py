@@ -1,4 +1,4 @@
-from .aspects import ASPECT_SPECS, AspectRenderResult, render_aspects_from_package, render_aspects_from_phone
+from .aspects import ASPECT_SPECS, AspectRenderResult, render_aspects_from_package, render_aspects_from_phone, stream_aspect_from_package
 from .phone_summary import (
     DEEPSEEK_PHONE_SUMMARY_ERROR,
     PhoneSummaryRenderResult,
@@ -29,4 +29,5 @@ __all__ = [
     "render_phone_summary_from_phone",
     "render_stability_from_package",
     "render_stability_from_phone",
+    "stream_aspect_from_package",
 ]

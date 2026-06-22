@@ -669,6 +669,42 @@ export interface ReviewAspectUnlockResponse {
   aspect: ReviewAspect | null;
 }
 
+export type PhoneReviewAspectStreamDeltaField = 'title' | 'risk' | 'content';
+
+export interface PhoneReviewAspectStreamUnlockData {
+  unlock_id: string;
+  review_id: string;
+  user_id: string;
+  aspect_key: string;
+  points_cost: number;
+  usage_record_id: string;
+  unlocked_at: string;
+  status: string;
+  points: PointsAccountResponse | null;
+}
+
+export interface PhoneReviewAspectStreamStatusData {
+  message: string;
+}
+
+export interface PhoneReviewAspectStreamDeltaData {
+  field: PhoneReviewAspectStreamDeltaField;
+  delta: string;
+  text: string;
+}
+
+export interface PhoneReviewAspectStreamCompleteData {
+  aspect: ReviewAspect | null;
+  review: ReviewRecord;
+  points: PointsAccountResponse | null;
+}
+
+export interface PhoneReviewAspectStreamErrorData {
+  detail: string;
+  message?: string;
+  refunded?: boolean;
+}
+
 export interface InternalUserResponse {
   user_id: string;
   uid: string | null;
