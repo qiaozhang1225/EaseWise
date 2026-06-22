@@ -3147,13 +3147,45 @@ function shortText(value: string | null | undefined, head = 8, tail = 4) {
   return `${value.slice(0, head)}...${value.slice(-tail)}`;
 }
 
-async function copyText(value: string | null | undefined, label = '内容') {
-  if (!value) return;
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  if (typeof document === 'undefined') {
+    throw new Error('copy_unavailable');
+  }
+
+  const input = document.createElement('textarea');
+  input.value = text;
+  input.setAttribute('readonly', 'true');
+  input.style.position = 'fixed';
+  input.style.left = '-9999px';
+  input.style.top = '0';
+  input.style.opacity = '0';
+  document.body.appendChild(input);
+  input.focus();
+  input.select();
+  input.setSelectionRange(0, input.value.length);
+
   try {
-    await navigator.clipboard.writeText(value);
+    if (!document.execCommand('copy')) {
+      throw new Error('copy_failed');
+    }
+  } finally {
+    document.body.removeChild(input);
+  }
+}
+
+async function copyText(value: string | null | undefined, label = '内容') {
+  const text = String(value || '').trim();
+  if (!text) return;
+  try {
+    await copyTextToClipboard(text);
     globalMessage.value = `${label}已复制`;
   } catch {
-    globalMessage.value = `${label}复制失败，请手动选中复制`;
+    globalMessage.value = `${label}复制失败，请长按链接手动复制`;
   }
 }
 
