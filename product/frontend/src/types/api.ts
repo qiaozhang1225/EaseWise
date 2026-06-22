@@ -142,6 +142,17 @@ export interface FourPillarsDisplayHiddenStem {
   ten_god: string;
 }
 
+export interface FourPillarsShenShaDetail {
+  name: string;
+  category: string;
+  basis: string;
+  basis_value: string;
+  target: string;
+  target_value: string;
+  rule: string;
+  meaning: string;
+}
+
 export interface FourPillarsDisplayPillar {
   key: FourPillarsPillarKey;
   label: string;
@@ -158,6 +169,7 @@ export interface FourPillarsDisplayPillar {
   di_shi: string;
   self_sitting: string;
   shen_sha: string[];
+  shen_sha_details?: FourPillarsShenShaDetail[];
 }
 
 export interface FourPillarsChartDisplay {
@@ -221,6 +233,9 @@ export interface FourPillarsLuckYearItem {
   stem_ten_god?: string | null;
   stem_element?: string | null;
   branch_element?: string | null;
+  di_shi?: string | null;
+  shen_sha?: string[];
+  shen_sha_details?: FourPillarsShenShaDetail[];
   is_current: boolean;
   render_status: 'not_generated' | ReviewStatus | string;
   render: FourPillarsLuckRenderRecord | null;
@@ -240,6 +255,9 @@ export interface FourPillarsLuckCycle {
   stem_ten_god?: string | null;
   stem_element?: string | null;
   branch_element?: string | null;
+  di_shi?: string | null;
+  shen_sha?: string[];
+  shen_sha_details?: FourPillarsShenShaDetail[];
   render_status: 'not_generated' | ReviewStatus | string;
   render: FourPillarsLuckRenderRecord | null;
   year_items: FourPillarsLuckYearItem[];

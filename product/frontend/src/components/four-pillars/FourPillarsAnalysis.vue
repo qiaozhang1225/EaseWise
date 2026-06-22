@@ -5,6 +5,8 @@ import {
   ArrowLeft,
   CalendarDays,
   Check,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Heart,
   HeartPulse,
@@ -22,7 +24,7 @@ import { DEFAULT_ASPECT_UNLOCK_POINTS, DEFAULT_BASE_REVIEW_POINTS } from '../../
 import { ApiError } from '../../lib/api';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 import type { FourPillarsAspect, FourPillarsChartDisplay, FourPillarsReviewRecord, Gender, ReviewProgressStage } from '../../types/api';
-import type { FourPillarsLuckCycle, FourPillarsLuckRenderRecord, FourPillarsLuckYearItem } from '../../types/api';
+import type { FourPillarsLuckCycle, FourPillarsLuckRenderRecord, FourPillarsLuckYearItem, FourPillarsShenShaDetail } from '../../types/api';
 import FourPillarsNatalTable from './FourPillarsNatalTable.vue';
 
 const emit = defineEmits<{
@@ -72,7 +74,75 @@ type LuckTableColumn = {
   hiddenStems: Array<{ stem: string; element: string; ten_god: string }>;
   diShi: string;
   selfSitting: string;
+  shenShaRows: ShenShaCellItem[];
   isLuck?: boolean;
+};
+
+type ShenShaCellItem = {
+  name: string;
+  meaning: string;
+  category: string;
+};
+const SHEN_SHA_NAME_ORDER: Record<string, number> = {
+  天乙贵人: 10,
+  太极贵人: 20,
+  福星贵人: 30,
+  天德贵人: 40,
+  月德贵人: 41,
+  天德合: 42,
+  月德合: 43,
+  文昌: 50,
+  国印贵人: 51,
+  金舆: 60,
+  禄神: 61,
+  天喜: 70,
+  红鸾: 71,
+  童子: 72,
+  天医: 80,
+  华盖: 90,
+  将星: 100,
+  桃花: 110,
+  驿马: 120,
+  孤辰: 130,
+  寡宿: 131,
+  魁罡: 140,
+  天赦: 150,
+  羊刃: 200,
+  飞刃: 201,
+  亡神: 210,
+  劫煞: 211,
+  灾煞: 212,
+  元辰: 213,
+  勾煞: 214,
+  绞煞: 215,
+  五鬼: 216,
+  阴阳差错: 220,
+  长生: 800,
+  沐浴: 801,
+  冠带: 802,
+  临官: 803,
+  帝旺: 804,
+  衰: 805,
+  病: 806,
+  死: 807,
+  墓: 808,
+  绝: 809,
+  胎: 810,
+  养: 811,
+  空亡: 900,
+  墓库: 910,
+};
+const SHEN_SHA_CATEGORY_ORDER: Record<string, number> = {
+  support: 10,
+  talent: 20,
+  wealth: 30,
+  relationship: 40,
+  spiritual: 45,
+  movement: 50,
+  health: 55,
+  risk: 60,
+  life_stage: 80,
+  structure: 90,
 };
 
 const {
@@ -115,6 +185,7 @@ const unlockWaitingAspectKey = ref<string | null>(null);
 const unlockWaitingAttempt = ref(0);
 const generatingLuckTargets = ref<string[]>([]);
 const selectedLuckYear = ref<number | null>(null);
+const luckShenShaExpanded = ref(false);
 
 let disposed = false;
 let pollingPromise: Promise<FourPillarsReviewRecord> | null = null;
@@ -125,6 +196,7 @@ const ASPECT_UNLOCK_RETRY_LIMIT = 45;
 const ASPECT_UNLOCK_RETRY_DELAY_MS = 2000;
 const LUCK_RENDER_RETRY_LIMIT = 90;
 const LUCK_RENDER_RETRY_DELAY_MS = 2000;
+const MAX_SHEN_SHA_ROWS = 3;
 
 const aspectUiMap: Record<string, { icon: Component; tint: string; textTint: string }> = {
   personality: { icon: Sparkles, tint: 'bg-brand-paper text-brand-secondary', textTint: 'text-brand-secondary' },
@@ -258,6 +330,7 @@ const luckTableColumns = computed<LuckTableColumn[]>(() => {
         hiddenStems: pillar.hidden_stems.map((item) => ({ ...item, ten_god: item.ten_god || '-' })),
         diShi: pillar.di_shi,
         selfSitting: pillar.self_sitting,
+        shenShaRows: shenShaRows(pillar.shen_sha, pillar.shen_sha_details, pillar.di_shi),
       });
     });
   }
@@ -266,6 +339,7 @@ const luckTableColumns = computed<LuckTableColumn[]>(() => {
   columns.push(toLuckColumn('流年', selectedLuckYearItem.value, dayStem));
   return columns;
 });
+const luckHasOverflowingShenSha = computed(() => luckTableColumns.value.some((column) => column.shenShaRows.length > MAX_SHEN_SHA_ROWS));
 const favorableElementsText = computed(() => toStringList(dayMaster.value.favorable_elements).join('、') || '待生成');
 const unfavorableElementsText = computed(() => toStringList(dayMaster.value.unfavorable_elements).join('、') || '待生成');
 const elementRatioSummary = computed(() => {
@@ -359,10 +433,63 @@ function toLuckColumn(
     branchElement: String(item?.branch_element || elementOfBranch(branch) || '-'),
     stemTenGod: String(item?.stem_ten_god || calculateTenGod(dayStem, stem) || '-'),
     hiddenStems,
-    diShi: calculateDiShi(dayStem, branch),
+    diShi: String(item?.di_shi || calculateDiShi(dayStem, branch) || '-'),
     selfSitting: calculateDiShi(stem, branch),
+    shenShaRows: shenShaRows(item?.shen_sha, item?.shen_sha_details, String(item?.di_shi || calculateDiShi(dayStem, branch) || '')),
     isLuck: true,
   };
+}
+
+function shenShaRows(namesValue: unknown, detailsValue: unknown, diShiValue: unknown = ''): ShenShaCellItem[] {
+  const details = Array.isArray(detailsValue) ? detailsValue as FourPillarsShenShaDetail[] : [];
+  const detailByName = new Map<string, FourPillarsShenShaDetail>();
+  details.forEach((item) => {
+    if (item?.name && !detailByName.has(item.name)) {
+      detailByName.set(item.name, item);
+    }
+  });
+  const names = toStringList(namesValue).length ? toStringList(namesValue) : details.map((item) => item.name);
+  const rows = [...new Set(names.map((item) => String(item || '').trim()).filter(Boolean))].map((name) => {
+    const detail = detailByName.get(name);
+    return {
+      name,
+      meaning: String(detail?.meaning || ''),
+      category: String(detail?.category || ''),
+    };
+  });
+  const diShi = String(diShiValue || '').trim();
+  if (diShi && diShi !== '-' && !rows.some((item) => item.name === diShi)) {
+    rows.push({
+      name: diShi,
+      meaning: '十二长生地势',
+      category: 'life_stage',
+    });
+  }
+  return sortShenShaRows(rows);
+}
+
+function sortShenShaRows(rows: ShenShaCellItem[]): ShenShaCellItem[] {
+  return rows
+    .map((item, index) => ({ ...item, index }))
+    .sort((left, right) => {
+      const nameDelta = (SHEN_SHA_NAME_ORDER[left.name] ?? 500) - (SHEN_SHA_NAME_ORDER[right.name] ?? 500);
+      if (nameDelta !== 0) return nameDelta;
+      const categoryDelta = (SHEN_SHA_CATEGORY_ORDER[left.category] ?? 99) - (SHEN_SHA_CATEGORY_ORDER[right.category] ?? 99);
+      if (categoryDelta !== 0) return categoryDelta;
+      return left.index - right.index;
+    })
+    .map(({ index: _index, ...item }) => item);
+}
+
+function visibleLuckShenShaRows(column: LuckTableColumn): ShenShaCellItem[] {
+  return luckShenShaExpanded.value ? column.shenShaRows : column.shenShaRows.slice(0, MAX_SHEN_SHA_ROWS);
+}
+
+function shenShaToneClass(item: ShenShaCellItem): string {
+  const text = `${item.category}${item.name}${item.meaning}`;
+  if (/[贵人德福喜禄昌合]/u.test(text)) return 'shen-sha-positive';
+  if (/[煞亡劫灾孤寡空刃]/u.test(text)) return 'shen-sha-caution';
+  return 'shen-sha-neutral';
 }
 
 function calculateTenGod(dayStem: string, targetStem: string): string {
@@ -414,12 +541,19 @@ function calculateDiShi(dayStem: string, branch: string): string {
 }
 
 function elementBadgeClass(element: string): string {
-  if (element === '木') return 'bg-emerald-50 text-emerald-600 border-emerald-100';
-  if (element === '火') return 'bg-rose-50 text-rose-600 border-rose-100';
-  if (element === '土') return 'bg-amber-50 text-amber-800 border-amber-100';
-  if (element === '金') return 'bg-slate-100 text-slate-700 border-slate-200';
-  if (element === '水') return 'bg-blue-50 text-blue-600 border-blue-100';
+  if (element === '木') return 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]';
+  if (element === '火') return 'bg-[#FFF1F2] text-[#E11D48] border-[#FECDD3]';
+  if (element === '土') return 'bg-[#FFFBEB] text-[#B45309] border-[#FCD34D]';
+  if (element === '金') return 'bg-[#FFF7DA] text-[#B7791F] border-[#F4D27A]';
+  if (element === '水') return 'bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]';
   return 'bg-white text-slate-500 border-slate-100';
+}
+
+function ganzhiElementClasses(ganzhi: string | null | undefined): string[] {
+  const text = String(ganzhi || '');
+  const stem = text.match(/[甲乙丙丁戊己庚辛壬癸]/u)?.[0] || '';
+  const element = elementOfStem(stem);
+  return elementBadgeClass(element).split(' ');
 }
 
 function showToast(message: string, duration = 2200): void {
@@ -1128,8 +1262,10 @@ function sleep(ms: number): Promise<void> {
             <div class="grid grid-cols-4 gap-2">
               <div v-for="pillar in pillars" :key="pillar.key" class="bg-brand-paper rounded-xl p-2 text-center min-h-[116px]">
                 <p class="font-sans text-[10px] font-bold text-brand-secondary">{{ pillar.label }}</p>
-                <p class="font-serif text-[22px] font-bold text-brand-ink-strong mt-1">{{ pillar.ganzhi }}</p>
-                <p class="font-sans text-[10px] text-brand-secondary mt-1">{{ pillar.stemElement }} / {{ pillar.branchElement }}</p>
+                <div class="mt-1 flex items-center justify-center gap-1">
+                  <span class="legacy-ganzhi-glyph" :class="elementBadgeClass(pillar.stemElement)">{{ pillar.stem }}</span>
+                  <span class="legacy-ganzhi-glyph" :class="elementBadgeClass(pillar.branchElement)">{{ pillar.branch }}</span>
+                </div>
                 <p class="font-sans text-[10px] text-brand-primary-strong mt-1 leading-tight">{{ pillar.stemTenGod }} · {{ pillar.branchTenGod }}</p>
               </div>
             </div>
@@ -1209,14 +1345,12 @@ function sleep(ms: number): Promise<void> {
                     <td class="luck-row-label">天干</td>
                     <td v-for="column in luckTableColumns" :key="`${column.label}-stem`" class="luck-cell" :class="column.isLuck ? 'bg-[#DBEAFE]/20' : ''">
                       <span class="luck-glyph" :class="elementBadgeClass(column.stemElement)">{{ column.stem }}</span>
-                      <span class="luck-sub">{{ column.stemElement }}</span>
                     </td>
                   </tr>
                   <tr class="bg-white">
                     <td class="luck-row-label">地支</td>
                     <td v-for="column in luckTableColumns" :key="`${column.label}-branch`" class="luck-cell" :class="column.isLuck ? 'bg-[#DBEAFE]/20' : ''">
                       <span class="luck-glyph" :class="elementBadgeClass(column.branchElement)">{{ column.branch }}</span>
-                      <span class="luck-sub">{{ column.branchElement }}</span>
                     </td>
                   </tr>
                   <tr class="bg-[#F8FAFF]">
@@ -1241,6 +1375,36 @@ function sleep(ms: number): Promise<void> {
                       {{ column.selfSitting }}
                     </td>
                   </tr>
+                  <tr class="bg-white">
+                    <td class="luck-row-label">
+                      <span class="block">神煞</span>
+                      <button
+                        v-if="luckHasOverflowingShenSha"
+                        type="button"
+                        class="luck-shen-sha-toggle"
+                        :aria-label="luckShenShaExpanded ? '收起神煞' : '展开神煞'"
+                        :title="luckShenShaExpanded ? '收起神煞' : '展开神煞'"
+                        @click="luckShenShaExpanded = !luckShenShaExpanded"
+                      >
+                        <ChevronUp v-if="luckShenShaExpanded" :size="11" />
+                        <ChevronDown v-else :size="11" />
+                      </button>
+                    </td>
+                    <td v-for="column in luckTableColumns" :key="`${column.label}-shen-sha`" class="luck-cell luck-shen-sha" :class="column.isLuck ? 'bg-[#DBEAFE]/20 text-[#1E3A8A]' : ''">
+                      <div v-if="column.shenShaRows.length" class="luck-shen-sha-stack">
+                        <span
+                          v-for="item in visibleLuckShenShaRows(column)"
+                          :key="`${column.label}-${item.name}`"
+                          class="luck-shen-sha-item"
+                          :class="shenShaToneClass(item)"
+                          :title="item.meaning || item.name"
+                        >
+                          {{ item.name }}
+                        </span>
+                      </div>
+                      <span v-else class="text-[10px] text-[#94A3B8]">-</span>
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -1259,7 +1423,7 @@ function sleep(ms: number): Promise<void> {
                     >
                       <span v-if="cycle.is_current" class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
                       <span class="font-mono text-[8px] leading-none">{{ cycle.start_age ?? '-' }}岁</span>
-                      <span class="font-serif text-[15px] font-black leading-none mt-1 vertical-ganzhi">{{ cycle.display_ganzhi || cycle.ganzhi || '-' }}</span>
+                      <span class="luck-strip-ganzhi vertical-ganzhi" :class="ganzhiElementClasses(cycle.display_ganzhi || cycle.ganzhi || '')">{{ cycle.display_ganzhi || cycle.ganzhi || '-' }}</span>
                       <span class="font-mono text-[7px] leading-none mt-1 text-[#64748B]">{{ cycle.start_year }}</span>
                     </button>
                   </div>
@@ -1279,7 +1443,7 @@ function sleep(ms: number): Promise<void> {
                     >
                       <span v-if="item.is_current" class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
                       <span class="font-mono text-[8px] leading-none">{{ item.age ?? '-' }}岁</span>
-                      <span class="font-serif text-[12px] font-black leading-none mt-1">{{ item.ganzhi }}</span>
+                      <span class="luck-year-ganzhi" :class="ganzhiElementClasses(item.ganzhi)">{{ item.ganzhi }}</span>
                       <span class="font-mono text-[7px] leading-none mt-1 text-[#64748B]">{{ item.year }}</span>
                     </button>
                   </div>
@@ -1406,40 +1570,82 @@ function sleep(ms: number): Promise<void> {
 }
 
 .luck-cell {
-  min-height: 40px;
-  padding: 5px 3px;
+  min-height: 36px;
+  padding: 4px 3px;
   font-size: 10.5px;
   line-height: 1.2;
   vertical-align: middle;
 }
 
 .luck-glyph {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 999px;
   border-width: 1px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-family: serif;
-  font-size: 16px;
+  font-family: "Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+  font-size: 17px;
   font-weight: 900;
   line-height: 1;
-}
-
-.luck-sub {
-  display: block;
-  margin-top: 2px;
-  color: #64748B;
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1;
+  letter-spacing: 0;
+  text-shadow: 0 0 0 currentColor;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.58), 0 1px 2px rgba(15, 23, 42, 0.05);
 }
 
 .vertical-ganzhi {
   writing-mode: vertical-rl;
   text-orientation: upright;
   letter-spacing: 0;
+}
+
+.legacy-ganzhi-glyph {
+  width: 26px;
+  height: 26px;
+  border-width: 1px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+  text-shadow: 0 0 0 currentColor;
+}
+
+.luck-strip-ganzhi,
+.luck-year-ganzhi {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-width: 1px;
+  border-radius: 999px;
+  font-family: "Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-shadow: 0 0 0 currentColor;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+
+.luck-strip-ganzhi {
+  min-width: 22px;
+  min-height: 34px;
+  padding: 4px 2px;
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.luck-year-ganzhi {
+  min-width: 28px;
+  min-height: 22px;
+  padding: 2px 4px;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1;
 }
 
 .luck-mini {
@@ -1460,5 +1666,67 @@ function sleep(ms: number): Promise<void> {
   color: #334155;
   font-family: serif;
   font-weight: 800;
+}
+
+.luck-shen-sha {
+  color: #475569;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.35;
+  word-break: keep-all;
+  vertical-align: top;
+}
+
+.luck-shen-sha-toggle {
+  width: 18px;
+  height: 14px;
+  margin: 3px auto 0;
+  border: 1px solid #BFDBFE;
+  border-radius: 999px;
+  color: #1D4ED8;
+  background: #FFFFFF;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.luck-shen-sha-stack {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.luck-shen-sha-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 2px 5px;
+  font-size: 8.5px;
+  font-weight: 800;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.luck-shen-sha-item.shen-sha-positive {
+  background: #F8FAFF;
+  border-color: #BFDBFE;
+  color: #1D4ED8;
+}
+
+.luck-shen-sha-item.shen-sha-caution {
+  background: #FFF7ED;
+  border-color: #FED7AA;
+  color: #C2410C;
+}
+
+.luck-shen-sha-item.shen-sha-neutral {
+  background: #F8FAFC;
+  border-color: #E2E8F0;
+  color: #475569;
 }
 </style>

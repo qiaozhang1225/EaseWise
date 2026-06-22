@@ -7,6 +7,14 @@ from zoneinfo import ZoneInfo
 
 from lunar_python import Solar
 
+from .shen_sha import (
+    ShenShaContext,
+    calculate_chart_shen_sha,
+    calculate_target_shen_sha,
+    shen_sha_names,
+    summarize_chart_shen_sha,
+)
+
 FOUR_PILLARS_ASPECTS: list[dict[str, str]] = [
     {"aspect_key": "personality", "title": "性格"},
     {"aspect_key": "career", "title": "事业"},
@@ -282,7 +290,36 @@ def build_chart(input_profile: dict[str, Any]) -> dict[str, Any]:
         "pillars": pillars,
         "hidden_ten_gods": hidden_ten_gods,
         "ba_zi_wuxing": list(lunar.getBaZiWuXing()),
+        "ba_zi_na_yin": list(lunar.getBaZiNaYin()),
     }
+
+
+def build_shen_sha_context(
+    chart: dict[str, Any],
+    input_profile: dict[str, Any] | None = None,
+    *,
+    empty_branches: list[str] | tuple[str, ...] | None = None,
+) -> ShenShaContext:
+    pillars = chart.get("pillars") if isinstance(chart.get("pillars"), dict) else {}
+    year_pillar = as_pillar_dict(pillars.get("year"))
+    month_pillar = as_pillar_dict(pillars.get("month"))
+    day_pillar = as_pillar_dict(pillars.get("day"))
+    day_ganzhi = str(day_pillar.get("ganzhi") or chart.get("day_ganzhi") or "")
+    year_ganzhi = str(year_pillar.get("ganzhi") or chart.get("year_ganzhi") or "")
+    month_ganzhi = str(month_pillar.get("ganzhi") or chart.get("month_ganzhi") or "")
+    ba_zi_na_yin = chart.get("ba_zi_na_yin") if isinstance(chart.get("ba_zi_na_yin"), list) else []
+    year_na_yin = str(chart.get("year_na_yin") or (ba_zi_na_yin[0] if ba_zi_na_yin else "")).strip()
+    return ShenShaContext(
+        year_stem=str(year_pillar.get("stem") or (year_ganzhi[0] if len(year_ganzhi) >= 2 else "")),
+        year_branch=str(year_pillar.get("branch") or (year_ganzhi[1] if len(year_ganzhi) >= 2 else "")),
+        month_branch=str(month_pillar.get("branch") or (month_ganzhi[1] if len(month_ganzhi) >= 2 else "")).strip(),
+        day_stem=str(chart.get("day_master") or day_pillar.get("stem") or (day_ganzhi[0] if len(day_ganzhi) >= 2 else "")),
+        day_branch=str(chart.get("day_branch") or day_pillar.get("branch") or (day_ganzhi[1] if len(day_ganzhi) >= 2 else "")),
+        day_ganzhi=day_ganzhi,
+        year_na_yin=year_na_yin or None,
+        gender=str((input_profile or {}).get("gender") or "") or None,
+        empty_branches=tuple(str(item) for item in (empty_branches or resolve_empty_branches(day_ganzhi)) if str(item).strip()),
+    )
 
 
 def build_chart_display(
@@ -302,6 +339,8 @@ def build_chart_display(
     empty_branches = []
     if isinstance(facts, dict):
         empty_branches = [str(item) for item in facts.get("empty_branches", []) if str(item).strip()]
+    shen_sha_context = build_shen_sha_context(chart, input_profile, empty_branches=empty_branches)
+    chart_shen_sha = calculate_chart_shen_sha(shen_sha_context, {key: as_pillar_dict(pillars.get(key)) for key in PILLAR_KEYS})
 
     return {
         "profile": {
@@ -325,6 +364,7 @@ def build_chart_display(
                 year_branch=year_branch,
                 month_branch=month_branch,
                 empty_branches=empty_branches,
+                shen_sha_details=chart_shen_sha.get(key, []),
             )
             for index, key in enumerate(PILLAR_KEYS)
         },
@@ -345,6 +385,8 @@ def build_deterministic_facts(chart: dict[str, Any], input_profile: dict[str, An
     tombs = [{"branch": branch, "meaning": TOMB_BRANCHES[branch]} for branch in branches if branch in TOMB_BRANCHES]
     ten_god_counts = count_ten_gods(chart)
     aspect_scores = build_aspect_scores(element_counts, interactions, strength, ten_god_counts)
+    shen_sha_context = build_shen_sha_context(chart, input_profile, empty_branches=empty_branches)
+    shen_sha_by_pillar = calculate_chart_shen_sha(shen_sha_context, pillars)
     luck_cycles = build_luck_cycles(input_profile, chart=chart)
     return {
         "input_summary": {
@@ -368,6 +410,10 @@ def build_deterministic_facts(chart: dict[str, Any], input_profile: dict[str, An
         "interactions": interactions,
         "empty_branches": empty_branches,
         "tombs": tombs,
+        "shen_sha": {
+            "by_pillar": shen_sha_by_pillar,
+            "summary": summarize_chart_shen_sha(shen_sha_by_pillar),
+        },
         "aspect_scores": aspect_scores,
         "luck_cycles": luck_cycles,
     }
@@ -384,6 +430,11 @@ def build_luck_cycles(
     lunar = solar.getLunar()
     resolved_chart = chart or build_chart(input_profile)
     day_stem = str(resolved_chart["day_master"])
+    shen_sha_context = build_shen_sha_context(
+        resolved_chart,
+        input_profile,
+        empty_branches=resolve_empty_branches(str(resolved_chart.get("day_ganzhi") or "")),
+    )
     gender_value = 1 if str(input_profile.get("gender")) == "male" else 0
     yun = lunar.getEightChar().getYun(gender_value)
     current_year = int(reference_year or datetime.now(birth_dt.tzinfo).year)
@@ -393,6 +444,15 @@ def build_luck_cycles(
         start_year = int(item.getStartYear())
         end_year = int(item.getEndYear())
         ganzhi = str(item.getGanZhi() or "").strip()
+        stem = ganzhi[0] if len(ganzhi) >= 2 else None
+        branch = ganzhi[1] if len(ganzhi) >= 2 else None
+        shen_sha_details = calculate_target_shen_sha(
+            shen_sha_context,
+            target_stem=stem,
+            target_branch=branch,
+            target_ganzhi=ganzhi,
+            target_key="dayun",
+        )
         cycle = {
             "cycle_key": _luck_cycle_key(start_year, end_year, ganzhi),
             "start_year": start_year,
@@ -402,12 +462,18 @@ def build_luck_cycles(
             "ganzhi": ganzhi,
             "display_ganzhi": ganzhi or "起运前",
             "is_current": start_year <= current_year <= end_year,
-            "stem": ganzhi[0] if len(ganzhi) >= 2 else None,
-            "branch": ganzhi[1] if len(ganzhi) >= 2 else None,
-            "stem_ten_god": ten_god(day_stem, ganzhi[0]) if len(ganzhi) >= 2 else None,
-            "stem_element": ELEMENT_BY_STEM.get(ganzhi[0]) if len(ganzhi) >= 2 else None,
-            "branch_element": ELEMENT_BY_BRANCH.get(ganzhi[1]) if len(ganzhi) >= 2 else None,
-            "year_items": [_build_luck_year_item(liu_nian, day_stem, current_year) for liu_nian in item.getLiuNian()],
+            "stem": stem,
+            "branch": branch,
+            "stem_ten_god": ten_god(day_stem, stem) if stem else None,
+            "stem_element": ELEMENT_BY_STEM.get(stem) if stem else None,
+            "branch_element": ELEMENT_BY_BRANCH.get(branch) if branch else None,
+            "di_shi": TWELVE_LIFE_STAGE_BY_STEM.get(day_stem, {}).get(branch, "") if branch else "",
+            "shen_sha": shen_sha_names(shen_sha_details),
+            "shen_sha_details": shen_sha_details,
+            "year_items": [
+                _build_luck_year_item(liu_nian, day_stem, current_year, shen_sha_context=shen_sha_context)
+                for liu_nian in item.getLiuNian()
+            ],
         }
         if cycle["is_current"]:
             current_cycle_key = str(cycle["cycle_key"])
@@ -560,6 +626,7 @@ def _build_display_pillar(
     year_branch: str,
     month_branch: str,
     empty_branches: list[str],
+    shen_sha_details: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     suffix = {"year": "Year", "month": "Month", "day": "Day", "hour": "Time"}[key]
     ganzhi = str(pillar.get("ganzhi") or "").strip()
@@ -578,6 +645,18 @@ def _build_display_pillar(
         for index, hidden_stem in enumerate(hidden_stems_raw)
         if hidden_stem in ELEMENT_BY_STEM
     ]
+    resolved_shen_sha_details = (
+        shen_sha_details
+        if shen_sha_details is not None
+        else resolve_display_shen_sha_details(
+            branch=branch,
+            day_stem=day_stem,
+            day_branch=day_branch,
+            year_branch=year_branch,
+            month_branch=month_branch,
+            empty_branches=empty_branches,
+        )
+    )
     return {
         "key": key,
         "label": PILLAR_LABELS[key],
@@ -593,14 +672,8 @@ def _build_display_pillar(
         "xun_kong": str(_safe_call(eight_char, f"get{suffix}XunKong") or "").strip(),
         "di_shi": str(_safe_call(eight_char, f"get{suffix}DiShi") or "").strip(),
         "self_sitting": resolve_self_sitting(stem, branch),
-        "shen_sha": resolve_display_shen_sha(
-            branch=branch,
-            day_stem=day_stem,
-            day_branch=day_branch,
-            year_branch=year_branch,
-            month_branch=month_branch,
-            empty_branches=empty_branches,
-        ),
+        "shen_sha": shen_sha_names(resolved_shen_sha_details),
+        "shen_sha_details": resolved_shen_sha_details,
     }
 
 
@@ -635,28 +708,54 @@ def resolve_display_shen_sha(
     year_branch: str,
     month_branch: str,
     empty_branches: list[str],
+    stem: str = "",
+    ganzhi: str = "",
+    year_stem: str = "",
+    day_ganzhi: str = "",
+    gender: str | None = None,
 ) -> list[str]:
-    labels: list[str] = []
-    if branch in TIAN_YI_BRANCHES_BY_DAY_STEM.get(day_stem, []):
-        labels.append("天乙贵人")
-    if branch in TAI_JI_BRANCHES_BY_DAY_STEM.get(day_stem, []):
-        labels.append("太极贵人")
-    if branch == WEN_CHANG_BRANCH_BY_DAY_STEM.get(day_stem):
-        labels.append("文昌")
-    for basis_branch in (day_branch, year_branch):
-        targets = _trinity_targets(basis_branch)
-        for label in ("桃花", "驿马", "华盖", "将星", "亡神"):
-            if branch == targets.get(label):
-                labels.append(label)
-    if branch == LU_BRANCH_BY_DAY_STEM.get(day_stem):
-        labels.append("禄神")
-    if branch in empty_branches:
-        labels.append("空亡")
-    if branch in TOMB_BRANCHES:
-        labels.append("墓库")
-    if branch == FIVE_GHOST_BRANCH_BY_MONTH_BRANCH.get(month_branch):
-        labels.append("五鬼")
-    return list(dict.fromkeys(labels))
+    return shen_sha_names(
+        resolve_display_shen_sha_details(
+            branch=branch,
+            day_stem=day_stem,
+            day_branch=day_branch,
+            year_branch=year_branch,
+            month_branch=month_branch,
+            empty_branches=empty_branches,
+            stem=stem,
+            ganzhi=ganzhi,
+            year_stem=year_stem,
+            day_ganzhi=day_ganzhi,
+            gender=gender,
+        )
+    )
+
+
+def resolve_display_shen_sha_details(
+    *,
+    branch: str,
+    day_stem: str,
+    day_branch: str,
+    year_branch: str,
+    month_branch: str,
+    empty_branches: list[str],
+    stem: str = "",
+    ganzhi: str = "",
+    year_stem: str = "",
+    day_ganzhi: str = "",
+    gender: str | None = None,
+) -> list[dict[str, Any]]:
+    context = ShenShaContext(
+        year_stem=year_stem,
+        year_branch=year_branch,
+        month_branch=month_branch,
+        day_stem=day_stem,
+        day_branch=day_branch,
+        day_ganzhi=day_ganzhi,
+        gender=gender,
+        empty_branches=tuple(empty_branches),
+    )
+    return calculate_target_shen_sha(context, target_stem=stem, target_branch=branch, target_ganzhi=ganzhi)
 
 
 def ten_god(day_stem: str, target_stem: str) -> str:
@@ -866,11 +965,24 @@ def _trinity_targets(branch: str) -> dict[str, str]:
     return {}
 
 
-def _build_luck_year_item(liu_nian: Any, day_stem: str, current_year: int) -> dict[str, Any]:
+def _build_luck_year_item(
+    liu_nian: Any,
+    day_stem: str,
+    current_year: int,
+    *,
+    shen_sha_context: ShenShaContext,
+) -> dict[str, Any]:
     year = int(liu_nian.getYear())
     ganzhi = str(liu_nian.getGanZhi())
     stem = ganzhi[0]
     branch = ganzhi[1]
+    shen_sha_details = calculate_target_shen_sha(
+        shen_sha_context,
+        target_stem=stem,
+        target_branch=branch,
+        target_ganzhi=ganzhi,
+        target_key="liunian",
+    )
     return {
         "year": year,
         "age": int(liu_nian.getAge()),
@@ -880,6 +992,9 @@ def _build_luck_year_item(liu_nian: Any, day_stem: str, current_year: int) -> di
         "stem_ten_god": ten_god(day_stem, stem),
         "stem_element": ELEMENT_BY_STEM[stem],
         "branch_element": ELEMENT_BY_BRANCH[branch],
+        "di_shi": TWELVE_LIFE_STAGE_BY_STEM.get(day_stem, {}).get(branch, ""),
+        "shen_sha": shen_sha_names(shen_sha_details),
+        "shen_sha_details": shen_sha_details,
         "is_current": year == current_year,
     }
 
@@ -922,7 +1037,7 @@ def _build_luck_render_facts(
     added_stems = [item for item in added_stems if item in STEMS]
     added_branches = [item for item in added_branches if item in BRANCHES]
     combined_interactions = detect_interactions(original_stems + added_stems, original_branches + added_branches)
-    special_tags = _luck_special_tags(chart, facts, added_branches)
+    special_tags = _luck_special_tags(cycle, year_item)
     return {
         "render_type": "liunian" if year_item else "dayun",
         "input_summary": facts.get("input_summary", {}),
@@ -955,12 +1070,18 @@ def _build_luck_render_facts(
                 "stem_element",
                 "branch_element",
                 "is_current",
+                "shen_sha",
+                "shen_sha_details",
             )
         },
         "selected_year": dict(year_item) if year_item else None,
         "combined_interactions": combined_interactions,
         "empty_branch_hits": [branch for branch in added_branches if branch in facts.get("empty_branches", [])],
         "tomb_hits": [{"branch": branch, "meaning": TOMB_BRANCHES[branch]} for branch in added_branches if branch in TOMB_BRANCHES],
+        "luck_shen_sha": {
+            "dayun": cycle.get("shen_sha_details", []),
+            "liunian": year_item.get("shen_sha_details", []) if year_item else [],
+        },
         "special_tags": special_tags,
         "favorable_element_hits": [
             element
@@ -985,19 +1106,27 @@ def _elements_for_luck_items(cycle: dict[str, Any], year_item: dict[str, Any] | 
     return [item for item in values if item]
 
 
-def _luck_special_tags(chart: dict[str, Any], facts: dict[str, Any], branches: list[str]) -> list[dict[str, str]]:
-    month_branch = str(chart.get("pillars", {}).get("month", {}).get("branch") or "")
-    day_stem = str(chart.get("day_master") or "")
-    five_ghost_branch = FIVE_GHOST_BRANCH_BY_MONTH_BRANCH.get(month_branch)
-    lu_branch = LU_BRANCH_BY_DAY_STEM.get(day_stem)
+def _luck_special_tags(cycle: dict[str, Any], year_item: dict[str, Any] | None) -> list[dict[str, str]]:
     tags: list[dict[str, str]] = []
-    for branch in branches:
-        if branch == five_ghost_branch:
-            tags.append({"tag": "五鬼", "branch": branch, "meaning": "偏财机会与是非损耗同时上升"})
-        if branch == lu_branch:
-            tags.append({"tag": "禄神", "branch": branch, "meaning": "职位、收入、贵人与稳定承接增强"})
-        if branch in facts.get("empty_branches", []):
-            tags.append({"tag": "空亡", "branch": branch, "meaning": "计划落空感或兑现力下降"})
-        if branch in TOMB_BRANCHES:
-            tags.append({"tag": "墓库", "branch": branch, "meaning": TOMB_BRANCHES[branch]})
+    for source, details in (
+        ("dayun", cycle.get("shen_sha_details", [])),
+        ("liunian", year_item.get("shen_sha_details", []) if year_item else []),
+    ):
+        if not isinstance(details, list):
+            continue
+        for item in details:
+            if not isinstance(item, dict):
+                continue
+            tag = str(item.get("name") or "").strip()
+            if not tag:
+                continue
+            tags.append(
+                {
+                    "tag": tag,
+                    "source": source,
+                    "target": str(item.get("target") or ""),
+                    "target_value": str(item.get("target_value") or ""),
+                    "meaning": str(item.get("meaning") or ""),
+                }
+            )
     return tags
