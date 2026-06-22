@@ -25,7 +25,10 @@ When rendered as structured output, keep these fields:
 ## Hard rules
 
 - `risk` 和 `usage_guidance` 都必须是完整段落，不要拆成项目符号
+- `risk` 和 `usage_guidance` 必须优先写用户能核实的现实表现、具体场景和使用建议，不要连续堆叠专业术语
+- 如果使用 `空亡 / 门迫 / 入墓 / 击刑 / 特殊组合 / 四害` 等术语，必须同时写出它在现实里怎么表现
 - `elements_check` 是结构化判断层，可以直写每一层的判断，但不要写来源痕迹
+- `elements_check` 每项都要写成“专业层 + 现实含义”，不要只写标签
 - 不要在最终输出里出现来源痕迹
 - 不要在最终输出里出现内部检查层字段名
 - 不要把过程感写成结果感

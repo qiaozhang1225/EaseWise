@@ -285,18 +285,18 @@ def build_aspect_prompts(
 
     json_example = {
         "aspect_key": aspect_key,
-        "title": f"{payload['title']}上有可用之处，但要看承接和风险层是否压住",
+        "title": f"{payload['title']}上有可用之处，但要看现实里能不能稳稳接住",
         "score": payload["score"],
-        "content": "请用一段自然中文输出专项综合评价，重点描述可核实的信息和轻度建议。",
-        "risk": "请用一段话输出专项风险提示，语气比 content 更重。",
+        "content": "请用一段自然中文输出专项综合评价，重点描述用户能对照的表现、容易出现的场景和轻度建议。",
+        "risk": "请用一段话输出专项风险提示，语气比 content 更重，但要说清风险会怎么在现实中发生。",
         "elements_check": {
-            "宫": "一句话判断宫。",
-            "门": "一句话判断门。",
-            "神": "一句话判断神。",
-            "星": "一句话判断星。",
-            "天干/地干": "一句话判断天干/地干。",
-            "特殊组合": "一句话判断特殊组合。",
-            "四害": "一句话判断四害。",
+            "宫": "一句话判断底层环境，并翻译成该专项里的现实承接感。",
+            "门": "一句话判断行动方式，并翻译成该专项里的做法、节奏或通道。",
+            "神": "一句话判断隐性助力和心理状态，并翻译成该专项里的用户感受。",
+            "星": "一句话判断气质或对象侧，并翻译成该专项里可核实的表现。",
+            "天干/地干": "一句话判断后段牵扯，并翻译成该专项里的收尾、兑现或压力。",
+            "特殊组合": "一句话判断放大效应，并翻译成该专项里容易被放大的场景。",
+            "四害": "一句话判断硬伤层，并翻译成落空、受压、收不住或临场出错。",
         },
     }
 
@@ -305,14 +305,16 @@ def build_aspect_prompts(
         "你的任务不是改分，不是重算，也不是扩写成别的专题。\n"
         "必须严格遵守：\n"
         "1. 最终只输出一个 JSON object，且只包含 aspect_key、title、score、content、risk、elements_check。\n"
-        "2. element_checks 是中间层判断，必须先完成再写 content 和 risk；最终 content 和 risk 都要体现 element_checks 的结果。\n"
-        "3. content 重点写综合评价、可核实的信息和轻度建议，不要变成 checklist。\n"
-        "4. risk 重点写 element_checks 里的风险项，语气要更重，但不能写成恐吓。\n"
+        "2. elements_check 是中间层判断，必须先完成再写 content 和 risk；最终 content 和 risk 都要体现 elements_check 的结果。\n"
+        "3. content 重点写综合评价、可核实的信息和轻度建议，不要变成 checklist；必须让用户能拿自己的经历对照。\n"
+        "4. risk 重点写 elements_check 里的风险项，语气要更重，但不能写成恐吓；必须说清风险会落到哪些现实场景。\n"
         "5. 不要出现课程、知识库、老师、资料、文档来源痕迹。\n"
         "6. 只能使用 locked_fields 中的结构事实与系统提示词里的知识底座，不能引入未提供的维度标签或历史结论。\n"
         "7. 不要发明 locked facts 里没有的判断。\n"
         "8. 不要把 content 和 risk 写成一样。\n"
         "9. 不要只盯一个切口，必须让宫、门、神、星、天干/地干、特殊组合、四害都影响最终结论。\n\n"
+        "10. content 和 risk 是用户主段落，不要连续堆叠宫、门、神、星、干支、四害、空亡、门迫、入墓、击刑等词；如果写术语，必须紧跟生活化解释。\n"
+        "11. elements_check 可以保留结构化分层，但每项都要写出专业层对应的现实含义，不要只写标签。\n\n"
         f"{shared_foundation}\n\n"
         f"【通用盘面判断知识】\n{general_judgement_knowledge}\n\n"
         f"【当前语气包】\n{model_pack}\n\n"
@@ -329,9 +331,10 @@ def build_aspect_prompts(
         f"- aspect_key 固定为 {aspect_key}\n"
         f"- title 写一句“{payload['title']}”专项的判断式标题，不要只写专项名称，也不要写成其他专项。\n"
         "- score 必须和 locked_fields.score 一致，不得改动。\n"
-        "- content 写专项综合评价，重点是描述信息和轻度建议。\n"
-        "- risk 写专项风险提示，重点是 element_checks 里最需要重视的风险项。\n"
-        "- elements_check 必须包含 宫、门、神、星、天干/地干、特殊组合、四害 七项，每项都要一句话。\n"
+        "- content 写专项综合评价，重点是描述用户能核实的表现、发生场景和轻度建议。\n"
+        "- risk 写专项风险提示，重点是 elements_check 里最需要重视的风险项，并说清风险会怎么发生。\n"
+        "- elements_check 必须包含 宫、门、神、星、天干/地干、特殊组合、四害 七项，每项都要一句话，并把专业层翻译成现实表现。\n"
+        "- 用户主段落不要把专业词连续堆起来；如果写术语，必须紧跟生活化解释。\n"
         "- 最终只输出 JSON object。\n"
     )
 

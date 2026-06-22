@@ -27,6 +27,7 @@ KNOWLEDGE_ROOT = ROOT / "knowledge"
 SHARED_FOUNDATION_FILES = (
     "shared/model-baseline.md",
     "shared/interpretation-boundaries.md",
+    "shared/user-readable-expression.md",
 )
 
 
