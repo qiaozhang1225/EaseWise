@@ -7,6 +7,8 @@ from product.backend.api import handlers
 router = APIRouter(prefix="/api/v1/four-pillars", tags=["four-pillars"])
 
 router.add_api_route("/reviews", handlers.create_four_pillars_review_record, methods=["POST"], response_model=handlers.FourPillarsReviewRecordResponse)
+router.add_api_route("/input/locations", handlers.list_four_pillars_birth_locations, methods=["GET"])
+router.add_api_route("/input/resolve", handlers.resolve_four_pillars_input, methods=["POST"])
 router.add_api_route("/reviews", handlers.list_four_pillars_review_records, methods=["GET"], response_model=handlers.FourPillarsReviewListResponse)
 router.add_api_route("/reviews/{review_id}", handlers.get_four_pillars_review_record, methods=["GET"], response_model=handlers.FourPillarsReviewRecordResponse)
 router.add_api_route("/reviews/{review_id}/aspect-unlocks", handlers.get_four_pillars_review_aspect_unlock_status, methods=["GET"], response_model=handlers.FourPillarsAspectUnlockListResponse)

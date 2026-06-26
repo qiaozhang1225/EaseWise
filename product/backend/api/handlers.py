@@ -17,10 +17,12 @@ from zoneinfo import ZoneInfo
 from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
+from lunar_python import Lunar, Solar
 
 from product.backend.llm import DeepSeekAPIError, get_deepseek_governor_status, load_env_file
 from features.almanac.engine import build_almanac_for_date, build_today_almanac
-from features.four_pillars.engine import FOUR_PILLARS_ASPECT_ORDER, FOUR_PILLARS_ASPECTS, build_dayun_facts, build_four_pillars_review, build_liunian_facts
+from features.four_pillars.engine import FOUR_PILLARS_ASPECT_ORDER, FOUR_PILLARS_ASPECTS, build_chart_display, build_dayun_facts, build_four_pillars_review, build_liunian_facts, build_luck_cycles
+from features.four_pillars.engine.solar_time import calculate_true_solar_time, list_birth_locations, load_birth_locations, resolve_birth_location
 from features.four_pillars.rendering import (
     build_four_pillars_product_view,
     build_product_review_aspects_render as build_four_pillars_aspects_render,
@@ -2003,6 +2005,79 @@ def create_four_pillars_review_record(
     )
 
 
+def resolve_four_pillars_input(payload: dict[str, Any]) -> dict[str, Any]:
+    mode = str(payload.get("mode") or "solar").strip() or "solar"
+    location = resolve_birth_location(payload.get("birth_location") or payload.get("birth_place"))
+    timezone_name = str(payload.get("timezone") or location.timezone or "Asia/Shanghai").strip() or "Asia/Shanghai"
+    birth_date = str(payload.get("birth_date") or "").strip()
+    birth_time = str(payload.get("birth_time") or "00:00").strip()
+
+    if mode == "lunar":
+        lunar_input = payload.get("lunar_input") if isinstance(payload.get("lunar_input"), dict) else payload
+        year = int(lunar_input.get("year"))
+        month = int(lunar_input.get("month"))
+        day = int(lunar_input.get("day"))
+        hour = int(lunar_input.get("hour", 0))
+        minute = int(lunar_input.get("minute", 0))
+        lunar_month = -month if bool(lunar_input.get("is_leap_month")) else month
+        solar = Lunar.fromYmdHms(year, lunar_month, day, hour, minute, 0).getSolar()
+        birth_date = solar.toYmd()
+        birth_time = f"{solar.getHour():02d}:{solar.getMinute():02d}"
+
+    if mode == "bazi":
+        bazi_input = payload.get("bazi_input") if isinstance(payload.get("bazi_input"), dict) else {}
+        year = _normalize_ganzhi_text(str(bazi_input.get("year") or ""))
+        month = _normalize_ganzhi_text(str(bazi_input.get("month") or ""))
+        day = _normalize_ganzhi_text(str(bazi_input.get("day") or ""))
+        hour = _normalize_ganzhi_text(str(bazi_input.get("hour") or ""))
+        base_year = int(bazi_input.get("base_year") or 1801)
+        candidates = [
+            {
+                "birth_date": item.toYmd(),
+                "birth_time": f"{item.getHour():02d}:{item.getMinute():02d}",
+                "solar_datetime": item.toYmdHms(),
+            }
+            for item in Solar.fromBaZi(year, month, day, hour, base_year=base_year)
+        ]
+        if candidates and bazi_input.get("candidate_index") is not None:
+            selected = candidates[int(bazi_input.get("candidate_index") or 0)]
+        elif candidates:
+            target_year = int(bazi_input.get("target_year") or datetime.now().year)
+            selected = min(candidates, key=lambda item: abs(int(str(item["birth_date"])[:4]) - target_year))
+        else:
+            selected = None
+        if selected:
+            birth_date = selected["birth_date"]
+            birth_time = selected["birth_time"]
+        return {
+            "mode": mode,
+            "candidates": candidates[:80],
+            "selected": selected,
+            "location": location.to_dict(),
+        }
+
+    try:
+        standard_dt = datetime.fromisoformat(f"{birth_date}T{birth_time}:00").replace(tzinfo=ZoneInfo(timezone_name))
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="invalid_birth_datetime") from exc
+    true_solar = calculate_true_solar_time(standard_dt, location)
+    return {
+        "mode": mode,
+        "birth_date": birth_date,
+        "birth_time": birth_time,
+        "location": location.to_dict(),
+        "true_solar_time": true_solar,
+        "locations": [item.to_dict() for item in list_birth_locations()],
+    }
+
+
+def list_four_pillars_birth_locations() -> dict[str, Any]:
+    return {
+        "default_location_id": str(load_birth_locations().get("default_location_id") or ""),
+        "locations": [item.to_dict() for item in list_birth_locations()],
+    }
+
+
 def list_four_pillars_review_records(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -2326,6 +2401,9 @@ def _build_four_pillars_review_record_response(
 ) -> FourPillarsReviewRecordResponse:
     public_view = _resolve_four_pillars_public_view(review, current_user_id=current_user_id, channel_key=channel_key)
     input_profile = _resolve_four_pillars_input_profile_from_review(review, public_view)
+    chart = public_view.get("chart") if public_view else _resolve_four_pillars_template_dict(review, "chart")
+    deterministic_facts = public_view.get("deterministic_facts") if public_view else (_resolve_four_pillars_template_dict(review, "deterministic_facts") or {})
+    chart_display = _resolve_four_pillars_chart_display(public_view, input_profile, chart, deterministic_facts)
     return FourPillarsReviewRecordResponse(
         id=str(review["id"]),
         report_id=str(review["id"]),
@@ -2340,10 +2418,10 @@ def _build_four_pillars_review_record_response(
         progress_message=review.get("progress_message"),
         score=_coerce_four_pillars_score(review, public_view),
         input_profile=input_profile,
-        chart=public_view.get("chart") if public_view else _resolve_four_pillars_template_dict(review, "chart"),
-        chart_display=public_view.get("chart_display") if public_view and isinstance(public_view.get("chart_display"), dict) else None,
+        chart=chart,
+        chart_display=chart_display,
         summary=_build_four_pillars_summary_response(public_view.get("summary") if public_view else None),
-        deterministic_facts=public_view.get("deterministic_facts") if public_view else (_resolve_four_pillars_template_dict(review, "deterministic_facts") or {}),
+        deterministic_facts=deterministic_facts,
         aspects=_build_four_pillars_aspect_models(public_view),
         analysis_branches=public_view.get("analysis_branches") if public_view and isinstance(public_view.get("analysis_branches"), dict) else {},
         luck_analysis=_build_four_pillars_luck_analysis_payload(
@@ -2399,6 +2477,30 @@ def _build_four_pillars_summary_response(payload: Any) -> FourPillarsSummaryResp
     )
 
 
+def _resolve_four_pillars_chart_display(
+    public_view: dict[str, Any] | None,
+    input_profile: dict[str, Any],
+    chart: Any,
+    deterministic_facts: Any,
+) -> dict[str, Any] | None:
+    existing = public_view.get("chart_display") if public_view and isinstance(public_view.get("chart_display"), dict) else None
+    existing_profile = existing.get("profile") if isinstance(existing, dict) and isinstance(existing.get("profile"), dict) else {}
+    if not isinstance(input_profile, dict) or not isinstance(chart, dict):
+        return existing
+    try:
+        refreshed = build_chart_display(input_profile, chart, deterministic_facts if isinstance(deterministic_facts, dict) else None)
+    except Exception:
+        return existing
+    if existing and isinstance(refreshed, dict):
+        merged = dict(existing)
+        merged_profile = dict(existing_profile)
+        refreshed_profile = refreshed.get("profile") if isinstance(refreshed.get("profile"), dict) else {}
+        merged_profile.update(refreshed_profile)
+        merged["profile"] = merged_profile
+        return merged
+    return refreshed if isinstance(refreshed, dict) else existing
+
+
 def _build_four_pillars_aspect_models(public_view: dict[str, Any] | None) -> list[FourPillarsAspectResponse]:
     if not isinstance(public_view, dict):
         return []
@@ -2441,7 +2543,19 @@ def _build_four_pillars_luck_analysis_payload(
     luck_source = public_view.get("luck_analysis") if isinstance(public_view, dict) else None
     cycles = []
     current_cycle_key = None
-    if isinstance(luck_source, dict):
+    rebuilt_luck_cycles = None
+    if isinstance(public_view, dict):
+        input_profile = public_view.get("input_profile")
+        chart = public_view.get("chart")
+        if isinstance(input_profile, dict) and isinstance(chart, dict):
+            try:
+                rebuilt_luck_cycles = build_luck_cycles(input_profile, chart=chart)
+            except Exception:
+                rebuilt_luck_cycles = None
+    if isinstance(rebuilt_luck_cycles, dict):
+        cycles = [dict(item) for item in rebuilt_luck_cycles.get("cycles", []) if isinstance(item, dict)]
+        current_cycle_key = rebuilt_luck_cycles.get("current_cycle_key")
+    elif isinstance(luck_source, dict):
         cycles = [dict(item) for item in luck_source.get("cycles", []) if isinstance(item, dict)]
         current_cycle_key = luck_source.get("current_cycle_key")
     else:
@@ -2476,8 +2590,14 @@ def _build_four_pillars_luck_analysis_payload(
                 "stem_ten_god",
                 "stem_element",
                 "branch_element",
+                "di_shi",
+                "xun_kong",
+                "shen_sha",
+                "shen_sha_details",
             )
         }
+        if not next_cycle.get("display_ganzhi"):
+            next_cycle["display_ganzhi"] = "小运"
         next_cycle["render_status"] = str(cycle_render.get("status") if cycle_render else "not_generated")
         next_cycle["render"] = _build_four_pillars_luck_render_response(cycle_render).model_dump() if cycle_render else None
         year_items = []
@@ -3589,12 +3709,24 @@ def _normalize_four_pillars_input_profile(payload: FourPillarsReviewCreateReques
         "timezone": timezone_name,
         "birth_place": _normalize_optional_profile_text(payload.birth_place),
         "name": _normalize_optional_profile_text(payload.name),
+        "input_mode": str(payload.input_mode or "solar").strip() or "solar",
+        "calendar_input": payload.calendar_input if isinstance(payload.calendar_input, dict) else None,
+        "lunar_input": payload.lunar_input if isinstance(payload.lunar_input, dict) else None,
+        "bazi_input": payload.bazi_input if isinstance(payload.bazi_input, dict) else None,
+        "birth_location": payload.birth_location if isinstance(payload.birth_location, dict) else None,
     }
 
 
 def _normalize_optional_profile_text(value: str | None) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _normalize_ganzhi_text(value: str) -> str:
+    text = value.strip()
+    if len(text) != 2 or text[0] not in "甲乙丙丁戊己庚辛壬癸" or text[1] not in "子丑寅卯辰巳午未申酉戌亥":
+        raise HTTPException(status_code=422, detail="invalid_ganzhi")
+    return text
 
 
 

@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from lunar_python import Solar
 
+from .bone_weight import calculate_bone_weight
 from .shen_sha import (
     ShenShaContext,
     calculate_chart_shen_sha,
@@ -14,6 +15,7 @@ from .shen_sha import (
     shen_sha_names,
     summarize_chart_shen_sha,
 )
+from .solar_time import calculate_true_solar_time, default_birth_location, resolve_birth_location
 
 FOUR_PILLARS_ASPECTS: list[dict[str, str]] = [
     {"aspect_key": "personality", "title": "性格"},
@@ -235,6 +237,22 @@ class FourPillarsInput:
     name: str | None = None
 
 
+STEMS_BY_BRANCH_PARITY = {
+    "子": ("甲", "丙", "戊", "庚", "壬"),
+    "丑": ("乙", "丁", "己", "辛", "癸"),
+    "寅": ("甲", "丙", "戊", "庚", "壬"),
+    "卯": ("乙", "丁", "己", "辛", "癸"),
+    "辰": ("甲", "丙", "戊", "庚", "壬"),
+    "巳": ("乙", "丁", "己", "辛", "癸"),
+    "午": ("甲", "丙", "戊", "庚", "壬"),
+    "未": ("乙", "丁", "己", "辛", "癸"),
+    "申": ("甲", "丙", "戊", "庚", "壬"),
+    "酉": ("乙", "丁", "己", "辛", "癸"),
+    "戌": ("甲", "丙", "戊", "庚", "壬"),
+    "亥": ("乙", "丁", "己", "辛", "癸"),
+}
+
+
 def build_four_pillars_review(payload: FourPillarsInput | dict[str, Any], *, include_markdown: bool = True) -> dict[str, Any]:
     normalized = _normalize_input(payload)
     chart = build_chart(normalized)
@@ -329,6 +347,7 @@ def build_chart_display(
 ) -> dict[str, Any]:
     birth_dt = _parse_birth_datetime(input_profile)
     lunar = Solar.fromDate(birth_dt).getLunar()
+    solar = lunar.getSolar()
     eight_char = lunar.getEightChar()
     ba_zi_na_yin = list(lunar.getBaZiNaYin())
     pillars = chart.get("pillars") if isinstance(chart.get("pillars"), dict) else {}
@@ -341,17 +360,39 @@ def build_chart_display(
         empty_branches = [str(item) for item in facts.get("empty_branches", []) if str(item).strip()]
     shen_sha_context = build_shen_sha_context(chart, input_profile, empty_branches=empty_branches)
     chart_shen_sha = calculate_chart_shen_sha(shen_sha_context, {key: as_pillar_dict(pillars.get(key)) for key in PILLAR_KEYS})
+    bone_weight = calculate_bone_weight(birth_dt)
+    true_solar_display = str(as_dict(input_profile.get("true_solar_time")).get("display_text") or "").strip()
+    if not true_solar_display:
+        true_solar_display = birth_dt.strftime("%Y-%m-%d %H:%M")
 
     return {
         "profile": {
+            "name": input_profile.get("name"),
             "gender_label": "男命" if str(input_profile.get("gender")) == "male" else "女命",
+            "structure_label": "乾造" if str(input_profile.get("gender")) == "male" else "坤造",
             "zodiac": _lunar_zodiac(lunar),
             "solar_datetime_text": birth_dt.strftime("%Y-%m-%d %H:%M"),
-            "lunar_date": str(chart.get("lunar_date") or lunar.toString()),
+            "lunar_date": _lunar_short_text(lunar),
             "lunar_full_text": str(chart.get("lunar_full_text") or lunar.toFullString()),
             "birth_place": input_profile.get("birth_place"),
             "timezone": str(input_profile.get("timezone") or "Asia/Shanghai"),
             "solar_term_context": _solar_term_context(lunar),
+            "input_mode": input_profile.get("input_mode") or "solar",
+            "standard_birth_datetime": input_profile.get("standard_birth_datetime"),
+            "effective_birth_datetime": input_profile.get("effective_birth_datetime"),
+            "true_solar_time": input_profile.get("true_solar_time"),
+            "birth_location": input_profile.get("birth_location"),
+            "true_solar_time_text": true_solar_display,
+            "constellation": str(_safe_call(solar, "getXingZuo") or "").strip() or None,
+            "xiu": _xiu_text(lunar),
+            "tai_yuan": _ganzhi_with_nayin(_safe_call(eight_char, "getTaiYuan"), _safe_call(eight_char, "getTaiYuanNaYin")),
+            "tai_xi": _ganzhi_with_nayin(_safe_call(eight_char, "getTaiXi"), _safe_call(eight_char, "getTaiXiNaYin")),
+            "ming_gong": _ganzhi_with_nayin(_safe_call(eight_char, "getMingGong"), _safe_call(eight_char, "getMingGongNaYin")),
+            "shen_gong": _ganzhi_with_nayin(_safe_call(eight_char, "getShenGong"), _safe_call(eight_char, "getShenGongNaYin")),
+            "life_gua": _life_gua_text(birth_dt.year, str(input_profile.get("gender") or "")),
+            "empty_branches_text": _chart_empty_branches_text(eight_char),
+            "pillar_xun_kong_text": _pillar_xun_kong_text(eight_char),
+            "bone_weight": bone_weight.to_dict() if bone_weight else None,
         },
         "pillars": {
             key: _build_display_pillar(
@@ -440,7 +481,7 @@ def build_luck_cycles(
     current_year = int(reference_year or datetime.now(birth_dt.tzinfo).year)
     cycles: list[dict[str, Any]] = []
     current_cycle_key: str | None = None
-    for item in yun.getDaYun():
+    for item in yun.getDaYun(13):
         start_year = int(item.getStartYear())
         end_year = int(item.getEndYear())
         ganzhi = str(item.getGanZhi() or "").strip()
@@ -460,7 +501,7 @@ def build_luck_cycles(
             "start_age": int(item.getStartAge()),
             "end_age": int(item.getEndAge()),
             "ganzhi": ganzhi,
-            "display_ganzhi": ganzhi or "起运前",
+            "display_ganzhi": ganzhi or "小运",
             "is_current": start_year <= current_year <= end_year,
             "stem": stem,
             "branch": branch,
@@ -468,6 +509,7 @@ def build_luck_cycles(
             "stem_element": ELEMENT_BY_STEM.get(stem) if stem else None,
             "branch_element": ELEMENT_BY_BRANCH.get(branch) if branch else None,
             "di_shi": TWELVE_LIFE_STAGE_BY_STEM.get(day_stem, {}).get(branch, "") if branch else "",
+            "xun_kong": "".join(resolve_empty_branches(ganzhi)) if ganzhi else "",
             "shen_sha": shen_sha_names(shen_sha_details),
             "shen_sha_details": shen_sha_details,
             "year_items": [
@@ -568,18 +610,86 @@ def _normalize_input(payload: FourPillarsInput | dict[str, Any]) -> dict[str, An
     gender = str(data.get("gender") or "").strip()
     if gender not in {"male", "female"}:
         raise ValueError("invalid_gender")
-    birth_date = str(data.get("birth_date") or "").strip()
-    birth_time = str(data.get("birth_time") or "").strip()
-    timezone_name = str(data.get("timezone") or "Asia/Shanghai").strip() or "Asia/Shanghai"
-    _parse_birth_datetime({"birth_date": birth_date, "birth_time": birth_time, "timezone": timezone_name})
+    input_mode = str(data.get("input_mode") or "solar").strip() or "solar"
+    birth_date, birth_time, source_meta = _resolve_standard_birth_datetime(data, input_mode)
+    location = resolve_birth_location(data.get("birth_location") or data.get("birth_place"))
+    timezone_name = str(data.get("timezone") or location.timezone or "Asia/Shanghai").strip() or "Asia/Shanghai"
+    standard_dt = _parse_birth_datetime({"birth_date": birth_date, "birth_time": birth_time, "timezone": timezone_name})
+    true_solar = calculate_true_solar_time(standard_dt, location)
     return {
         "gender": gender,
-        "birth_date": birth_date,
-        "birth_time": birth_time,
+        "birth_date": true_solar["true_date"],
+        "birth_time": true_solar["true_time"],
         "timezone": timezone_name,
-        "birth_place": _optional_text(data.get("birth_place")),
+        "birth_place": _optional_text(data.get("birth_place")) or location.display_name,
         "name": _optional_text(data.get("name")),
+        "input_mode": input_mode,
+        "standard_birth_date": birth_date,
+        "standard_birth_time": birth_time,
+        "standard_birth_datetime": true_solar["standard_datetime"],
+        "effective_birth_datetime": true_solar["true_datetime"],
+        "true_solar_time": true_solar,
+        "birth_location": location.to_dict(),
+        "input_source": source_meta,
     }
+
+
+def _resolve_standard_birth_datetime(data: dict[str, Any], input_mode: str) -> tuple[str, str, dict[str, Any]]:
+    if input_mode == "lunar":
+        lunar_input = data.get("lunar_input") if isinstance(data.get("lunar_input"), dict) else data
+        year = int(lunar_input.get("year"))
+        month = int(lunar_input.get("month"))
+        day = int(lunar_input.get("day"))
+        hour = int(lunar_input.get("hour", 0))
+        minute = int(lunar_input.get("minute", 0))
+        is_leap = bool(lunar_input.get("is_leap_month"))
+        lunar_month = -month if is_leap else month
+        solar = Solar.fromLunar(year, lunar_month, day, hour, minute, 0) if hasattr(Solar, "fromLunar") else None
+        if solar is None:
+            from lunar_python import Lunar
+
+            solar = Lunar.fromYmdHms(year, lunar_month, day, hour, minute, 0).getSolar()
+        return solar.toYmd(), f"{solar.getHour():02d}:{solar.getMinute():02d}", {"mode": "lunar", "lunar_input": dict(lunar_input)}
+    if input_mode == "bazi":
+        bazi_input = data.get("bazi_input") if isinstance(data.get("bazi_input"), dict) else {}
+        candidate = _resolve_bazi_candidate(bazi_input)
+        return candidate["birth_date"], candidate["birth_time"], {"mode": "bazi", "bazi_input": dict(bazi_input), "candidate": candidate}
+    calendar_input = data.get("calendar_input") if isinstance(data.get("calendar_input"), dict) else {}
+    birth_date = str(data.get("birth_date") or calendar_input.get("birth_date") or "").strip()
+    birth_time = str(data.get("birth_time") or calendar_input.get("birth_time") or "").strip()
+    return birth_date, birth_time, {"mode": "solar"}
+
+
+def _resolve_bazi_candidate(bazi_input: dict[str, Any]) -> dict[str, Any]:
+    year = _normalize_ganzhi(str(bazi_input.get("year") or ""))
+    month = _normalize_ganzhi(str(bazi_input.get("month") or ""))
+    day = _normalize_ganzhi(str(bazi_input.get("day") or ""))
+    hour = _normalize_ganzhi(str(bazi_input.get("hour") or ""))
+    base_year = int(bazi_input.get("base_year") or 1801)
+    items = Solar.fromBaZi(year, month, day, hour, base_year=base_year)
+    if not items:
+        raise ValueError("bazi_candidate_not_found")
+    if bazi_input.get("candidate_index") is not None:
+        selected = items[int(bazi_input.get("candidate_index") or 0)]
+    else:
+        target_year = int(bazi_input.get("target_year") or datetime.now().year)
+        selected = min(items, key=lambda item: abs(int(item.getYear()) - target_year))
+    return {
+        "birth_date": selected.toYmd(),
+        "birth_time": f"{selected.getHour():02d}:{selected.getMinute():02d}",
+        "solar_datetime": selected.toYmdHms(),
+        "year": year,
+        "month": month,
+        "day": day,
+        "hour": hour,
+    }
+
+
+def _normalize_ganzhi(value: str) -> str:
+    text = value.strip()
+    if len(text) != 2 or text[0] not in STEMS or text[1] not in BRANCHES:
+        raise ValueError("invalid_ganzhi")
+    return text
 
 
 def _parse_birth_datetime(input_profile: dict[str, Any]) -> datetime:
@@ -612,6 +722,10 @@ def _build_pillar(position: str, ganzhi: str, stem_ten_god: str, branch_ten_god:
 
 
 def as_pillar_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
@@ -945,17 +1059,98 @@ def _lunar_zodiac(lunar: Any) -> str | None:
 
 
 def _solar_term_context(lunar: Any) -> str | None:
-    previous = _safe_call(lunar, "getPrevJieQi")
-    next_item = _safe_call(lunar, "getNextJieQi")
+    previous = _safe_call(lunar, "getPrevJie") or _safe_call(lunar, "getPrevJieQi")
+    next_item = _safe_call(lunar, "getNextJie") or _safe_call(lunar, "getNextJieQi")
     previous_name = str(_safe_call(previous, "getName") or previous or "").strip()
     next_name = str(_safe_call(next_item, "getName") or next_item or "").strip()
     if previous_name and next_name:
-        return f"{previous_name}后，{next_name}前"
+        return f"{previous_name}后{next_name}前"
     if previous_name:
         return f"{previous_name}后"
     if next_name:
         return f"{next_name}前"
     return None
+
+
+def _ganzhi_with_nayin(ganzhi: Any, nayin: Any) -> str | None:
+    ganzhi_text = str(ganzhi or "").strip()
+    nayin_text = str(nayin or "").strip()
+    if ganzhi_text and nayin_text:
+        return f"{ganzhi_text}（{nayin_text}）"
+    return ganzhi_text or None
+
+
+def _xiu_text(lunar: Any) -> str | None:
+    xiu = str(_safe_call(lunar, "getXiu") or "").strip()
+    if not xiu:
+        return None
+    gong = str(_safe_call(lunar, "getGong") or "").strip()
+    beast_by_gong = {"东": "东方苍龙", "南": "南方朱雀", "西": "西方白虎", "北": "北方玄武"}
+    return f"{xiu}宿{beast_by_gong.get(gong, gong)}"
+
+
+def _lunar_short_text(lunar: Any) -> str:
+    year = str(_safe_call(lunar, "getYear") or "").strip()
+    month_raw = int(_safe_call(lunar, "getMonth") or 0)
+    day = str(_safe_call(lunar, "getDay") or "").strip()
+    time_zhi = str(_safe_call(lunar, "getTimeZhi") or "").strip()
+    month_prefix = "闰" if month_raw < 0 else ""
+    month = str(abs(month_raw) or "").strip()
+    if year and month and day and time_zhi:
+        return f"{year}年{month_prefix}{month}月{day}{time_zhi}时"
+    return str(_safe_call(lunar, "toString") or "").strip()
+
+
+def _pillar_xun_kong_text(eight_char: Any) -> str | None:
+    rows = [
+        ("年", _safe_call(eight_char, "getYearXunKong")),
+        ("月", _safe_call(eight_char, "getMonthXunKong")),
+        ("日", _safe_call(eight_char, "getDayXunKong")),
+        ("时", _safe_call(eight_char, "getTimeXunKong")),
+    ]
+    text = "、".join(f"{label}{value}" for label, value in rows if str(value or "").strip())
+    return text or None
+
+
+def _chart_empty_branches_text(eight_char: Any) -> str | None:
+    values = [
+        str(_safe_call(eight_char, "getYearXunKong") or "").strip(),
+        str(_safe_call(eight_char, "getMonthXunKong") or "").strip(),
+        str(_safe_call(eight_char, "getDayXunKong") or "").strip(),
+    ]
+    branches: list[str] = []
+    for value in values:
+        for char in value:
+            if char in BRANCHES and char not in branches:
+                branches.append(char)
+    return "".join(branches) or None
+
+
+def _life_gua_text(year: int, gender: str) -> str | None:
+    if gender not in {"male", "female"}:
+        return None
+    last_two = year % 100
+    if year >= 2000:
+        number = (99 - last_two) % 9 if gender == "male" else (last_two + 6) % 9
+    else:
+        number = (100 - last_two) % 9 if gender == "male" else (last_two - 4) % 9
+    if number == 0:
+        number = 9
+    if number == 5:
+        number = 2 if gender == "male" else 8
+    gua_names = {
+        1: "坎",
+        2: "坤",
+        3: "震",
+        4: "巽",
+        6: "乾",
+        7: "兑",
+        8: "艮",
+        9: "离",
+    }
+    name = gua_names.get(number)
+    group = "东四命" if number in {1, 3, 4, 9} else "西四命"
+    return f"{name}卦{group}" if name else None
 
 
 def _trinity_targets(branch: str) -> dict[str, str]:
@@ -993,6 +1188,7 @@ def _build_luck_year_item(
         "stem_element": ELEMENT_BY_STEM[stem],
         "branch_element": ELEMENT_BY_BRANCH[branch],
         "di_shi": TWELVE_LIFE_STAGE_BY_STEM.get(day_stem, {}).get(branch, ""),
+        "xun_kong": "".join(resolve_empty_branches(ganzhi)),
         "shen_sha": shen_sha_names(shen_sha_details),
         "shen_sha_details": shen_sha_details,
         "is_current": year == current_year,

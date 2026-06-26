@@ -179,6 +179,11 @@ class FourPillarsReviewCreateRequest(BaseModel):
     timezone: str | None = Field(default='Asia/Shanghai', max_length=64)
     birth_place: str | None = Field(default=None, max_length=128)
     name: str | None = Field(default=None, max_length=64)
+    input_mode: str | None = Field(default='solar', max_length=16)
+    calendar_input: dict[str, Any] | None = None
+    lunar_input: dict[str, Any] | None = None
+    bazi_input: dict[str, Any] | None = None
+    birth_location: dict[str, Any] | None = None
     include_markdown: bool = True
 
 
@@ -232,6 +237,10 @@ class FourPillarsLuckYearItemResponse(BaseModel):
     stem_ten_god: str | None = None
     stem_element: str | None = None
     branch_element: str | None = None
+    di_shi: str | None = None
+    xun_kong: str | None = None
+    shen_sha: list[str] = Field(default_factory=list)
+    shen_sha_details: list[dict[str, Any]] = Field(default_factory=list)
     is_current: bool = False
     render_status: str = "not_generated"
     render: FourPillarsLuckRenderRecordResponse | None = None
@@ -251,6 +260,10 @@ class FourPillarsLuckCycleResponse(BaseModel):
     stem_ten_god: str | None = None
     stem_element: str | None = None
     branch_element: str | None = None
+    di_shi: str | None = None
+    xun_kong: str | None = None
+    shen_sha: list[str] = Field(default_factory=list)
+    shen_sha_details: list[dict[str, Any]] = Field(default_factory=list)
     render_status: str = "not_generated"
     render: FourPillarsLuckRenderRecordResponse | None = None
     year_items: list[FourPillarsLuckYearItemResponse] = Field(default_factory=list)
