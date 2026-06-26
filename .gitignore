@@ -33,5 +33,7 @@ archive/*/local-test-output/
 
 # Local generated artifacts
 .aistudio-sync/
+.local-dev-logs/
+product/.local-dev-logs/
 product/backend/api/static/uploads/
 product/backend/api/static/voice/*.mp3
