@@ -174,7 +174,9 @@ export interface FourPillarsDisplayPillar {
 
 export interface FourPillarsChartDisplay {
   profile: {
+    name?: string | null;
     gender_label: string;
+    structure_label?: string | null;
     zodiac: string | null;
     solar_datetime_text: string;
     lunar_date: string;
@@ -182,6 +184,35 @@ export interface FourPillarsChartDisplay {
     birth_place: string | null;
     timezone: string;
     solar_term_context: string | null;
+    input_mode?: string | null;
+    standard_birth_datetime?: string | null;
+    effective_birth_datetime?: string | null;
+    true_solar_time?: Record<string, unknown> | null;
+    birth_location?: Record<string, unknown> | null;
+    true_solar_time_text?: string | null;
+    constellation?: string | null;
+    xiu?: string | null;
+    tai_yuan?: string | null;
+    tai_xi?: string | null;
+    ming_gong?: string | null;
+    shen_gong?: string | null;
+    life_gua?: string | null;
+    empty_branches_text?: string | null;
+    pillar_xun_kong_text?: string | null;
+    bone_weight?: {
+      total_qian: number;
+      total_label: string;
+      summary: string;
+      fate_pattern?: string | null;
+      verse?: string | null;
+      year_ganzhi: string;
+      lunar_month: number;
+      lunar_day: number;
+      hour_branch: string;
+      parts: Record<string, number>;
+      rules: Record<string, string>;
+      sources: Array<{ title: string; url: string }>;
+    } | null;
   };
   pillars: Record<FourPillarsPillarKey, FourPillarsDisplayPillar>;
   element_status: Array<{
@@ -234,6 +265,7 @@ export interface FourPillarsLuckYearItem {
   stem_element?: string | null;
   branch_element?: string | null;
   di_shi?: string | null;
+  xun_kong?: string | null;
   shen_sha?: string[];
   shen_sha_details?: FourPillarsShenShaDetail[];
   is_current: boolean;
@@ -256,6 +288,7 @@ export interface FourPillarsLuckCycle {
   stem_element?: string | null;
   branch_element?: string | null;
   di_shi?: string | null;
+  xun_kong?: string | null;
   shen_sha?: string[];
   shen_sha_details?: FourPillarsShenShaDetail[];
   render_status: 'not_generated' | ReviewStatus | string;
@@ -282,6 +315,11 @@ export interface FourPillarsCreatePayload {
   timezone?: string | null;
   birth_place?: string | null;
   name?: string | null;
+  input_mode?: 'solar' | 'lunar' | 'bazi' | string | null;
+  calendar_input?: Record<string, unknown> | null;
+  lunar_input?: Record<string, unknown> | null;
+  bazi_input?: Record<string, unknown> | null;
+  birth_location?: Record<string, unknown> | null;
   include_markdown?: boolean;
 }
 

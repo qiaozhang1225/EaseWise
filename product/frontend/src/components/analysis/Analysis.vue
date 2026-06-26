@@ -1706,7 +1706,7 @@ function sleep(ms: number): Promise<void> {
         <div class="flex items-center justify-between">
           <button
             type="button"
-            class="h-9 rounded-full bg-white border border-gray-100 px-3.5 text-brand-secondary font-sans text-[12px] font-bold shadow-sm flex items-center gap-1.5"
+            class="h-9 rounded-lg bg-white border border-gray-100 px-3.5 text-brand-secondary font-sans text-[12px] font-bold shadow-sm flex items-center gap-1.5"
             @click="emit('back-to-home')"
           >
             <ArrowLeft :size="14" />
@@ -1716,13 +1716,13 @@ function sleep(ms: number): Promise<void> {
 
         <section class="bg-white rounded-2xl p-4.5 border border-gray-100 shadow-sm relative overflow-hidden text-left font-sans">
           <div class="absolute -right-3 -top-3 w-16 h-16 bg-brand-primary/5 rounded-full"></div>
-          <div class="flex items-center gap-2 mb-2">
-            <span class="w-2 h-2 bg-brand-primary rounded-full animate-ping"></span>
-            <span class="text-brand-gold-fixed font-serif text-[11px] font-bold tracking-wide leading-none">奇门遁甲手机号综合测评</span>
+          <div class="relative flex items-center gap-2">
+            <span class="relative flex h-2.5 w-2.5 shrink-0">
+              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-primary/50"></span>
+              <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-primary"></span>
+            </span>
+            <h2 class="font-serif text-[16px] font-black text-brand-gold-fixed leading-snug">奇门遁甲手机号综合测评</h2>
           </div>
-          <p class="text-[13px] text-brand-secondary leading-relaxed">
-            输入手机号和性别后，系统会给出整体评分、盘面概览等信息，帮助你更快了解这个号码是否适合长期使用。
-          </p>
         </section>
 
         <form class="space-y-5 font-sans" @submit.prevent="handleReviewSubmitIntent">
@@ -1782,7 +1782,7 @@ function sleep(ms: number): Promise<void> {
             >
               <Sparkles :size="15" fill="currentColor" />
               <span v-if="state.booting">正在连接本地 API...</span>
-              <span v-else>立即扣除 <span class="font-sans">{{ effectiveBaseReviewPoints }}</span> 积分深度起盘测算</span>
+              <span v-else>立即扣除 <span class="font-sans">{{ effectiveBaseReviewPoints }}</span> 积分，深度智能测算</span>
             </button>
           </section>
 

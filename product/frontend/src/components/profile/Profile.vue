@@ -17,19 +17,25 @@ import {
 } from 'lucide-vue-next';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 import { resolveApiAssetUrl } from '../../lib/api';
-import type { PointsLedgerEntryResponse, ReviewSummary } from '../../types/api';
+import type { FourPillarsReviewSummary, PointsLedgerEntryResponse, ReviewSummary } from '../../types/api';
 import SystemIntro from './SystemIntro.vue';
 
 const emit = defineEmits<{
   (e: 'navigate-to-tab', tab: string, params?: Record<string, string | number | undefined>): void;
 }>();
 
+type CombinedReviewHistoryItem =
+  | (ReviewSummary & { type: 'phone' })
+  | (FourPillarsReviewSummary & { type: 'bazi' });
+
 const {
   state,
   bootstrapApp,
   refreshPointsLedger,
   refreshReviewHistory,
+  refreshFourPillarsHistory,
   refreshCurrentReview,
+  refreshCurrentFourPillarsReview,
   logout,
   updateProfile,
   uploadAvatar,
@@ -68,6 +74,19 @@ const logoutError = ref('');
 
 const currentPoints = computed(() => state.points?.balance ?? 0);
 const reportHistory = computed(() => state.reviewHistory);
+const combinedHistory = computed<CombinedReviewHistoryItem[]>(() => {
+  const phoneItems = state.reviewHistory.map((item) => ({
+    ...item,
+    type: 'phone' as const,
+  }));
+  const baziItems = state.fourPillarsHistory.map((item) => ({
+    ...item,
+    type: 'bazi' as const,
+  }));
+  return [...phoneItems, ...baziItems].sort((a, b) => {
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+});
 const ledgerRecords = computed(() => state.pointsLedger);
 const userReady = computed(() => Boolean(state.user));
 const profileAvatarUrl = computed(() => resolveApiAssetUrl(state.user?.avatar_url));
@@ -151,7 +170,10 @@ watch(activeModal, async (value) => {
     await refreshPointsLedger().catch(() => undefined);
   }
   if (value === 'history') {
-    await refreshReviewHistory().catch(() => undefined);
+    await Promise.allSettled([
+      refreshReviewHistory(),
+      refreshFourPillarsHistory(),
+    ]);
   }
 });
 
@@ -473,7 +495,7 @@ function resolveLedgerColor(entry: PointsLedgerEntryResponse): string {
   return entry.delta >= 0 ? 'text-green-500' : 'text-red-500';
 }
 
-function formatReviewStatus(review: ReviewSummary): string {
+function formatReviewStatus(review: CombinedReviewHistoryItem): string {
   if (review.status === 'completed') {
     return review.score !== null ? `评分: ${review.score} 分` : '评测已完成';
   }
@@ -483,20 +505,20 @@ function formatReviewStatus(review: ReviewSummary): string {
   return review.progress_message || '评测处理中';
 }
 
-function resolveReviewActionText(review: ReviewSummary): string {
+function resolveReviewActionText(review: CombinedReviewHistoryItem): string {
   if (openingReviewId.value === review.id) {
     return '打开中...';
   }
   if (review.status === 'completed') {
-    return '查看结果';
+    return review.type === 'phone' ? '查看手机号评测详情' : '查看四柱命盘与专项分析';
   }
   if (review.status === 'failed') {
     return '查看失败原因';
   }
-  return '继续查看';
+  return review.type === 'phone' ? '继续查看手机号评测进度' : '继续查看四柱推演进度';
 }
 
-async function handleOpenReview(review: ReviewSummary): Promise<void> {
+async function handleOpenReview(review: CombinedReviewHistoryItem): Promise<void> {
   if (openingReviewId.value) {
     return;
   }
@@ -505,9 +527,15 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
   openingReviewId.value = review.id;
 
   try {
-    await refreshCurrentReview(review.id);
+    if (review.type === 'phone') {
+      await refreshCurrentReview(review.id);
+      activeModal.value = null;
+      emit('navigate-to-tab', 'phone');
+      return;
+    }
+    await refreshCurrentFourPillarsReview(review.id);
     activeModal.value = null;
-    emit('navigate-to-tab', 'phone');
+    emit('navigate-to-tab', 'bazi');
   } catch (error) {
     historyActionError.value = humanizeError(error);
   } finally {
@@ -711,8 +739,8 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
             <span class="font-sans text-[13px] font-bold text-brand-ink-strong">评测记录</span>
           </div>
           <div class="flex items-center gap-1.5">
-            <span v-if="reportHistory.length > 0" class="font-sans text-[10px] text-brand-primary font-bold bg-brand-primary/10 px-1.5 py-0.5 rounded-full">
-              {{ reportHistory.length }}
+            <span v-if="combinedHistory.length > 0" class="font-sans text-[10px] text-brand-primary font-bold bg-brand-primary/10 px-1.5 py-0.5 rounded-full">
+              {{ combinedHistory.length }}
             </span>
             <ChevronRight :size="16" class="text-gray-300" />
           </div>
@@ -853,8 +881,8 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
         <div class="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4 hairline-border shadow-2xl relative">
           <div class="flex justify-between items-center pb-2 border-b border-gray-100 w-full">
             <div class="text-left">
-              <h3 class="font-sans text-[17px] font-bold text-brand-ink-strong">评测记录</h3>
-              <p class="font-sans text-[11px] text-brand-secondary">当前展示本地 API 返回的手机号评测记录</p>
+              <h3 class="font-sans text-[17px] font-bold text-brand-ink-strong">我的评测记录</h3>
+              <p class="font-sans text-[11px] text-brand-secondary">数字奇门与四柱八字记录统一展示</p>
             </div>
             <button @click="activeModal = null" class="p-1 rounded-full text-brand-secondary hover:bg-gray-100 outline-none cursor-pointer">
               <X :size="18" />
@@ -868,20 +896,49 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
             >
               {{ historyActionError }}
             </p>
-            <div v-if="reportHistory.length > 0" class="space-y-3">
+            <div v-if="combinedHistory.length > 0" class="space-y-3">
               <button
-                v-for="review in reportHistory"
-                :key="review.id"
+                v-for="review in combinedHistory"
+                :key="`${review.type}:${review.id}`"
                 type="button"
-                class="w-full bg-brand-paper/50 p-3 rounded-xl border border-gray-100 flex items-center justify-between gap-3 text-xs text-left transition-all hover:bg-white hover:border-brand-primary/20 disabled:opacity-60 disabled:cursor-not-allowed"
+                class="w-full bg-brand-paper/50 p-3 rounded-xl border border-gray-100 flex items-start justify-between gap-3 text-xs text-left transition-all hover:bg-white hover:border-brand-primary/20 disabled:opacity-60 disabled:cursor-not-allowed"
                 :disabled="!!openingReviewId"
                 @click="handleOpenReview(review)"
               >
-                <div class="min-w-0">
-                  <p class="font-sans text-[13px] font-bold text-brand-ink-strong">评测号码: <span class="font-sans">{{ review.masked_phone }}</span></p>
-                  <p class="font-sans text-[10px] text-brand-secondary mt-0.5">
-                    性别: {{ review.gender === 'male' ? '男' : '女' }} · {{ formatDateTime(review.created_at) }}
+                <div class="min-w-0 flex-1 space-y-1">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      class="font-sans text-[10px] font-black px-2 py-0.5 rounded-full border"
+                      :class="review.type === 'phone'
+                        ? 'bg-sky-50 text-sky-700 border-sky-100'
+                        : 'bg-amber-50 text-amber-800 border-amber-100'"
+                    >
+                      {{ review.type === 'phone' ? '数字奇门' : '四柱八字' }}
+                    </span>
+                    <span class="font-sans text-[10px] text-brand-secondary">{{ formatDateTime(review.created_at) }}</span>
+                  </div>
+                  <p v-if="review.type === 'phone'" class="font-sans text-[13px] font-bold text-brand-ink-strong">
+                    <span class="text-brand-secondary/70 text-[11px] font-medium">评测号码：</span>
+                    <span class="font-black tracking-wide text-brand-primary-strong">{{ review.masked_phone || review.phone_number }}</span>
+                    <span class="ml-1.5 text-[10px] font-medium text-brand-secondary bg-sky-50/70 border border-sky-100/60 px-1.5 py-0.5 rounded">
+                      {{ review.gender === 'male' ? '男命' : '女命' }}
+                    </span>
                   </p>
+                  <div v-else class="space-y-1">
+                    <p class="font-serif text-[13px] font-bold text-brand-ink-strong">
+                      <span class="font-sans text-brand-secondary/70 text-[11px] font-medium">评测命造：</span>
+                      <span class="text-amber-900">{{ review.name?.trim() || '生辰盘主' }}</span>
+                      <span class="ml-1.5 font-sans text-[10px] font-medium text-brand-secondary bg-amber-50/70 border border-amber-100/60 px-1.5 py-0.5 rounded">
+                        {{ review.gender === 'male' ? '乾造·男' : '坤造·女' }}
+                      </span>
+                    </p>
+                    <p class="font-sans text-[10.5px] text-brand-secondary leading-snug">
+                      生辰：
+                      <span class="font-mono bg-zinc-50 border border-gray-150 px-1 py-0.5 rounded text-zinc-700 text-[10px]">
+                        {{ review.birth_date }} {{ review.birth_time }}
+                      </span>
+                    </p>
+                  </div>
                   <p class="font-sans text-[10px] text-brand-secondary/80 mt-1">
                     {{ resolveReviewActionText(review) }}
                   </p>
@@ -895,8 +952,8 @@ async function handleOpenReview(review: ReviewSummary): Promise<void> {
               </button>
             </div>
             <div v-else class="py-8 text-center space-y-2">
-              <p class="font-sans text-[13px] text-brand-secondary">暂无手机号评测记录。</p>
-              <p class="font-sans text-[10px] text-brand-secondary/60">你可以先完成一次手机号评测，记录会显示在这里。</p>
+              <p class="font-sans text-[13px] text-brand-secondary">暂无评测历史记录。</p>
+              <p class="font-sans text-[10px] text-brand-secondary/60">你可以先完成一次手机号评测，或到四柱八字起盘排盘。</p>
             </div>
           </div>
 

@@ -484,6 +484,17 @@ export function createFourPillarsReview(accessToken: string, payload: FourPillar
   });
 }
 
+export function resolveFourPillarsInput(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>('/api/v1/four-pillars/input/resolve', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export function listFourPillarsBirthLocations(): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>('/api/v1/four-pillars/input/locations');
+}
+
 export function listFourPillarsReviews(accessToken: string, limit = 20): Promise<FourPillarsReviewListResponse> {
   return requestJson<FourPillarsReviewListResponse>(`/api/v1/four-pillars/reviews?limit=${limit}`, {
     accessToken,

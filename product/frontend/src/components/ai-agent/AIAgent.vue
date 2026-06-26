@@ -144,7 +144,7 @@ const quickQueries = [
 </script>
 
 <template>
-  <div class="flex flex-col h-[100dvh] pb-[84px] max-w-md mx-auto w-full bg-brand-paper overflow-hidden overscroll-none">
+  <div class="flex flex-col h-[calc(100dvh-82px)] md:h-[calc(100vh-82px)] max-w-md mx-auto w-full bg-brand-paper overflow-hidden overscroll-none">
     <transition name="fade" mode="out-in">
       <!-- State 1: Login Gate UI -->
       <div 
@@ -269,7 +269,7 @@ const quickQueries = [
           </div>
 
           <!-- Input Field -->
-          <div class="px-4 pb-4 flex items-center gap-3">
+          <div class="px-4 pb-0 flex items-center gap-3">
             <div class="flex-1 bg-white p-1 rounded-2xl flex items-center gap-1.5 border border-gray-100 shadow-sm pr-3">
               <input 
                 class="bg-transparent border-none focus:ring-0 w-full pl-3 pr-1 py-2 font-sans text-[13px] text-brand-ink-strong outline-none placeholder-gray-400 font-medium"

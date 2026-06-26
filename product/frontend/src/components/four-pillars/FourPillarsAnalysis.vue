@@ -14,14 +14,16 @@ import {
   MapPin,
   Mountain,
   RefreshCw,
+  Search,
   Shield,
   Sparkles,
   TrendingUp,
   UnlockKeyhole,
   User,
+  X,
 } from 'lucide-vue-next';
 import { DEFAULT_ASPECT_UNLOCK_POINTS, DEFAULT_BASE_REVIEW_POINTS } from '../../config/pricing';
-import { ApiError } from '../../lib/api';
+import { ApiError, listFourPillarsBirthLocations, resolveFourPillarsInput } from '../../lib/api';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 import type { FourPillarsAspect, FourPillarsChartDisplay, FourPillarsReviewRecord, Gender, ReviewProgressStage } from '../../types/api';
 import type { FourPillarsLuckCycle, FourPillarsLuckRenderRecord, FourPillarsLuckYearItem, FourPillarsShenShaDetail } from '../../types/api';
@@ -35,6 +37,11 @@ const emit = defineEmits<{
 type ViewState = 'input' | 'waiting' | 'result' | 'error_state';
 type ResultBranch = 'chart' | 'luck';
 type LuckPollResult = 'completed' | 'processing' | 'cancelled';
+type InputMode = 'solar' | 'lunar' | 'bazi';
+type InputDrawerTab = InputMode;
+type DrawerKind = 'datetime' | 'location' | null;
+type LocationScope = 'domestic' | 'overseas';
+type WheelScope = 'solar' | 'lunar' | 'domestic-location' | 'overseas-location';
 type ErrorType =
   | 'none'
   | 'birth_datetime'
@@ -74,6 +81,7 @@ type LuckTableColumn = {
   hiddenStems: Array<{ stem: string; element: string; ten_god: string }>;
   diShi: string;
   selfSitting: string;
+  xunKong: string;
   shenShaRows: ShenShaCellItem[];
   isLuck?: boolean;
 };
@@ -82,6 +90,32 @@ type ShenShaCellItem = {
   name: string;
   meaning: string;
   category: string;
+};
+
+type GanzhiDisplayPart = {
+  char: string;
+  element: string;
+  star: string;
+};
+
+type BirthLocationOption = {
+  id: string;
+  scope: string;
+  display_name: string;
+  latitude: number;
+  longitude: number;
+  timezone: string;
+  country?: string;
+  province?: string;
+  city?: string;
+  district?: string;
+  region?: string;
+};
+
+type BaziCandidate = {
+  birth_date: string;
+  birth_time: string;
+  solar_datetime: string;
 };
 const SHEN_SHA_NAME_ORDER: Record<string, number> = {
   天乙贵人: 10,
@@ -171,6 +205,18 @@ const birthDay = ref('');
 const birthTime = ref('');
 const birthPlace = ref('');
 const profileName = ref('');
+const inputMode = ref<InputMode>('solar');
+const drawerKind = ref<DrawerKind>(null);
+const drawerTab = ref<InputDrawerTab>('solar');
+const quickYearOpen = ref(false);
+const locationSearch = ref('');
+const locationScope = ref<LocationScope>('domestic');
+const selectedLocationId = ref('cn-beijing-dongcheng');
+const trueSolarPreview = ref<Record<string, unknown> | null>(null);
+const lunarInput = ref({ year: 1989, month: 4, day: 18, hour: 8, minute: 0, is_leap_month: false });
+const baziInput = ref({ year: '庚辰', month: '戊寅', day: '戊午', hour: '壬子', base_year: 1801, candidate_index: 0 });
+const baziCandidates = ref<BaziCandidate[]>([]);
+const baziCandidateLoading = ref(false);
 const activeAspect = ref(0);
 const activeBranch = ref<ResultBranch>('chart');
 const activeCycleKey = ref('');
@@ -186,9 +232,13 @@ const unlockWaitingAttempt = ref(0);
 const generatingLuckTargets = ref<string[]>([]);
 const selectedLuckYear = ref<number | null>(null);
 const luckShenShaExpanded = ref(false);
+const waitingStep = ref(1);
+const waitingStepProgress = ref([0, 0, 0, 0]);
+const waitingPoemIndex = ref(0);
 
 let disposed = false;
 let pollingPromise: Promise<FourPillarsReviewRecord> | null = null;
+const wheelScrollTimers = new WeakMap<HTMLElement, number>();
 
 const REVIEW_READY_RETRY_LIMIT = 180;
 const REVIEW_READY_RETRY_DELAY_MS = 1000;
@@ -197,6 +247,7 @@ const ASPECT_UNLOCK_RETRY_DELAY_MS = 2000;
 const LUCK_RENDER_RETRY_LIMIT = 90;
 const LUCK_RENDER_RETRY_DELAY_MS = 2000;
 const MAX_SHEN_SHA_ROWS = 3;
+const LIFE_STAGE_NAMES = new Set(['长生', '沐浴', '冠带', '临官', '帝旺', '衰', '病', '死', '墓', '绝', '胎', '养']);
 
 const aspectUiMap: Record<string, { icon: Component; tint: string; textTint: string }> = {
   personality: { icon: Sparkles, tint: 'bg-brand-paper text-brand-secondary', textTint: 'text-brand-secondary' },
@@ -222,6 +273,16 @@ const stemInfo: Record<string, { element: '木' | '火' | '土' | '金' | '水';
 
 const elementProduces: Record<string, string> = { 木: '火', 火: '土', 土: '金', 金: '水', 水: '木' };
 const elementControls: Record<string, string> = { 木: '土', 土: '水', 水: '火', 火: '金', 金: '木' };
+const branchOrder = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
+const stemOrder = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'];
+const validGanzhiPairs = branchOrder.flatMap((branch, branchIndex) =>
+  stemOrder.filter((_, stemIndex) => stemIndex % 2 === branchIndex % 2).map((stem) => `${stem}${branch}`),
+);
+const fallbackLocationOptions: BirthLocationOption[] = [
+  { id: 'cn-110101', scope: 'domestic', display_name: '中国 北京市 北京市 东城区', latitude: 39.917544, longitude: 116.418757, timezone: 'Asia/Shanghai', country: '中国', province: '北京市', city: '北京市', district: '东城区' },
+];
+const locationOptions = ref<BirthLocationOption[]>(fallbackLocationOptions);
+
 const hiddenStemMap: Record<string, Array<{ stem: string; element: string }>> = {
   子: [{ stem: '癸', element: '水' }],
   丑: [{ stem: '己', element: '土' }, { stem: '癸', element: '水' }, { stem: '辛', element: '金' }],
@@ -246,6 +307,43 @@ const effectiveAspectUnlockPoints = computed(
   () => currentReview.value?.aspect_unlock_points ?? fourPillarsAspectUnlockPointsCost.value ?? DEFAULT_ASPECT_UNLOCK_POINTS,
 );
 const progressMessage = computed(() => currentProgressMessage.value || '四柱命盘正在生成，请稍候。');
+const waitingPoemLines = [
+  '三元及第冠群芳',
+  '万般皆是命排来',
+  '乾坤造化归神妙',
+  '五行中和呈造化',
+  '大运流年皆有定',
+  '推星算理释疑忧',
+];
+const waitingPoemLine = computed(() => waitingPoemLines[waitingPoemIndex.value] || waitingPoemLines[0]);
+const waitingSteps = [
+  {
+    title: '出生信息与时间校验',
+    desc: '校验公历生辰、时区与真太阳时基础信息',
+    message: '正在校验出生时间与真太阳时',
+    durationMs: 2000,
+  },
+  {
+    title: '排定四柱干支结构',
+    desc: '依六十甲子排定年、月、日、时四柱',
+    message: '正在精排格造八字乾坤盘',
+    durationMs: 2000,
+  },
+  {
+    title: '推演五行旺衰与专项结论',
+    desc: '推演日主旺衰、十神格局与专项分支',
+    message: '正在推演五行衰旺与十神格局',
+    durationMs: 5000,
+  },
+  {
+    title: '生成大运与流年基本盘',
+    desc: '生成大运流年基本盘并等待后台结果就绪',
+    message: '正在编织大运流年终身基本盘',
+    durationMs: 5000,
+  },
+];
+const waitingTotalProgress = computed(() => Math.min(100, Math.round(waitingStepProgress.value.reduce((sum, item) => sum + item, 0) / waitingSteps.length)));
+const waitingActionText = computed(() => waitingSteps[waitingStep.value - 1]?.message || progressMessage.value);
 const reviewScore = computed(() => currentReview.value?.score ?? 0);
 const reviewAspects = computed<DisplayAspect[]>(() =>
   (currentReview.value?.aspects ?? []).map((aspect) => ({
@@ -277,6 +375,52 @@ const selectedLuckYearItem = computed<FourPillarsLuckYearItem | null>(() => {
   }
   return cycle.year_items.find((item) => item.is_current) || cycle.year_items[0] || null;
 });
+const selectedLocation = computed(() => locationOptions.value.find((item) => item.id === selectedLocationId.value) || locationOptions.value[0] || fallbackLocationOptions[0]);
+const domesticLocations = computed(() => locationOptions.value.filter((item) => item.scope === 'domestic'));
+const overseasLocations = computed(() => locationOptions.value.filter((item) => item.scope === 'overseas'));
+const domesticProvinces = computed(() => uniqueValues(domesticLocations.value.map((item) => item.province || item.city || '未知地')));
+const domesticCities = computed(() => {
+  const province = selectedLocation.value.province || domesticProvinces.value[0] || '';
+  return uniqueValues(domesticLocations.value.filter((item) => (item.province || item.city) === province).map((item) => item.city || item.province || '北京时间'));
+});
+const domesticDistricts = computed(() => {
+  const province = selectedLocation.value.province || domesticProvinces.value[0] || '';
+  const city = selectedLocation.value.city || domesticCities.value[0] || '';
+  return uniqueValues(domesticLocations.value.filter((item) => (item.province || item.city) === province && (item.city || item.province) === city).map((item) => item.district || '--'));
+});
+const overseasCountries = computed(() => uniqueValues(overseasLocations.value.map((item) => item.country || '海外')));
+const overseasRegions = computed(() => {
+  const country = selectedLocation.value.country || overseasCountries.value[0] || '';
+  return uniqueValues(overseasLocations.value.filter((item) => item.country === country).map((item) => item.city || item.region || '地区'));
+});
+const filteredLocations = computed(() => {
+  const keyword = locationSearch.value.trim().toLowerCase();
+  if (!keyword) return locationOptions.value;
+  return locationOptions.value.filter((item) => item.display_name.toLowerCase().includes(keyword) || item.id.toLowerCase().includes(keyword));
+});
+const birthDateTimeSummary = computed(() => {
+  if (inputMode.value === 'lunar') {
+    return `农历 ${lunarInput.value.year}年${lunarInput.value.is_leap_month ? '闰' : ''}${lunarInput.value.month}月${lunarInput.value.day}日 ${String(lunarInput.value.hour).padStart(2, '0')}:${String(lunarInput.value.minute).padStart(2, '0')}`;
+  }
+  if (inputMode.value === 'bazi') {
+    return `${baziInput.value.year} ${baziInput.value.month} ${baziInput.value.day} ${baziInput.value.hour}`;
+  }
+  return `公历 ${birthDate.value || '---- -- --'} ${birthTime.value || '--:--'}`;
+});
+const locationSummary = computed(() => selectedLocation.value?.display_name || birthPlace.value || '中国 北京市 东城区');
+const trueSolarSummary = computed(() => {
+  const display = String(trueSolarPreview.value?.display_text || '');
+  const correction = trueSolarPreview.value?.total_correction_minutes;
+  if (display) return `${display}（修正 ${correction} 分钟）`;
+  return '等待选择时间与地区';
+});
+const yearOptions = computed(() => Array.from({ length: 299 }, (_, index) => 1801 + index));
+const monthOptions = Array.from({ length: 12 }, (_, index) => index + 1);
+const dayOptions = Array.from({ length: 31 }, (_, index) => index + 1);
+const hourOptions = Array.from({ length: 24 }, (_, index) => index);
+const minuteOptions = Array.from({ length: 60 }, (_, index) => index);
+const solarHour = computed(() => Number((birthTime.value || '00:00').slice(0, 2)) || 0);
+const solarMinute = computed(() => Number((birthTime.value || '00:00').slice(3, 5)) || 0);
 const selectedAspect = computed(() => reviewAspects.value[activeAspect.value] || null);
 const selectedAspectPending = computed(
   () => Boolean(selectedAspect.value && (unlockingAspectKey.value === selectedAspect.value.aspect_key || unlockWaitingAspectKey.value === selectedAspect.value.aspect_key)),
@@ -330,7 +474,8 @@ const luckTableColumns = computed<LuckTableColumn[]>(() => {
         hiddenStems: pillar.hidden_stems.map((item) => ({ ...item, ten_god: item.ten_god || '-' })),
         diShi: pillar.di_shi,
         selfSitting: pillar.self_sitting,
-        shenShaRows: shenShaRows(pillar.shen_sha, pillar.shen_sha_details, pillar.di_shi),
+        xunKong: formatXunKong(pillar.xun_kong, pillar.ganzhi),
+        shenShaRows: shenShaRows(pillar.shen_sha, pillar.shen_sha_details),
       });
     });
   }
@@ -340,17 +485,8 @@ const luckTableColumns = computed<LuckTableColumn[]>(() => {
   return columns;
 });
 const luckHasOverflowingShenSha = computed(() => luckTableColumns.value.some((column) => column.shenShaRows.length > MAX_SHEN_SHA_ROWS));
-const favorableElementsText = computed(() => toStringList(dayMaster.value.favorable_elements).join('、') || '待生成');
-const unfavorableElementsText = computed(() => toStringList(dayMaster.value.unfavorable_elements).join('、') || '待生成');
-const elementRatioSummary = computed(() => {
-  const ratioText = elementCounts.value.map((item) => `${item.element}${item.value}`).join('、');
-  const parts = [`五行比例：${ratioText || '待生成'}`];
-  if (strength.value.label) parts.push(`旺衰初判：${strength.value.label}`);
-  if (favorableElementsText.value !== '待生成') parts.push(`喜用候选：${favorableElementsText.value}`);
-  if (unfavorableElementsText.value !== '待生成') parts.push(`节制：${unfavorableElementsText.value}`);
-  return `${parts.join('；')}。`;
-});
-const recentHistory = computed(() => state.fourPillarsHistory.slice(0, 5));
+const favorableElementsList = computed(() => toStringList(dayMaster.value.favorable_elements));
+const unfavorableElementsList = computed(() => toStringList(dayMaster.value.unfavorable_elements));
 
 watch(
   reviewAspects,
@@ -393,8 +529,13 @@ watch(
   { immediate: true },
 );
 
+watch([drawerKind, drawerTab, locationScope], () => {
+  window.setTimeout(scrollSelectedWheelOptions, 80);
+});
+
 onMounted(() => {
   void bootstrapApp();
+  void loadBirthLocations();
 });
 
 onUnmounted(() => {
@@ -410,6 +551,30 @@ function toStringList(value: unknown): string[] {
     return [];
   }
   return value.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function uniqueValues(values: string[]): string[] {
+  return [...new Set(values.map((item) => String(item || '').trim()).filter(Boolean))];
+}
+
+function twoDigit(value: number | string): string {
+  return String(value).padStart(2, '0');
+}
+
+function lunarMonthLabel(value: number): string {
+  const labels = ['正', '二', '三', '四', '五', '六', '七', '八', '九', '十', '冬', '腊'];
+  return labels[value - 1] || String(value);
+}
+
+function lunarDayLabel(value: number): string {
+  const prefixes = ['初', '十', '廿', '三'];
+  const digits = ['十', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  if (value === 10) return '初十';
+  if (value === 20) return '二十';
+  if (value === 30) return '三十';
+  const tens = Math.floor(value / 10);
+  const ones = value % 10;
+  return `${prefixes[tens]}${digits[ones] || ''}`;
 }
 
 function toLuckColumn(
@@ -435,12 +600,13 @@ function toLuckColumn(
     hiddenStems,
     diShi: String(item?.di_shi || calculateDiShi(dayStem, branch) || '-'),
     selfSitting: calculateDiShi(stem, branch),
-    shenShaRows: shenShaRows(item?.shen_sha, item?.shen_sha_details, String(item?.di_shi || calculateDiShi(dayStem, branch) || '')),
+    xunKong: formatXunKong(item?.xun_kong, String(item?.ganzhi || ('display_ganzhi' in (item || {}) ? (item as FourPillarsLuckCycle).display_ganzhi : '') || '')),
+    shenShaRows: shenShaRows(item?.shen_sha, item?.shen_sha_details),
     isLuck: true,
   };
 }
 
-function shenShaRows(namesValue: unknown, detailsValue: unknown, diShiValue: unknown = ''): ShenShaCellItem[] {
+function shenShaRows(namesValue: unknown, detailsValue: unknown): ShenShaCellItem[] {
   const details = Array.isArray(detailsValue) ? detailsValue as FourPillarsShenShaDetail[] : [];
   const detailByName = new Map<string, FourPillarsShenShaDetail>();
   details.forEach((item) => {
@@ -456,15 +622,7 @@ function shenShaRows(namesValue: unknown, detailsValue: unknown, diShiValue: unk
       meaning: String(detail?.meaning || ''),
       category: String(detail?.category || ''),
     };
-  });
-  const diShi = String(diShiValue || '').trim();
-  if (diShi && diShi !== '-' && !rows.some((item) => item.name === diShi)) {
-    rows.push({
-      name: diShi,
-      meaning: '十二长生地势',
-      category: 'life_stage',
-    });
-  }
+  }).filter((item) => item.category !== 'life_stage' && !LIFE_STAGE_NAMES.has(item.name));
   return sortShenShaRows(rows);
 }
 
@@ -472,6 +630,8 @@ function sortShenShaRows(rows: ShenShaCellItem[]): ShenShaCellItem[] {
   return rows
     .map((item, index) => ({ ...item, index }))
     .sort((left, right) => {
+      const toneDelta = getShenShaToneScore(left) - getShenShaToneScore(right);
+      if (toneDelta !== 0) return toneDelta;
       const nameDelta = (SHEN_SHA_NAME_ORDER[left.name] ?? 500) - (SHEN_SHA_NAME_ORDER[right.name] ?? 500);
       if (nameDelta !== 0) return nameDelta;
       const categoryDelta = (SHEN_SHA_CATEGORY_ORDER[left.category] ?? 99) - (SHEN_SHA_CATEGORY_ORDER[right.category] ?? 99);
@@ -482,14 +642,16 @@ function sortShenShaRows(rows: ShenShaCellItem[]): ShenShaCellItem[] {
 }
 
 function visibleLuckShenShaRows(column: LuckTableColumn): ShenShaCellItem[] {
-  return luckShenShaExpanded.value ? column.shenShaRows : column.shenShaRows.slice(0, MAX_SHEN_SHA_ROWS);
+  if (luckShenShaExpanded.value) return column.shenShaRows;
+  if (column.shenShaRows.length > MAX_SHEN_SHA_ROWS) return column.shenShaRows.slice(0, 2);
+  return column.shenShaRows;
 }
 
-function shenShaToneClass(item: ShenShaCellItem): string {
+function getShenShaToneScore(item: ShenShaCellItem): number {
   const text = `${item.category}${item.name}${item.meaning}`;
-  if (/[贵人德福喜禄昌合]/u.test(text)) return 'shen-sha-positive';
-  if (/[煞亡劫灾孤寡空刃]/u.test(text)) return 'shen-sha-caution';
-  return 'shen-sha-neutral';
+  if (/[贵人德福喜禄昌合赦喜医昌印舆]/u.test(text)) return 0;
+  if (/[煞亡劫灾孤寡空刃鬼差错]/u.test(text)) return 2;
+  return 1;
 }
 
 function calculateTenGod(dayStem: string, targetStem: string): string {
@@ -517,7 +679,6 @@ function elementOfBranch(branch: string): string {
 }
 
 function calculateDiShi(dayStem: string, branch: string): string {
-  const branchOrder = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
   const stages = ['长生', '沐浴', '冠带', '临官', '帝旺', '衰', '病', '死', '墓', '绝', '胎', '养'];
   const startMap: Record<string, { start: string; dir: 1 | -1 }> = {
     甲: { start: '亥', dir: 1 },
@@ -540,20 +701,77 @@ function calculateDiShi(dayStem: string, branch: string): string {
   return stages[diff % 12];
 }
 
+function calculateXunKong(ganzhi: string | null | undefined): string {
+  const text = String(ganzhi || '').trim();
+  if (!text) return '';
+  const jiazi = Array.from({ length: 60 }, (_, index) => {
+    const stems = Object.keys(stemInfo);
+    return `${stems[index % 10]}${branchOrder[index % 12]}`;
+  });
+  const index = jiazi.indexOf(text);
+  if (index < 0) return '';
+  const xunStart = Math.floor(index / 10) * 10;
+  const usedBranches = new Set(jiazi.slice(xunStart, xunStart + 10).map((item) => item.slice(1, 2)));
+  return branchOrder.filter((branch) => !usedBranches.has(branch)).join('');
+}
+
+function formatXunKong(value: string | null | undefined, ganzhi: string | null | undefined): string {
+  return String(value || '').trim() || calculateXunKong(ganzhi) || '-';
+}
+
 function elementBadgeClass(element: string): string {
   if (element === '木') return 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]';
   if (element === '火') return 'bg-[#FFF1F2] text-[#E11D48] border-[#FECDD3]';
-  if (element === '土') return 'bg-[#FFFBEB] text-[#B45309] border-[#FCD34D]';
-  if (element === '金') return 'bg-[#FFF7DA] text-[#B7791F] border-[#F4D27A]';
+  if (element === '土') return 'bg-[#FFFBEB] text-[#78350F] border-[#FCD34D]';
+  if (element === '金') return 'bg-[#FFF7DA] text-[#CA8A04] border-[#F4D27A]';
   if (element === '水') return 'bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]';
   return 'bg-white text-slate-500 border-slate-100';
 }
 
-function ganzhiElementClasses(ganzhi: string | null | undefined): string[] {
-  const text = String(ganzhi || '');
-  const stem = text.match(/[甲乙丙丁戊己庚辛壬癸]/u)?.[0] || '';
-  const element = elementOfStem(stem);
-  return elementBadgeClass(element).split(' ');
+function elementTextClass(element: string): string {
+  if (element === '木') return 'text-[#059669]';
+  if (element === '火') return 'text-[#E11D48]';
+  if (element === '土') return 'text-[#78350F]';
+  if (element === '金') return 'text-[#CA8A04]';
+  if (element === '水') return 'text-[#2563EB]';
+  return 'text-slate-500';
+}
+
+function compactTenGod(value: string | null | undefined): string {
+  const text = String(value || '').trim();
+  const map: Record<string, string> = {
+    比肩: '比',
+    劫财: '劫',
+    食神: '食',
+    伤官: '伤',
+    偏财: '财',
+    正财: '财',
+    七杀: '杀',
+    正官: '官',
+    偏印: '枭',
+    枭神: '枭',
+    正印: '印',
+    日元: '日',
+    日主: '日',
+  };
+  return map[text] || text.slice(0, 1);
+}
+
+function currentDayStem(): string {
+  return chartDisplay.value?.pillars?.day?.stem || String(chart.value.day_master || '');
+}
+
+function branchMainTenGod(branch: string): string {
+  const mainStem = hiddenStemMap[branch]?.[0]?.stem || '';
+  return mainStem ? calculateTenGod(currentDayStem(), mainStem) : '';
+}
+
+function luckGanzhiParts(ganzhi: string | null | undefined, stemTenGod?: string | null): GanzhiDisplayPart[] {
+  return Array.from(String(ganzhi || '-')).map((char) => ({
+    char,
+    element: elementOfStem(char) || elementOfBranch(char),
+    star: compactTenGod(elementOfStem(char) ? (stemTenGod || calculateTenGod(currentDayStem(), char)) : branchMainTenGod(char)),
+  }));
 }
 
 function showToast(message: string, duration = 2200): void {
@@ -561,6 +779,62 @@ function showToast(message: string, duration = 2200): void {
   window.setTimeout(() => {
     toast.value = null;
   }, duration);
+}
+
+function resetWaitingAnimation(): void {
+  waitingStep.value = 1;
+  waitingStepProgress.value = [0, 0, 0, 0];
+  waitingPoemIndex.value = 0;
+}
+
+async function runTimedProgressStep(stepIndex: number, durationMs: number, maxProgress = 100): Promise<void> {
+  waitingStep.value = stepIndex + 1;
+  const tickMs = stepIndex < 2 ? 50 : 100;
+  const ticks = Math.max(1, Math.round(durationMs / tickMs));
+  for (let i = 1; i <= ticks; i += 1) {
+    if (disposed) {
+      return;
+    }
+    await sleep(tickMs);
+    waitingStepProgress.value[stepIndex] = Math.min(maxProgress, Math.round((i / ticks) * maxProgress));
+  }
+}
+
+async function runGenerationWaitingAnimation(reviewPromise: Promise<FourPillarsReviewRecord>): Promise<void> {
+  resetWaitingAnimation();
+  let apiCompleted = false;
+  let apiError: unknown = null;
+  const poemTimer = window.setInterval(() => {
+    waitingPoemIndex.value = (waitingPoemIndex.value + 1) % waitingPoemLines.length;
+  }, 1000);
+
+  reviewPromise
+    .then(() => {
+      apiCompleted = true;
+    })
+    .catch((error) => {
+      apiError = error;
+    });
+
+  try {
+    for (let index = 0; index < waitingSteps.length; index += 1) {
+      if (apiError) {
+        throw apiError;
+      }
+      const maxProgress = index === waitingSteps.length - 1 ? 95 : 100;
+      await runTimedProgressStep(index, waitingSteps[index].durationMs, maxProgress);
+    }
+    while (!apiCompleted && !apiError && !disposed) {
+      await sleep(100);
+    }
+    if (apiError) {
+      throw apiError;
+    }
+    waitingStepProgress.value[3] = 100;
+    await sleep(300);
+  } finally {
+    window.clearInterval(poemTimer);
+  }
 }
 
 function sanitizeDatePart(value: string, maxLength: number): string {
@@ -588,6 +862,247 @@ function applyBirthDateParts(value: string): void {
   birthYear.value = match[1];
   birthMonth.value = String(Number(match[2]));
   birthDay.value = String(Number(match[3]));
+}
+
+async function loadBirthLocations(): Promise<void> {
+  try {
+    const payload = await listFourPillarsBirthLocations();
+    const items = Array.isArray(payload.locations) ? payload.locations.map(normalizeBirthLocation).filter(Boolean) as BirthLocationOption[] : [];
+    if (items.length) {
+      locationOptions.value = items;
+      const defaultLocationId = String(payload.default_location_id || '');
+      if (defaultLocationId && items.some((item) => item.id === defaultLocationId)) {
+        selectedLocationId.value = defaultLocationId;
+      } else if (!items.some((item) => item.id === selectedLocationId.value)) {
+        selectedLocationId.value = items[0].id;
+      }
+      birthPlace.value = selectedLocation.value.display_name;
+      void refreshTrueSolarPreview();
+    }
+  } catch {
+    locationOptions.value = fallbackLocationOptions;
+  }
+}
+
+function normalizeBirthLocation(value: unknown): BirthLocationOption | null {
+  if (!value || typeof value !== 'object') return null;
+  const item = value as Record<string, unknown>;
+  const latitude = Number(item.latitude);
+  const longitude = Number(item.longitude);
+  const id = String(item.id || '').trim();
+  if (!id || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  return {
+    id,
+    scope: String(item.scope || ''),
+    display_name: String(item.display_name || item.name || id),
+    latitude,
+    longitude,
+    timezone: String(item.timezone || 'Asia/Shanghai'),
+    country: String(item.country || ''),
+    province: String(item.province || ''),
+    city: String(item.city || ''),
+    district: String(item.district || ''),
+    region: String(item.region || ''),
+  };
+}
+
+function openDateDrawer(tab: InputDrawerTab = inputMode.value): void {
+  drawerTab.value = tab;
+  drawerKind.value = 'datetime';
+  if (tab === 'bazi') {
+    syncBaziFromCurrentDate();
+  }
+  void refreshTrueSolarPreview();
+}
+
+function openLocationDrawer(): void {
+  locationScope.value = selectedLocation.value.scope === 'overseas' ? 'overseas' : 'domestic';
+  drawerKind.value = 'location';
+  void refreshTrueSolarPreview();
+}
+
+function closeDrawer(): void {
+  drawerKind.value = null;
+}
+
+function scrollSelectedWheelOptions(): void {
+  if (!drawerKind.value) return;
+  window.requestAnimationFrame(() => {
+    document.querySelectorAll<HTMLElement>('.drawer-sheet .wheel-option.is-selected').forEach((item) => {
+      item.scrollIntoView({ block: 'center', inline: 'nearest' });
+    });
+  });
+}
+
+function handleWheelScroll(event: Event, scope: WheelScope, part: string): void {
+  const column = event.currentTarget as HTMLElement | null;
+  if (!column) return;
+  const previousTimer = wheelScrollTimers.get(column);
+  if (previousTimer) {
+    window.clearTimeout(previousTimer);
+  }
+  const timer = window.setTimeout(() => {
+    const centerY = column.getBoundingClientRect().top + column.clientHeight / 2;
+    const options = Array.from(column.querySelectorAll<HTMLElement>('.wheel-option'));
+    const centered = options.reduce<HTMLElement | null>((nearest, item) => {
+      if (!nearest) return item;
+      const itemCenter = item.getBoundingClientRect().top + item.clientHeight / 2;
+      const nearestCenter = nearest.getBoundingClientRect().top + nearest.clientHeight / 2;
+      return Math.abs(itemCenter - centerY) < Math.abs(nearestCenter - centerY) ? item : nearest;
+    }, null);
+    const value = centered?.dataset.value || '';
+    if (!value) return;
+    applyWheelSelection(scope, part, value);
+  }, 120);
+  wheelScrollTimers.set(column, timer);
+}
+
+function applyWheelSelection(scope: WheelScope, part: string, value: string): void {
+  if (scope === 'solar') {
+    const numericValue = Number(value);
+    if (part === 'year') birthYear.value = String(numericValue);
+    if (part === 'month') birthMonth.value = String(numericValue);
+    if (part === 'day') birthDay.value = String(numericValue);
+    if (part === 'hour' || part === 'minute') {
+      const [hour = '00', minute = '00'] = (birthTime.value || '00:00').split(':');
+      birthTime.value = `${part === 'hour' ? twoDigit(numericValue) : hour}:${part === 'minute' ? twoDigit(numericValue) : minute}`;
+    }
+    void refreshTrueSolarPreview();
+    return;
+  }
+  if (scope === 'lunar') {
+    lunarInput.value = { ...lunarInput.value, [part]: Number(value) };
+    return;
+  }
+  if (scope === 'domestic-location') {
+    if (part === 'province') selectDomesticProvince(value);
+    if (part === 'city') selectDomesticCity(value);
+    if (part === 'district') selectDomesticDistrict(value);
+    return;
+  }
+  if (part === 'country') selectOverseasCountry(value);
+  if (part === 'region') selectOverseasRegion(value);
+}
+
+function selectInputMode(mode: InputMode): void {
+  inputMode.value = mode;
+  drawerTab.value = mode;
+}
+
+function setSolarPart(part: 'year' | 'month' | 'day' | 'hour' | 'minute', value: number): void {
+  if (part === 'year') birthYear.value = String(value);
+  if (part === 'month') birthMonth.value = String(value);
+  if (part === 'day') birthDay.value = String(value);
+  if (part === 'hour' || part === 'minute') {
+    const [hour = '00', minute = '00'] = (birthTime.value || '00:00').split(':');
+    birthTime.value = `${part === 'hour' ? String(value).padStart(2, '0') : hour}:${part === 'minute' ? String(value).padStart(2, '0') : minute}`;
+  }
+  scrollSelectedWheelOptions();
+  void refreshTrueSolarPreview();
+}
+
+function setLunarPart(part: keyof typeof lunarInput.value, value: number | boolean): void {
+  lunarInput.value = { ...lunarInput.value, [part]: value };
+  scrollSelectedWheelOptions();
+}
+
+function selectLocation(location: BirthLocationOption): void {
+  selectedLocationId.value = location.id;
+  locationScope.value = location.scope === 'overseas' ? 'overseas' : 'domestic';
+  birthPlace.value = location.display_name;
+  scrollSelectedWheelOptions();
+  void refreshTrueSolarPreview();
+}
+
+function selectDomesticProvince(province: string): void {
+  const next = domesticLocations.value.find((item) => (item.province || item.city) === province);
+  if (next) selectLocation(next);
+}
+
+function selectDomesticCity(city: string): void {
+  const province = selectedLocation.value.province || domesticProvinces.value[0] || '';
+  const next = domesticLocations.value.find((item) => (item.province || item.city) === province && (item.city || item.province) === city);
+  if (next) selectLocation(next);
+}
+
+function selectDomesticDistrict(district: string): void {
+  const province = selectedLocation.value.province || domesticProvinces.value[0] || '';
+  const city = selectedLocation.value.city || domesticCities.value[0] || '';
+  const next = domesticLocations.value.find((item) => (item.province || item.city) === province && (item.city || item.province) === city && (item.district || '--') === district);
+  if (next) selectLocation(next);
+}
+
+function selectOverseasCountry(country: string): void {
+  const next = overseasLocations.value.find((item) => item.country === country);
+  if (next) selectLocation(next);
+}
+
+function selectOverseasRegion(region: string): void {
+  const country = selectedLocation.value.country || overseasCountries.value[0] || '';
+  const next = overseasLocations.value.find((item) => item.country === country && (item.city || item.region) === region);
+  if (next) selectLocation(next);
+}
+
+async function confirmDateDrawer(): Promise<void> {
+  inputMode.value = drawerTab.value;
+  if (drawerTab.value === 'lunar') {
+    const resolved = await resolveFourPillarsInput({
+      mode: 'lunar',
+      lunar_input: lunarInput.value,
+      birth_location: selectedLocation.value,
+    });
+    applyBirthDateParts(String(resolved.birth_date || birthDate.value));
+    birthTime.value = String(resolved.birth_time || birthTime.value);
+  }
+  if (drawerTab.value === 'bazi') {
+    await searchBaziCandidates();
+    const selected = baziCandidates.value[baziInput.value.candidate_index] || baziCandidates.value[0];
+    if (selected) {
+      applyBirthDateParts(selected.birth_date);
+      birthTime.value = selected.birth_time;
+    }
+  }
+  await refreshTrueSolarPreview();
+  closeDrawer();
+}
+
+async function refreshTrueSolarPreview(): Promise<void> {
+  if (!birthDate.value || !birthTime.value) return;
+  const resolved = await resolveFourPillarsInput({
+    mode: 'solar',
+    birth_date: birthDate.value,
+    birth_time: birthTime.value,
+    timezone: selectedLocation.value.timezone,
+    birth_location: selectedLocation.value,
+  }).catch(() => null);
+  const preview = resolved?.true_solar_time;
+  trueSolarPreview.value = preview && typeof preview === 'object' ? preview as Record<string, unknown> : null;
+}
+
+async function searchBaziCandidates(): Promise<void> {
+  baziCandidateLoading.value = true;
+  try {
+    const resolved = await resolveFourPillarsInput({
+      mode: 'bazi',
+      bazi_input: { ...baziInput.value, target_year: Number(birthYear.value || new Date().getFullYear()) },
+    });
+    const items = Array.isArray(resolved.candidates) ? resolved.candidates : [];
+    baziCandidates.value = items.map((item) => item as BaziCandidate);
+  } finally {
+    baziCandidateLoading.value = false;
+  }
+}
+
+function syncBaziFromCurrentDate(): void {
+  const rawPillars = chart.value.pillars as Record<string, { ganzhi?: string }> | undefined;
+  if (!rawPillars) return;
+  baziInput.value = {
+    ...baziInput.value,
+    year: String(rawPillars.year?.ganzhi || baziInput.value.year),
+    month: String(rawPillars.month?.ganzhi || baziInput.value.month),
+    day: String(rawPillars.day?.ganzhi || baziInput.value.day),
+    hour: String(rawPillars.hour?.ganzhi || baziInput.value.hour),
+  };
 }
 
 function validateBirthInput(): boolean {
@@ -625,6 +1140,7 @@ function resetToInput(): void {
   unlockWaitingAspectKey.value = null;
   unlockWaitingAttempt.value = 0;
   generatingLuckTargets.value = [];
+  resetWaitingAnimation();
 }
 
 function handleHeaderBackAction(): void {
@@ -687,16 +1203,23 @@ async function handleSubmit(): Promise<void> {
   currentProgressStage.value = 'queued';
   currentProgressMessage.value = '四柱评测任务已创建，等待开始';
   try {
-    const review = await submitFourPillarsReview({
-      gender: gender.value,
-      birth_date: birthDate.value,
-      birth_time: birthTime.value,
-      timezone: 'Asia/Shanghai',
-      birth_place: birthPlace.value.trim() || null,
-      name: profileName.value.trim() || null,
-      include_markdown: true,
-    });
-    const completed = await startReviewPolling(review);
+	    const review = await submitFourPillarsReview({
+	      gender: gender.value,
+	      birth_date: birthDate.value,
+	      birth_time: birthTime.value,
+	      timezone: selectedLocation.value.timezone || 'Asia/Shanghai',
+	      birth_place: birthPlace.value.trim() || selectedLocation.value.display_name,
+	      name: profileName.value.trim() || null,
+	      input_mode: inputMode.value,
+	      calendar_input: { birth_date: birthDate.value, birth_time: birthTime.value },
+	      lunar_input: inputMode.value === 'lunar' ? lunarInput.value : null,
+	      bazi_input: inputMode.value === 'bazi' ? { ...baziInput.value, target_year: Number(birthYear.value || new Date().getFullYear()) } : null,
+	      birth_location: selectedLocation.value,
+	      include_markdown: true,
+	    });
+    const reviewReadyPromise = startReviewPolling(review);
+    await runGenerationWaitingAnimation(reviewReadyPromise);
+    const completed = await reviewReadyPromise;
     syncViewFromReview(completed);
     showToast('四柱评测完成，可查看命盘和专项内容。');
   } catch (error) {
@@ -1024,180 +1547,123 @@ function sleep(ms: number): Promise<void> {
           <ArrowLeft :size="14" class="text-brand-ink-strong" />
           <span>{{ viewState === 'result' ? '重新评测' : '返回首页' }}</span>
         </button>
-        <div class="text-center">
-          <h1 class="font-serif text-[18px] font-bold text-brand-ink-strong leading-none">四柱八字评测</h1>
-          <p class="font-sans text-[11px] text-brand-secondary mt-1">公历生日时辰 · 默认北京时间</p>
-        </div>
-        <button class="w-9 h-9 rounded-lg bg-white border border-gray-100 flex items-center justify-center shadow-sm" @click="refreshActiveReview">
-          <RefreshCw :size="17" class="text-brand-secondary" />
-        </button>
+        <div class="w-9 h-9"></div>
       </div>
     </header>
 
     <main class="max-w-md mx-auto px-margin-mobile pt-4">
       <section v-if="viewState === 'input'" class="space-y-4">
-        <div class="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-          <div class="flex items-start justify-between gap-3 mb-4">
-            <div>
-              <p class="font-sans text-[11px] text-brand-primary-strong font-bold tracking-wide">FOUR PILLARS</p>
-              <h2 class="font-serif text-[20px] font-bold text-brand-ink-strong mt-1">输入出生信息</h2>
-            </div>
-            <span class="px-2.5 py-1 rounded-lg bg-brand-primary/10 text-brand-primary-strong text-[11px] font-bold">
-              {{ effectiveBasePoints }} 积分
+        <section class="bg-white rounded-2xl p-4.5 border border-gray-100 shadow-sm relative overflow-hidden text-left font-sans">
+          <div class="absolute -right-3 -top-3 w-16 h-16 bg-brand-primary/5 rounded-full"></div>
+          <div class="relative flex items-center gap-2">
+            <span class="relative flex h-2.5 w-2.5 shrink-0">
+              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-primary/50"></span>
+              <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-primary"></span>
             </span>
+            <h2 class="font-serif text-[16px] font-black text-brand-gold-fixed leading-snug">四柱八字综合测评</h2>
           </div>
+        </section>
 
-          <div class="grid grid-cols-2 gap-2 mb-4">
-            <button
-              class="h-11 rounded-xl border font-sans text-[13px] font-bold transition-colors"
-              :class="gender === 'male' ? 'bg-brand-primary text-white border-brand-primary' : 'bg-brand-paper text-brand-secondary border-transparent'"
-              @click="gender = 'male'"
-            >
-              男
-            </button>
-            <button
-              class="h-11 rounded-xl border font-sans text-[13px] font-bold transition-colors"
-              :class="gender === 'female' ? 'bg-brand-primary text-white border-brand-primary' : 'bg-brand-paper text-brand-secondary border-transparent'"
-              @click="gender = 'female'"
-            >
-              女
-            </button>
-          </div>
+        <div class="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
 
-          <div class="space-y-3">
+          <div class="space-y-2.5">
             <label class="block">
-              <span class="font-sans text-[12px] text-brand-secondary font-bold flex items-center gap-1.5 mb-1.5">
-                <CalendarDays :size="14" /> 出生日期
+              <span class="font-sans text-[11px] text-brand-secondary font-bold flex items-center gap-1.5 mb-1">
+                <User :size="13" /> 姓名
               </span>
-              <div class="grid grid-cols-[1.15fr_0.85fr_0.85fr] gap-2">
-                <div class="relative">
-                  <input
-                    v-model="birthYear"
-                    inputmode="numeric"
-                    pattern="[0-9]*"
-                    maxlength="4"
-                    placeholder="1989"
-                    class="w-full h-12 rounded-xl bg-brand-paper border border-transparent pl-3 pr-8 font-sans text-[14px] text-brand-ink-strong outline-none focus:border-brand-primary"
-                    @input="birthYear = sanitizeDatePart(birthYear, 4)"
-                  />
-                  <span class="absolute right-3 top-1/2 -translate-y-1/2 font-sans text-[12px] font-bold text-brand-secondary">年</span>
-                </div>
-                <div class="relative">
-                  <input
-                    v-model="birthMonth"
-                    inputmode="numeric"
-                    pattern="[0-9]*"
-                    maxlength="2"
-                    placeholder="5"
-                    class="w-full h-12 rounded-xl bg-brand-paper border border-transparent pl-3 pr-8 font-sans text-[14px] text-brand-ink-strong outline-none focus:border-brand-primary"
-                    @input="birthMonth = sanitizeDatePart(birthMonth, 2)"
-                  />
-                  <span class="absolute right-3 top-1/2 -translate-y-1/2 font-sans text-[12px] font-bold text-brand-secondary">月</span>
-                </div>
-                <div class="relative">
-                  <input
-                    v-model="birthDay"
-                    inputmode="numeric"
-                    pattern="[0-9]*"
-                    maxlength="2"
-                    placeholder="22"
-                    class="w-full h-12 rounded-xl bg-brand-paper border border-transparent pl-3 pr-8 font-sans text-[14px] text-brand-ink-strong outline-none focus:border-brand-primary"
-                    @input="birthDay = sanitizeDatePart(birthDay, 2)"
-                  />
-                  <span class="absolute right-3 top-1/2 -translate-y-1/2 font-sans text-[12px] font-bold text-brand-secondary">日</span>
-                </div>
+              <input v-model="profileName" maxlength="64" placeholder="可选" class="w-full h-10 rounded-xl bg-brand-paper border border-transparent px-3 font-sans text-[13px] text-brand-ink-strong outline-none focus:border-brand-primary" />
+            </label>
+
+            <div class="grid grid-cols-[112px_1fr] gap-2 items-center">
+              <div class="grid grid-cols-2 rounded-xl bg-brand-paper p-1">
+                <button class="h-8 rounded-lg text-[12px] font-bold" :class="gender === 'male' ? 'bg-brand-primary text-white' : 'text-brand-secondary'" @click="gender = 'male'">男</button>
+                <button class="h-8 rounded-lg text-[12px] font-bold" :class="gender === 'female' ? 'bg-brand-primary text-white' : 'text-brand-secondary'" @click="gender = 'female'">女</button>
               </div>
-            </label>
-            <label class="block">
-              <span class="font-sans text-[12px] text-brand-secondary font-bold flex items-center gap-1.5 mb-1.5">
-                <Clock :size="14" /> 出生时间
-              </span>
-              <input v-model="birthTime" type="time" class="w-full h-12 rounded-xl bg-brand-paper border border-transparent px-3 font-sans text-[14px] text-brand-ink-strong outline-none focus:border-brand-primary" />
-            </label>
-            <label class="block">
-              <span class="font-sans text-[12px] text-brand-secondary font-bold flex items-center gap-1.5 mb-1.5">
-                <User :size="14" /> 姓名
-              </span>
-              <input v-model="profileName" maxlength="64" placeholder="可选" class="w-full h-12 rounded-xl bg-brand-paper border border-transparent px-3 font-sans text-[14px] text-brand-ink-strong outline-none focus:border-brand-primary" />
-            </label>
-            <label class="block">
-              <span class="font-sans text-[12px] text-brand-secondary font-bold flex items-center gap-1.5 mb-1.5">
-                <MapPin :size="14" /> 出生地
-              </span>
-              <input v-model="birthPlace" maxlength="128" placeholder="可选，默认中国大陆时区" class="w-full h-12 rounded-xl bg-brand-paper border border-transparent px-3 font-sans text-[14px] text-brand-ink-strong outline-none focus:border-brand-primary" />
-            </label>
-          </div>
+              <div class="grid grid-cols-2 rounded-xl bg-brand-paper p-1 w-[148px] justify-self-end">
+                <button v-for="mode in ['solar', 'lunar']" :key="mode" class="h-8 rounded-lg text-[11px] font-bold" :class="inputMode === mode ? 'bg-white text-brand-primary shadow-sm' : 'text-brand-secondary'" @click="selectInputMode(mode as InputMode)">
+                  {{ mode === 'solar' ? '公历' : '农历' }}
+                </button>
+              </div>
+            </div>
 
-          <button
-            class="mt-5 w-full h-12 rounded-xl bg-brand-primary text-white font-sans text-[14px] font-bold shadow-md disabled:opacity-60 disabled:shadow-none"
-            :disabled="state.booting || !moduleEnabled"
-            @click="void handleSubmit()"
-          >
-            {{ moduleEnabled ? '生成四柱评测' : '功能暂未开放' }}
-          </button>
-        </div>
-
-        <div v-if="recentHistory.length" class="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="font-serif text-[16px] font-bold text-brand-ink-strong">历史记录</h3>
-            <span class="text-[11px] font-bold text-brand-secondary">{{ recentHistory.length }} 条</span>
-          </div>
-          <div class="space-y-2">
-            <button
-              v-for="item in recentHistory"
-              :key="item.id"
-              class="w-full bg-brand-paper rounded-xl px-3 py-2.5 flex items-center justify-between text-left"
-              @click="void restoreReview(item.id)"
-            >
-              <span>
-                <span class="block font-sans text-[13px] font-bold text-brand-ink-strong">{{ formatDateTime(item.birth_date, item.birth_time) }}</span>
-                <span class="block font-sans text-[11px] text-brand-secondary mt-0.5">{{ item.status === 'completed' ? '已完成' : item.progress_message || item.status }}</span>
+            <button type="button" class="w-full rounded-xl bg-brand-paper border border-transparent px-3 py-2.5 text-left" @click="openDateDrawer(inputMode)">
+              <span class="font-sans text-[11px] text-brand-secondary font-bold flex items-center gap-1.5">
+                <CalendarDays :size="13" /> 出生日期
               </span>
-              <span class="font-serif text-[20px] font-bold" :class="scoreToneClass(item.score)">{{ item.score ?? '--' }}</span>
+              <span class="block font-serif text-[14px] text-brand-ink-strong font-bold mt-1 truncate">{{ birthDateTimeSummary }}</span>
+            </button>
+
+            <button type="button" class="w-full rounded-xl bg-brand-paper border border-transparent px-3 py-2.5 text-left" @click="openLocationDrawer">
+              <span class="font-sans text-[11px] text-brand-secondary font-bold flex items-center gap-1.5">
+                <MapPin :size="13" /> 出生地区
+              </span>
+              <span class="block font-serif text-[14px] text-brand-ink-strong font-bold mt-1 truncate">{{ locationSummary }}</span>
+              <span class="block font-sans text-[10.5px] text-brand-secondary mt-1 truncate">真太阳时 {{ trueSolarSummary }}</span>
             </button>
           </div>
         </div>
+
+        <button
+          class="w-full h-12 rounded-xl bg-brand-primary hover:bg-brand-primary-strong text-white font-sans text-[13px] font-bold shadow-md disabled:opacity-60 disabled:shadow-none transition-all active:scale-[0.985] flex items-center justify-center gap-1.5"
+          :disabled="state.booting || !moduleEnabled"
+          @click="void handleSubmit()"
+        >
+          <Sparkles :size="15" fill="currentColor" />
+          <span v-if="state.booting">正在连接本地 API...</span>
+          <span v-else-if="moduleEnabled">立即扣除 <span class="font-sans">{{ effectiveBasePoints }}</span> 积分，深度智能测算</span>
+          <span v-else>功能暂未开放</span>
+        </button>
       </section>
 
-      <section v-else-if="viewState === 'waiting'" class="py-8 flex flex-col justify-center min-h-[62vh]">
-        <div class="bg-white rounded-2xl p-5 border border-gray-150/75 shadow-sm space-y-5 text-center">
+      <section v-else-if="viewState === 'waiting'" class="py-10 flex flex-col justify-center min-h-[65vh]">
+        <div class="bg-white rounded-2xl p-6 border border-gray-150/75 shadow-sm space-y-6 text-center">
           <div class="relative w-28 h-28 mx-auto flex items-center justify-center select-none">
             <div class="absolute inset-0 bg-brand-primary/5 rounded-full blur-md animate-pulse"></div>
             <svg class="absolute w-28 h-28 text-brand-primary/25 animate-[spin_40s_linear_infinite]" viewBox="0 0 100 100">
               <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-dasharray="1 3" stroke-width="1.5" />
-              <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" stroke-dasharray="8 4" stroke-width="1.2" />
             </svg>
-            <svg class="absolute w-24 h-24 text-brand-accent/40 animate-[spin_24s_linear_infinite_reverse]" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-dasharray="12 6" stroke-width="1.5" stroke-linecap="round" />
-            </svg>
-            <div class="absolute w-11 h-11 bg-white rounded-full border border-brand-primary/20 shadow-md flex items-center justify-center animate-[spin_8s_ease-in-out_infinite]">
-              <Sparkles :size="20" class="text-brand-primary" />
+            <div class="absolute w-12 h-12 bg-white rounded-full border border-brand-primary/20 shadow-md flex items-center justify-center">
+              <Sparkles :size="24" class="text-brand-primary animate-pulse" />
             </div>
           </div>
 
-          <div class="space-y-1">
-            <h2 class="font-serif text-[18px] font-bold text-brand-ink-strong tracking-wide">四柱命盘智能推演中</h2>
-            <p class="font-sans text-[12px] text-brand-secondary leading-relaxed">{{ progressMessage }}</p>
+          <div class="space-y-1 py-1">
+            <h2 class="font-serif text-[18px] font-bold text-brand-ink-strong tracking-wide">四柱八字命盘推演中</h2>
+            <p class="font-serif text-[15px] font-bold text-brand-secondary/85 leading-relaxed tracking-wide min-h-[1.6em]">
+              {{ waitingPoemLine }}
+            </p>
           </div>
 
-          <div class="space-y-2.5 text-left">
-            <div class="flex items-center gap-2.5">
-              <span class="waiting-step is-done">✓</span>
-              <span class="font-sans text-[12px] font-bold text-brand-ink-strong">出生信息与时区校验</span>
+          <div class="text-center space-y-1.5">
+            <div class="flex items-center justify-between text-[11px] font-bold text-brand-secondary">
+              <span>{{ waitingActionText }}</span>
+              <span class="text-brand-primary">{{ waitingTotalProgress }}%</span>
             </div>
-            <div class="flex items-center gap-2.5" :class="currentProgressStage === 'queued' ? 'opacity-55' : 'opacity-100'">
-              <span class="waiting-step" :class="currentProgressStage !== 'queued' ? 'is-active' : ''">2</span>
-              <span class="font-sans text-[12px] font-bold text-brand-ink-strong">排定四柱干支结构</span>
-              <RefreshCw v-if="currentProgressStage === 'scoring'" :size="12" class="ml-auto text-brand-primary animate-spin" />
+            <div class="w-full h-1.5 bg-gray-150 rounded-full overflow-hidden">
+              <div class="bg-brand-primary h-full transition-all duration-300" :style="{ width: `${waitingTotalProgress}%` }"></div>
             </div>
-            <div class="flex items-center gap-2.5" :class="['rendering', 'finalizing', 'completed'].includes(currentProgressStage || '') ? 'opacity-100' : 'opacity-55'">
-              <span class="waiting-step" :class="['rendering', 'finalizing', 'completed'].includes(currentProgressStage || '') ? 'is-active' : ''">3</span>
-              <span class="font-sans text-[12px] font-bold text-brand-ink-strong">推演五行旺衰与专项结论</span>
-              <RefreshCw v-if="currentProgressStage === 'rendering'" :size="12" class="ml-auto text-brand-primary animate-spin" />
-            </div>
-            <div class="flex items-center gap-2.5" :class="currentProgressStage === 'completed' ? 'opacity-100' : 'opacity-55'">
-              <span class="waiting-step" :class="currentProgressStage === 'completed' ? 'is-active' : ''">4</span>
-              <span class="font-sans text-[12px] font-bold text-brand-ink-strong">生成大运与流年基础盘</span>
+          </div>
+
+          <div class="h-px bg-gray-100"></div>
+
+          <div class="space-y-4 px-1 text-left">
+            <div
+              v-for="(step, index) in waitingSteps"
+              :key="step.title"
+              class="flex items-start gap-3.5 transition-all duration-300"
+              :class="waitingStepProgress[index] > 0 ? 'opacity-100' : 'opacity-55'"
+            >
+              <span
+                class="waiting-step mt-0.5"
+                :class="waitingStepProgress[index] >= 100 ? 'is-done' : (waitingStep === index + 1 ? 'is-active' : '')"
+              >
+                {{ waitingStepProgress[index] >= 100 ? '✓' : index + 1 }}
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block font-sans text-[12px] font-bold text-brand-ink-strong">{{ step.title }}</span>
+                <span class="block font-sans text-[10.5px] text-brand-secondary/80 leading-relaxed mt-0.5">{{ step.desc }}</span>
+              </span>
+              <RefreshCw v-if="waitingStep === index + 1 && waitingStepProgress[index] < 100" :size="12" class="mt-1 text-brand-primary animate-spin shrink-0" />
             </div>
           </div>
         </div>
@@ -1245,7 +1711,13 @@ function sleep(ms: number): Promise<void> {
         </div>
 
         <div v-if="activeBranch === 'chart'" class="space-y-4">
-          <FourPillarsNatalTable :chart-display="chartDisplay" :element-summary="elementRatioSummary" />
+          <FourPillarsNatalTable
+            :chart-display="chartDisplay"
+            :element-counts="elementCounts"
+            :strength-label="String(strength.label || '')"
+            :favorable-elements="favorableElementsList"
+            :unfavorable-elements="unfavorableElementsList"
+          />
 
           <div class="bg-white rounded-xl border border-[#D8E3F5] p-3 shadow-sm">
             <div class="flex items-center gap-1.5 pb-2">
@@ -1320,10 +1792,10 @@ function sleep(ms: number): Promise<void> {
         <div v-else class="space-y-3">
           <div class="bg-white rounded-xl border border-[#D8E3F5] overflow-hidden shadow-sm">
             <div class="overflow-x-auto no-scrollbar">
-              <table class="w-full min-w-[360px] table-fixed border-collapse text-center">
+              <table class="w-full min-w-[330px] table-fixed border-collapse text-center">
                 <thead>
                   <tr class="bg-[#EAF1FF]">
-                    <th class="w-[42px] py-1.5 px-1 font-sans text-[10px] text-[#64748B]">项目</th>
+                    <th class="luck-row-label luck-sticky-col luck-head-label w-[36px]">项目</th>
                     <th
                       v-for="column in luckTableColumns"
                       :key="`${column.label}-head`"
@@ -1344,13 +1816,13 @@ function sleep(ms: number): Promise<void> {
                   <tr class="bg-white">
                     <td class="luck-row-label">天干</td>
                     <td v-for="column in luckTableColumns" :key="`${column.label}-stem`" class="luck-cell" :class="column.isLuck ? 'bg-[#DBEAFE]/20' : ''">
-                      <span class="luck-glyph" :class="elementBadgeClass(column.stemElement)">{{ column.stem }}</span>
+                      <span class="luck-glyph" :class="elementTextClass(column.stemElement)">{{ column.stem }}</span>
                     </td>
                   </tr>
                   <tr class="bg-white">
                     <td class="luck-row-label">地支</td>
                     <td v-for="column in luckTableColumns" :key="`${column.label}-branch`" class="luck-cell" :class="column.isLuck ? 'bg-[#DBEAFE]/20' : ''">
-                      <span class="luck-glyph" :class="elementBadgeClass(column.branchElement)">{{ column.branch }}</span>
+                      <span class="luck-glyph" :class="elementTextClass(column.branchElement)">{{ column.branch }}</span>
                     </td>
                   </tr>
                   <tr class="bg-[#F8FAFF]">
@@ -1365,41 +1837,51 @@ function sleep(ms: number): Promise<void> {
                   </tr>
                   <tr class="bg-white">
                     <td class="luck-row-label">地势</td>
-                    <td v-for="column in luckTableColumns" :key="`${column.label}-dishi`" class="luck-cell luck-text" :class="column.isLuck ? 'bg-[#DBEAFE]/25 text-[#1E3A8A]' : ''">
+                    <td v-for="column in luckTableColumns" :key="`${column.label}-dishi`" class="luck-cell luck-text luck-compact-text" :class="column.isLuck ? 'bg-[#DBEAFE]/25 text-[#1E3A8A]' : ''">
                       {{ column.diShi }}
                     </td>
                   </tr>
                   <tr class="bg-[#F8FAFF]">
                     <td class="luck-row-label">自坐</td>
-                    <td v-for="column in luckTableColumns" :key="`${column.label}-sitting`" class="luck-cell luck-text" :class="column.isLuck ? 'bg-[#DBEAFE]/25 text-[#1E3A8A]' : ''">
+                    <td v-for="column in luckTableColumns" :key="`${column.label}-sitting`" class="luck-cell luck-text luck-compact-text" :class="column.isLuck ? 'bg-[#DBEAFE]/25 text-[#1E3A8A]' : ''">
                       {{ column.selfSitting }}
                     </td>
                   </tr>
                   <tr class="bg-white">
-                    <td class="luck-row-label">
-                      <span class="block">神煞</span>
+                    <td class="luck-row-label">旬空</td>
+                    <td v-for="column in luckTableColumns" :key="`${column.label}-xunkong`" class="luck-cell luck-text luck-compact-text" :class="column.isLuck ? 'bg-[#DBEAFE]/25 text-[#1E3A8A]' : ''">
+                      {{ column.xunKong }}
+                    </td>
+                  </tr>
+                  <tr class="bg-[#F8FAFF]">
+                    <td class="luck-row-label text-center">
+                      <span class="block text-inherit">神煞</span>
                       <button
                         v-if="luckHasOverflowingShenSha"
                         type="button"
-                        class="luck-shen-sha-toggle"
+                        class="luck-shen-sha-toggle cursor-pointer outline-none hover:bg-indigo-50/20"
                         :aria-label="luckShenShaExpanded ? '收起神煞' : '展开神煞'"
-                        :title="luckShenShaExpanded ? '收起神煞' : '展开神煞'"
+                        :title="luckShenShaExpanded ? '收起神煞详情' : '展开神煞详情'"
                         @click="luckShenShaExpanded = !luckShenShaExpanded"
                       >
-                        <ChevronUp v-if="luckShenShaExpanded" :size="11" />
-                        <ChevronDown v-else :size="11" />
+                        <ChevronUp v-if="luckShenShaExpanded" :size="10" />
+                        <ChevronDown v-else :size="10" />
                       </button>
                     </td>
                     <td v-for="column in luckTableColumns" :key="`${column.label}-shen-sha`" class="luck-cell luck-shen-sha" :class="column.isLuck ? 'bg-[#DBEAFE]/20 text-[#1E3A8A]' : ''">
-                      <div v-if="column.shenShaRows.length" class="luck-shen-sha-stack">
-                        <span
-                          v-for="item in visibleLuckShenShaRows(column)"
-                          :key="`${column.label}-${item.name}`"
-                          class="luck-shen-sha-item"
-                          :class="shenShaToneClass(item)"
-                          :title="item.meaning || item.name"
-                        >
-                          {{ item.name }}
+                      <div v-if="column.shenShaRows.length" class="flex flex-col items-center justify-center gap-1 w-full">
+                        <div class="luck-shen-sha-stack">
+                          <span
+                            v-for="item in visibleLuckShenShaRows(column)"
+                            :key="`${column.label}-${item.name}`"
+                            class="luck-text luck-compact-text block"
+                            :title="item.meaning || item.name"
+                          >
+                            {{ item.name }}
+                          </span>
+                        </div>
+                        <span v-if="!luckShenShaExpanded && column.shenShaRows.length > MAX_SHEN_SHA_ROWS" class="text-[9.5px] font-bold text-slate-400 mt-0.5 block whitespace-nowrap">
+                          +{{ column.shenShaRows.length - 2 }} 更多
                         </span>
                       </div>
                       <span v-else class="text-[10px] text-[#94A3B8]">-</span>
@@ -1410,40 +1892,65 @@ function sleep(ms: number): Promise<void> {
             </div>
 
             <div class="bg-[#F8FAFF]">
-              <div class="grid grid-cols-[34px_1fr]">
-                <div class="px-1 py-1.5 bg-[#F3F7FF] font-serif font-black text-[11px] text-[#1D4ED8] flex items-center justify-center">大运</div>
-                <div class="overflow-x-auto no-scrollbar">
-                  <div class="flex min-w-max">
+              <div class="grid grid-cols-[36px_minmax(0,1fr)]">
+                <div class="luck-side-label">大运</div>
+                <div class="min-w-0 max-w-full overflow-x-scroll no-scrollbar luck-scroll" role="region" aria-label="大运横向选择">
+                  <div class="inline-flex min-w-max">
                     <button
                       v-for="cycle in luckCycles"
                       :key="cycle.cycle_key"
-                      class="w-[34px] min-h-[76px] py-1 px-0.5 transition-colors text-center flex flex-col items-center justify-center relative"
+                      class="w-[38px] min-h-[78px] py-1 px-0.5 transition-colors text-center flex flex-col items-center justify-center relative shrink-0"
                       :class="cycle.cycle_key === selectedLuckCycle?.cycle_key ? 'bg-[#DBEAFE] text-[#1D4ED8] font-black' : 'bg-white text-[#475569]'"
                       @click="activeCycleKey = cycle.cycle_key; selectedLuckYear = cycle.year_items.find((item) => item.is_current)?.year || cycle.year_items[0]?.year || null"
                     >
                       <span v-if="cycle.is_current" class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
                       <span class="font-mono text-[8px] leading-none">{{ cycle.start_age ?? '-' }}岁</span>
-                      <span class="luck-strip-ganzhi vertical-ganzhi" :class="ganzhiElementClasses(cycle.display_ganzhi || cycle.ganzhi || '')">{{ cycle.display_ganzhi || cycle.ganzhi || '-' }}</span>
+                      <span v-if="!cycle.ganzhi" class="luck-strip-ganzhi luck-xiaoyun-label">
+                        <span class="luck-xiaoyun-main">
+                          <span class="luck-ganzhi-char">小</span>
+                          <span class="luck-ganzhi-char">运</span>
+                        </span>
+                        <span class="luck-xiaoyun-note" aria-label="起运前">起运前</span>
+                      </span>
+                      <span v-else class="luck-strip-ganzhi luck-ganzhi-stack">
+                        <span
+                          v-for="(part, index) in luckGanzhiParts(cycle.display_ganzhi || cycle.ganzhi || '', cycle.stem_ten_god)"
+                          :key="`${cycle.cycle_key}-ganzhi-${index}`"
+                          class="luck-ganzhi-line"
+                        >
+                          <span class="luck-ganzhi-char" :class="elementTextClass(part.element)">{{ part.char }}</span>
+                          <span class="luck-ganzhi-star">{{ part.star }}</span>
+                        </span>
+                      </span>
                       <span class="font-mono text-[7px] leading-none mt-1 text-[#64748B]">{{ cycle.start_year }}</span>
                     </button>
                   </div>
                 </div>
               </div>
 
-              <div v-if="selectedLuckCycle" class="grid grid-cols-[34px_1fr]">
-                <div class="px-1 py-1.5 bg-[#F3F7FF] font-serif font-black text-[11px] text-[#1D4ED8] flex items-center justify-center">流年</div>
-                <div class="overflow-x-auto no-scrollbar">
-                  <div class="flex min-w-max">
+              <div v-if="selectedLuckCycle" class="grid grid-cols-[36px_minmax(0,1fr)]">
+                <div class="luck-side-label">流年</div>
+                <div class="min-w-0 max-w-full overflow-x-scroll no-scrollbar luck-scroll" role="region" aria-label="流年横向选择">
+                  <div class="inline-flex min-w-max">
                     <button
                       v-for="item in selectedLuckCycle.year_items"
                       :key="item.year"
-                      class="w-[38px] py-1 px-0.5 transition-colors flex flex-col items-center text-center relative"
+                      class="w-[38px] min-h-[78px] py-1 px-0.5 transition-colors flex flex-col items-center justify-center text-center relative shrink-0"
                       :class="item.year === selectedLuckYear ? 'bg-[#DBEAFE] text-[#1D4ED8] font-black' : 'bg-white text-[#475569]'"
                       @click="selectedLuckYear = item.year"
                     >
                       <span v-if="item.is_current" class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
                       <span class="font-mono text-[8px] leading-none">{{ item.age ?? '-' }}岁</span>
-                      <span class="luck-year-ganzhi" :class="ganzhiElementClasses(item.ganzhi)">{{ item.ganzhi }}</span>
+                      <span class="luck-year-ganzhi luck-ganzhi-stack">
+                        <span
+                          v-for="(part, index) in luckGanzhiParts(item.ganzhi, item.stem_ten_god)"
+                          :key="`${item.year}-ganzhi-${index}`"
+                          class="luck-ganzhi-line"
+                        >
+                          <span class="luck-ganzhi-char" :class="elementTextClass(part.element)">{{ part.char }}</span>
+                          <span class="luck-ganzhi-star">{{ part.star }}</span>
+                        </span>
+                      </span>
                       <span class="font-mono text-[7px] leading-none mt-1 text-[#64748B]">{{ item.year }}</span>
                     </button>
                   </div>
@@ -1456,7 +1963,7 @@ function sleep(ms: number): Promise<void> {
             <div class="flex items-start justify-between gap-3">
               <div>
                 <p class="font-sans text-[11px] text-brand-secondary font-bold">{{ selectedLuckCycle.start_year }}-{{ selectedLuckCycle.end_year }} · {{ selectedLuckCycle.start_age }}-{{ selectedLuckCycle.end_age }} 岁</p>
-                <h3 class="font-serif text-[15px] font-bold text-[#1D4ED8] mt-1">大运中评 · {{ selectedLuckCycle.display_ganzhi || selectedLuckCycle.ganzhi || '起运前' }}</h3>
+                <h3 class="font-serif text-[15px] font-bold text-[#1D4ED8] mt-1">大运中评 · <span :class="(selectedLuckCycle.display_ganzhi || selectedLuckCycle.ganzhi) ? '' : 'text-[#64748B]'">{{ selectedLuckCycle.display_ganzhi || selectedLuckCycle.ganzhi || '小运' }}</span></h3>
                 <p class="font-sans text-[12px] text-brand-secondary mt-1">{{ selectedLuckCycle.stem_ten_god || '过渡阶段' }} · {{ luckStatusText(selectedLuckCycle.render_status) }}</p>
               </div>
               <button
@@ -1514,6 +2021,147 @@ function sleep(ms: number): Promise<void> {
         </div>
       </section>
     </main>
+
+    <transition name="drawer-overlay">
+      <div v-if="drawerKind" class="fixed inset-x-0 top-0 bottom-[84px] z-40 bg-slate-950/40 flex items-end" @click.self="closeDrawer">
+        <div class="drawer-sheet w-full max-w-md mx-auto rounded-t-[24px] bg-white shadow-2xl border-t border-[#D8E3F5] max-h-[82vh] overflow-hidden flex flex-col">
+          <div class="shrink-0 px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
+            <div>
+              <p class="font-sans text-[10px] font-black tracking-wide text-brand-secondary">{{ drawerKind === 'datetime' ? 'BIRTH INPUT' : 'BIRTH LOCATION' }}</p>
+              <h3 class="font-serif text-[17px] font-black text-brand-ink-strong">{{ drawerKind === 'datetime' ? '选择出生信息' : '选择出生地区' }}</h3>
+            </div>
+            <button class="w-8 h-8 rounded-lg bg-brand-paper flex items-center justify-center text-brand-secondary" @click="closeDrawer">
+              <X :size="16" />
+            </button>
+          </div>
+
+          <div v-if="drawerKind === 'datetime'" class="overflow-y-auto p-3 space-y-3">
+            <div class="flex items-center justify-between gap-3">
+              <div class="grid grid-cols-2 rounded-2xl bg-brand-paper p-1 w-[190px]">
+                <button v-for="tab in ['solar', 'lunar']" :key="tab" class="h-9 rounded-xl text-[13px] font-black" :class="drawerTab === tab ? 'bg-white text-brand-ink-strong shadow-sm' : 'text-brand-secondary'" @click="drawerTab = tab as InputDrawerTab">
+                  {{ tab === 'solar' ? '公历' : '农历' }}
+                </button>
+              </div>
+              <button class="h-10 px-6 rounded-full bg-[#111111] text-[#F1D7A8] text-[14px] font-black shadow-sm" @click="void confirmDateDrawer()">确定</button>
+            </div>
+
+            <div v-if="drawerTab === 'solar'" class="space-y-2">
+              <div class="wheel-tabs">
+                <button class="wheel-tab is-active" @click="quickYearOpen = !quickYearOpen">年 ⇄</button>
+                <span>月</span>
+                <span>日</span>
+                <span>时</span>
+                <span>分</span>
+              </div>
+              <div class="wheel-frame">
+                <div class="wheel-highlight"></div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'solar', 'year')">
+                  <button v-for="year in yearOptions" :key="`solar-year-${year}`" class="wheel-option" :class="Number(birthYear || 1989) === year ? 'is-selected' : ''" :data-value="year" @click="setSolarPart('year', year)">{{ year }}</button>
+                </div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'solar', 'month')">
+                  <button v-for="month in monthOptions" :key="`solar-month-${month}`" class="wheel-option" :class="Number(birthMonth || 1) === month ? 'is-selected' : ''" :data-value="month" @click="setSolarPart('month', month)">{{ twoDigit(month) }}</button>
+                </div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'solar', 'day')">
+                  <button v-for="day in dayOptions" :key="`solar-day-${day}`" class="wheel-option" :class="Number(birthDay || 1) === day ? 'is-selected' : ''" :data-value="day" @click="setSolarPart('day', day)">{{ twoDigit(day) }}</button>
+                </div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'solar', 'hour')">
+                  <button v-for="hour in hourOptions" :key="`solar-hour-${hour}`" class="wheel-option" :class="solarHour === hour ? 'is-selected' : ''" :data-value="hour" @click="setSolarPart('hour', hour)">{{ twoDigit(hour) }}</button>
+                </div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'solar', 'minute')">
+                  <button v-for="minute in minuteOptions" :key="`solar-minute-${minute}`" class="wheel-option" :class="solarMinute === minute ? 'is-selected' : ''" :data-value="minute" @click="setSolarPart('minute', minute)">{{ twoDigit(minute) }}</button>
+                </div>
+              </div>
+              <div v-if="quickYearOpen" class="grid grid-cols-5 gap-1 max-h-36 overflow-y-auto rounded-xl bg-brand-paper p-2">
+                <button v-for="year in yearOptions" :key="`quick-${year}`" class="h-8 rounded-lg text-[11px] font-bold" :class="String(year) === birthYear ? 'bg-brand-primary text-white' : 'bg-white text-brand-secondary'" @click="setSolarPart('year', year)">{{ year }}</button>
+              </div>
+            </div>
+
+            <div v-else-if="drawerTab === 'lunar'" class="space-y-2">
+              <div class="wheel-tabs">
+                <button class="wheel-tab is-active" @click="quickYearOpen = !quickYearOpen">年 ⇄</button>
+                <span>月</span>
+                <span>日</span>
+                <span>时</span>
+                <span>分</span>
+              </div>
+              <div class="wheel-frame">
+                <div class="wheel-highlight"></div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'lunar', 'year')">
+                  <button v-for="year in yearOptions" :key="`lunar-year-${year}`" class="wheel-option" :class="lunarInput.year === year ? 'is-selected' : ''" :data-value="year" @click="setLunarPart('year', year)">{{ year }}</button>
+                </div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'lunar', 'month')">
+                  <button v-for="month in monthOptions" :key="`lunar-month-${month}`" class="wheel-option" :class="lunarInput.month === month ? 'is-selected' : ''" :data-value="month" @click="setLunarPart('month', month)">{{ lunarMonthLabel(month) }}</button>
+                </div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'lunar', 'day')">
+                  <button v-for="day in dayOptions" :key="`lunar-day-${day}`" class="wheel-option" :class="lunarInput.day === day ? 'is-selected' : ''" :data-value="day" @click="setLunarPart('day', day)">{{ lunarDayLabel(day) }}</button>
+                </div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'lunar', 'hour')">
+                  <button v-for="hour in hourOptions" :key="`lunar-hour-${hour}`" class="wheel-option" :class="lunarInput.hour === hour ? 'is-selected' : ''" :data-value="hour" @click="setLunarPart('hour', hour)">{{ twoDigit(hour) }}</button>
+                </div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'lunar', 'minute')">
+                  <button v-for="minute in minuteOptions" :key="`lunar-minute-${minute}`" class="wheel-option" :class="lunarInput.minute === minute ? 'is-selected' : ''" :data-value="minute" @click="setLunarPart('minute', minute)">{{ twoDigit(minute) }}</button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <div v-else class="overflow-y-auto p-3 space-y-3">
+            <div class="flex items-center justify-between gap-3">
+              <div class="grid grid-cols-2 gap-1 rounded-2xl bg-brand-paper p-1 w-[190px]">
+                <button class="h-9 rounded-xl text-[13px] font-black" :class="locationScope === 'domestic' ? 'bg-white text-brand-ink-strong shadow-sm' : 'text-brand-secondary'" @click="locationScope = 'domestic'">国内</button>
+                <button class="h-9 rounded-xl text-[13px] font-black" :class="locationScope === 'overseas' ? 'bg-white text-brand-ink-strong shadow-sm' : 'text-brand-secondary'" @click="locationScope = 'overseas'">海外</button>
+              </div>
+              <button class="h-10 px-6 rounded-full bg-[#111111] text-[#F1D7A8] text-[14px] font-black shadow-sm" @click="closeDrawer">确定</button>
+            </div>
+            <div class="relative">
+              <Search :size="14" class="absolute left-3 top-1/2 -translate-y-1/2 text-brand-secondary" />
+              <input v-model="locationSearch" class="w-full h-10 rounded-xl bg-brand-paper pl-9 pr-3 text-[13px] outline-none" placeholder="搜索城市 / 国家 / 区县" />
+            </div>
+            <div v-if="!locationSearch.trim() && locationScope === 'domestic'" class="space-y-3">
+              <div class="location-wheel-labels grid grid-cols-3">
+                <span>省份</span>
+                <span>城市</span>
+                <span>区县</span>
+              </div>
+              <div class="location-wheel-frame grid-cols-3">
+                <div class="wheel-highlight"></div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'domestic-location', 'province')">
+                  <button v-for="province in domesticProvinces" :key="`province-${province}`" class="wheel-option" :class="(selectedLocation.province || selectedLocation.city) === province ? 'is-selected' : ''" :data-value="province" @click="selectDomesticProvince(province)">{{ province }}</button>
+                </div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'domestic-location', 'city')">
+                  <button v-for="city in domesticCities" :key="`city-${city}`" class="wheel-option" :class="(selectedLocation.city || selectedLocation.province) === city ? 'is-selected' : ''" :data-value="city" @click="selectDomesticCity(city)">{{ city }}</button>
+                </div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'domestic-location', 'district')">
+                  <button v-for="district in domesticDistricts" :key="`district-${district}`" class="wheel-option" :class="(selectedLocation.district || '--') === district ? 'is-selected' : ''" :data-value="district" @click="selectDomesticDistrict(district)">{{ district }}</button>
+                </div>
+              </div>
+            </div>
+            <div v-else-if="!locationSearch.trim()" class="space-y-3">
+              <div class="location-wheel-labels grid grid-cols-2">
+                <span>国家</span>
+                <span>地区</span>
+              </div>
+              <div class="location-wheel-frame grid-cols-2">
+                <div class="wheel-highlight"></div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'overseas-location', 'country')">
+                  <button v-for="country in overseasCountries" :key="`country-${country}`" class="wheel-option" :class="selectedLocation.country === country ? 'is-selected' : ''" :data-value="country" @click="selectOverseasCountry(country)">{{ country }}</button>
+                </div>
+                <div class="wheel-column" @scroll="handleWheelScroll($event, 'overseas-location', 'region')">
+                  <button v-for="region in overseasRegions" :key="`region-${region}`" class="wheel-option" :class="(selectedLocation.city || selectedLocation.region) === region ? 'is-selected' : ''" :data-value="region" @click="selectOverseasRegion(region)">{{ region }}</button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="grid grid-cols-1 gap-2 max-h-72 overflow-y-auto">
+              <button v-for="item in filteredLocations" :key="item.id" class="rounded-xl border px-3 py-2 text-left" :class="selectedLocationId === item.id ? 'border-brand-primary bg-brand-primary/5' : 'border-gray-100 bg-white'" @click="selectLocation(item)">
+                <span class="block font-serif text-[14px] font-bold text-brand-ink-strong">{{ item.display_name }}</span>
+                <span class="block font-mono text-[10px] text-brand-secondary mt-1">{{ item.latitude.toFixed(4) }}, {{ item.longitude.toFixed(4) }} · {{ item.timezone }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -1526,6 +2174,26 @@ function sleep(ms: number): Promise<void> {
 .fade-slide-leave-to {
   opacity: 0;
   transform: translate(-50%, -12px);
+}
+
+.drawer-overlay-enter-active,
+.drawer-overlay-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.drawer-overlay-enter-from,
+.drawer-overlay-leave-to {
+  opacity: 0;
+}
+
+.drawer-sheet {
+  transform: translateY(0);
+  transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.drawer-overlay-enter-from .drawer-sheet,
+.drawer-overlay-leave-to .drawer-sheet {
+  transform: translateY(100%);
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -1561,43 +2229,62 @@ function sleep(ms: number): Promise<void> {
 }
 
 .luck-row-label {
+  position: sticky;
+  left: 0;
+  z-index: 3;
   background: #F3F7FF;
   color: #1D4ED8;
   font-family: inherit;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 800;
+  padding: 5px 2px;
+  box-shadow: 1px 0 0 rgba(216, 227, 245, 0.9);
+}
+
+.luck-head-label {
+  color: #64748B;
   padding: 6px 3px;
+  z-index: 5;
+}
+
+.luck-sticky-col {
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
+}
+
+.luck-side-label {
+  background: #F3F7FF;
+  color: #1D4ED8;
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 5px 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 1px 0 0 rgba(216, 227, 245, 0.9);
 }
 
 .luck-cell {
-  min-height: 36px;
-  padding: 4px 3px;
-  font-size: 10.5px;
-  line-height: 1.2;
+  min-height: 32px;
+  padding: 3px 2px;
+  font-size: 10px;
+  line-height: 1.15;
   vertical-align: middle;
 }
 
 .luck-glyph {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  border-width: 1px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-family: "Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 900;
   line-height: 1;
   letter-spacing: 0;
   text-shadow: 0 0 0 currentColor;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.58), 0 1px 2px rgba(15, 23, 42, 0.05);
-}
-
-.vertical-ganzhi {
-  writing-mode: vertical-rl;
-  text-orientation: upright;
-  letter-spacing: 0;
 }
 
 .legacy-ganzhi-glyph {
@@ -1621,31 +2308,247 @@ function sleep(ms: number): Promise<void> {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-width: 1px;
-  border-radius: 999px;
   font-family: "Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
   font-weight: 900;
   letter-spacing: 0;
   text-shadow: 0 0 0 currentColor;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
 }
 
 .luck-strip-ganzhi {
-  min-width: 22px;
-  min-height: 34px;
-  padding: 4px 2px;
+  min-width: 24px;
+  min-height: 36px;
   margin-top: 4px;
   font-size: 14px;
   line-height: 1;
 }
 
 .luck-year-ganzhi {
-  min-width: 28px;
-  min-height: 22px;
-  padding: 2px 4px;
+  min-width: 24px;
+  min-height: 36px;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1;
+}
+
+.luck-ganzhi-stack {
+  flex-direction: column;
+  gap: 3px;
+}
+
+.luck-ganzhi-line {
+  display: grid;
+  grid-template-columns: 1em 0.75em;
+  align-items: center;
+  justify-content: center;
+  column-gap: 2px;
+  line-height: 1;
+}
+
+.luck-ganzhi-char {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.luck-ganzhi-star {
+  color: #111827;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.luck-xiaoyun-label {
+  color: #64748B;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-family: "Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+  line-height: 1;
+  text-align: center;
+}
+
+.luck-xiaoyun-main {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  line-height: 1;
+}
+
+.luck-xiaoyun-note {
+  color: #111827;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+  transform: translateY(-1px);
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  white-space: nowrap;
+}
+
+.drawer-picker {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drawer-picker > span {
+  color: #64748B;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.drawer-picker select {
+  width: 100%;
+  height: 42px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: #F5F7FB;
+  color: #1F2937;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  font-weight: 800;
+  outline: none;
+  padding: 0 8px;
+}
+
+.wheel-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  color: #1F2937;
+  font-size: 15px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.wheel-tab {
+  height: 34px;
+  border-radius: 999px;
+  background: #F7F4EA;
+  color: #A0864F;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.wheel-frame,
+.location-wheel-frame {
+  position: relative;
+  display: grid;
+  gap: 0;
+  height: 176px;
+  overflow: hidden;
+  border-top: 1px solid #EEF2F7;
+  border-bottom: 1px solid #EEF2F7;
+}
+
+.wheel-frame {
+  grid-template-columns: 1.25fr repeat(4, minmax(0, 1fr));
+}
+
+.location-wheel-frame {
+  display: grid;
+}
+
+.wheel-highlight {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  height: 42px;
+  border-radius: 14px;
+  background: #F3F4F6;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.wheel-column {
+  position: relative;
+  z-index: 1;
+  height: 176px;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  -webkit-overflow-scrolling: touch;
+  padding: 67px 0;
+  scrollbar-width: none;
+}
+
+.wheel-column::-webkit-scrollbar {
+  display: none;
+}
+
+.wheel-option {
+  width: 100%;
+  height: 42px;
+  scroll-snap-align: center;
+  color: #D1D5DB;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 42px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.wheel-option.is-selected {
+  color: #111827;
+  font-size: 21px;
+  font-weight: 950;
+}
+
+.wheel-frame::before,
+.wheel-frame::after,
+.location-wheel-frame::before,
+.location-wheel-frame::after {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 52px;
+  content: "";
+  pointer-events: none;
+}
+
+.wheel-frame::before,
+.location-wheel-frame::before {
+  top: 0;
+  background: linear-gradient(180deg, #FFFFFF 0%, rgba(255, 255, 255, 0.72) 58%, rgba(255, 255, 255, 0) 100%);
+}
+
+.wheel-frame::after,
+.location-wheel-frame::after {
+  bottom: 0;
+  background: linear-gradient(0deg, #FFFFFF 0%, rgba(255, 255, 255, 0.72) 58%, rgba(255, 255, 255, 0) 100%);
+}
+
+.location-wheel-labels {
+  color: #1F2937;
+  font-size: 15px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.location-wheel-frame .wheel-option {
+  font-size: 15px;
+}
+
+.location-wheel-frame .wheel-option.is-selected {
+  font-size: 20px;
+}
+
+.luck-scroll {
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .luck-mini {
@@ -1656,16 +2559,23 @@ function sleep(ms: number): Promise<void> {
   border-radius: 5px;
   background: #FFFFFF;
   color: #64748B;
-  padding: 2px 3px;
+  padding: 1.5px 2px;
   margin: 1px;
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 700;
 }
 
 .luck-text {
   color: #334155;
-  font-family: serif;
+  font-family: inherit;
+  font-size: 10px;
   font-weight: 800;
+  line-height: 1.25;
+}
+
+.luck-compact-text {
+  font-size: 9px;
+  line-height: 1.15;
 }
 
 .luck-shen-sha {
@@ -1673,9 +2583,9 @@ function sleep(ms: number): Promise<void> {
   font-family: inherit;
   font-size: 9px;
   font-weight: 800;
-  line-height: 1.35;
+  line-height: 1.15;
   word-break: keep-all;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .luck-shen-sha-toggle {
@@ -1693,40 +2603,10 @@ function sleep(ms: number): Promise<void> {
 
 .luck-shen-sha-stack {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-}
-
-.luck-shen-sha-item {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid;
-  border-radius: 999px;
-  padding: 2px 5px;
-  font-size: 8.5px;
-  font-weight: 800;
-  line-height: 1.15;
-  white-space: nowrap;
-}
-
-.luck-shen-sha-item.shen-sha-positive {
-  background: #F8FAFF;
-  border-color: #BFDBFE;
-  color: #1D4ED8;
-}
-
-.luck-shen-sha-item.shen-sha-caution {
-  background: #FFF7ED;
-  border-color: #FED7AA;
-  color: #C2410C;
-}
-
-.luck-shen-sha-item.shen-sha-neutral {
-  background: #F8FAFC;
-  border-color: #E2E8F0;
-  color: #475569;
+  gap: 4px;
+  width: 100%;
 }
 </style>
