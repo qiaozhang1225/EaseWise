@@ -93,8 +93,8 @@ function elementTextClass(element: string | null | undefined): string {
   const value = String(element || '');
   if (value === '木') return 'text-[#059669]';
   if (value === '火') return 'text-[#E11D48]';
-  if (value === '土') return 'text-[#B45309]';
-  if (value === '金') return 'text-[#B7791F]';
+  if (value === '土') return 'text-[#78350F]';
+  if (value === '金') return 'text-[#CA8A04]';
   if (value === '水') return 'text-[#2563EB]';
   return 'text-brand-ink-strong';
 }
@@ -130,10 +130,40 @@ function elementFromNaYin(value: string | null | undefined): string {
 }
 
 function shenShaToneClass(item: ShenShaCellItem): string {
-  const text = `${item.category}${item.name}${item.meaning}`;
+  const name = item.name.trim();
+  const category = item.category || '';
+  
+  const positiveShenSha = [
+    '天乙贵人', '太极贵人', '福星贵人', '天德贵人', '月德贵人', 
+    '天德合', '月德合', '文昌', '国印贵人', '金舆', '禄神', '天喜', 
+    '红鸾', '天医', '天赦', '将星', '华盖'
+  ];
+  
+  const cautionShenSha = [
+    '孤辰', '寡宿', '羊刃', '飞刃', '亡神', '劫煞', 
+    '灾煞', '元辰', '勾煞', '绞煞', '五鬼', '阴阳差错', 
+    '空亡', '童子', '魁罡'
+  ];
+
+  if (positiveShenSha.some(p => name.includes(p))) {
+    return 'shen-sha-positive';
+  }
+  if (cautionShenSha.some(c => name.includes(c))) {
+    return 'shen-sha-caution';
+  }
+  
+  const text = `${category}${name}${item.meaning}`;
   if (/[贵人德福喜禄昌合]/u.test(text)) return 'shen-sha-positive';
   if (/[煞亡劫灾孤寡空刃]/u.test(text)) return 'shen-sha-caution';
+  
   return 'shen-sha-neutral';
+}
+
+function getShenShaToneScore(item: ShenShaCellItem): number {
+  const tone = shenShaToneClass(item);
+  if (tone === 'shen-sha-positive') return 1;
+  if (tone === 'shen-sha-neutral') return 2;
+  return 3;
 }
 
 function shenShaRows(pillar: FourPillarsDisplayPillar): ShenShaCellItem[] {
@@ -167,13 +197,19 @@ function shenShaRows(pillar: FourPillarsDisplayPillar): ShenShaCellItem[] {
 }
 
 function sortShenShaRows(rows: ShenShaCellItem[]): ShenShaCellItem[] {
-  return rows
+  return [...rows]
     .map((item, index) => ({ ...item, index }))
     .sort((left, right) => {
+      const toneLeft = getShenShaToneScore(left);
+      const toneRight = getShenShaToneScore(right);
+      if (toneLeft !== toneRight) return toneLeft - toneRight;
+
       const nameDelta = (SHEN_SHA_NAME_ORDER[left.name] ?? 500) - (SHEN_SHA_NAME_ORDER[right.name] ?? 500);
       if (nameDelta !== 0) return nameDelta;
+
       const categoryDelta = (SHEN_SHA_CATEGORY_ORDER[left.category] ?? 99) - (SHEN_SHA_CATEGORY_ORDER[right.category] ?? 99);
       if (categoryDelta !== 0) return categoryDelta;
+
       return left.index - right.index;
     })
     .map(({ index: _index, ...item }) => item);
@@ -181,7 +217,13 @@ function sortShenShaRows(rows: ShenShaCellItem[]): ShenShaCellItem[] {
 
 function visibleShenShaRows(pillar: FourPillarsDisplayPillar): ShenShaCellItem[] {
   const rows = shenShaRows(pillar);
-  return shenShaExpanded.value ? rows : rows.slice(0, MAX_SHEN_SHA_ROWS);
+  if (shenShaExpanded.value) {
+    return rows;
+  }
+  if (rows.length > MAX_SHEN_SHA_ROWS) {
+    return rows.slice(0, 2);
+  }
+  return rows;
 }
 </script>
 
@@ -260,6 +302,18 @@ function visibleShenShaRows(pillar: FourPillarsDisplayPillar): ShenShaCellItem[]
                 </td>
               </tr>
               <tr class="bg-white">
+                <td class="natal-row-label">地势</td>
+                <td v-for="pillar in pillars" :key="`${pillar.key}-dishi`" class="natal-cell natal-text">{{ cellText(pillar.di_shi) }}</td>
+              </tr>
+              <tr class="bg-[#F8FAFF]">
+                <td class="natal-row-label">自坐</td>
+                <td v-for="pillar in pillars" :key="`${pillar.key}-sitting`" class="natal-cell natal-text">{{ cellText(pillar.self_sitting) }}</td>
+              </tr>
+              <tr class="bg-white">
+                <td class="natal-row-label">旬空</td>
+                <td v-for="pillar in pillars" :key="`${pillar.key}-xunkong`" class="natal-cell natal-text">{{ cellText(pillar.xun_kong) }}</td>
+              </tr>
+              <tr class="bg-[#F8FAFF]">
                 <td class="natal-row-label">纳音</td>
                 <td v-for="pillar in pillars" :key="`${pillar.key}-nayin`" class="natal-cell natal-text">
                   <span class="natal-nayin" :class="[elementTextClass(elementFromNaYin(pillar.na_yin)), elementBgClass(elementFromNaYin(pillar.na_yin))]">
@@ -268,42 +322,37 @@ function visibleShenShaRows(pillar: FourPillarsDisplayPillar): ShenShaCellItem[]
                 </td>
               </tr>
               <tr class="bg-white">
-                <td class="natal-row-label">地势</td>
-                <td v-for="pillar in pillars" :key="`${pillar.key}-dishi`" class="natal-cell natal-text">{{ cellText(pillar.di_shi) }}</td>
-              </tr>
-              <tr class="bg-[#F8FAFF]">
-                <td class="natal-row-label">旬空</td>
-                <td v-for="pillar in pillars" :key="`${pillar.key}-xunkong`" class="natal-cell natal-text">{{ cellText(pillar.xun_kong) }}</td>
-              </tr>
-              <tr class="bg-white">
-                <td class="natal-row-label">自坐</td>
-                <td v-for="pillar in pillars" :key="`${pillar.key}-sitting`" class="natal-cell natal-text">{{ cellText(pillar.self_sitting) }}</td>
-              </tr>
-              <tr class="bg-[#F8FAFF]">
-                <td class="natal-row-label">
-                  <span class="block">神煞</span>
+                <td class="natal-row-label text-center">
+                  <span class="block text-inherit">神煞</span>
                   <button
                     v-if="hasOverflowingShenSha"
                     type="button"
-                    class="natal-shen-sha-toggle border-none bg-transparent"
-                    :aria-label="shenShaExpanded ? '收起神煞' : '展开神煞'"
-                    :title="shenShaExpanded ? '收起神煞' : '展开神煞'"
                     @click="shenShaExpanded = !shenShaExpanded"
+                    class="natal-shen-sha-toggle cursor-pointer outline-none hover:bg-indigo-50/20"
+                    :title="shenShaExpanded ? '收起神煞详情' : '展开神煞详情'"
                   >
-                    <ChevronUp v-if="shenShaExpanded" :size="11" />
-                    <ChevronDown v-else :size="11" />
+                    <ChevronUp v-if="shenShaExpanded" :size="10" />
+                    <ChevronDown v-else :size="10" />
                   </button>
                 </td>
                 <td v-for="pillar in pillars" :key="`${pillar.key}-shen-sha`" class="natal-cell natal-shen-sha-cell">
-                  <div v-if="shenShaRows(pillar).length" class="natal-shen-sha-stack">
+                  <div v-if="shenShaRows(pillar).length" class="flex flex-col items-center justify-center gap-1 w-full">
+                    <div class="natal-shen-sha-stack">
+                      <span
+                        v-for="item in visibleShenShaRows(pillar)"
+                        :key="`${pillar.key}-${item.name}`"
+                        class="natal-text block"
+                        :title="item.meaning || item.name"
+                      >
+                        {{ item.name }}
+                      </span>
+                    </div>
+                    <!-- Indicator for remaining hidden Shen Sha -->
                     <span
-                      v-for="item in visibleShenShaRows(pillar)"
-                      :key="`${pillar.key}-${item.name}`"
-                      class="natal-shen-sha-item"
-                      :class="shenShaToneClass(item)"
-                      :title="item.meaning || item.name"
+                      v-if="!shenShaExpanded && shenShaRows(pillar).length > MAX_SHEN_SHA_ROWS"
+                      class="text-[9.5px] font-bold text-slate-400 mt-0.5 block whitespace-nowrap"
                     >
-                      {{ item.name }}
+                      +{{ shenShaRows(pillar).length - 2 }} 更多
                     </span>
                   </div>
                   <span v-else class="text-[10px] text-[#94A3B8]">-</span>
@@ -459,42 +508,46 @@ function visibleShenShaRows(pillar: FourPillarsDisplayPillar): ShenShaCellItem[]
 
 .natal-shen-sha-stack {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 4px;
+  width: 100%;
 }
 
 .natal-shen-sha-item {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid;
-  border-radius: 999px;
-  padding: 2px 5px;
-  font-size: 8.5px;
+  width: 90%;
+  max-width: 68px;
+  border: 1.5px solid;
+  border-radius: 4px;
+  padding: 2px 3px;
+  font-size: 9.5px;
   font-weight: 800;
-  line-height: 1.15;
+  line-height: 1.1;
   word-break: keep-all;
   white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .natal-shen-sha-item.shen-sha-positive {
-  background: #F8FAFF;
+  background: #ECFDF5;
+  border-color: #A7F3D0;
+  color: #047857;
+}
+
+.natal-shen-sha-item.shen-sha-neutral {
+  background: #EFF6FF;
   border-color: #BFDBFE;
   color: #1D4ED8;
 }
 
 .natal-shen-sha-item.shen-sha-caution {
-  background: #FFF7ED;
-  border-color: #FED7AA;
-  color: #C2410C;
-}
-
-.natal-shen-sha-item.shen-sha-neutral {
   background: #F8FAFC;
   border-color: #E2E8F0;
-  color: #475569;
+  color: #64748B;
 }
 
 .natal-element-summary {

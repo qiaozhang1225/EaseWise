@@ -242,3 +242,43 @@
 - next_slice: `profile pixel/source replication with local code appendix`
 - merge_status: `not-started`
 - verification: `AI Studio export 5 improved profile direction but still has low structural similarity; generated a source-code appendix bundle with local Profile/SystemIntro/AmbassadorDetail plus style/state/API dependencies and a prompt requiring close local-source adaptation`
+### 2026-06-22 - registered AI Studio export 20260622-150000-export-6-local-frontend-merge
+
+- cycle: `.aistudio-sync/cycles/20260622-150000-export-6-local-frontend-merge`
+- local_git_ref: `eac3f4e`
+- aistudio_zip_sha256: `a139bf3755267ed339979736a84cae863f379796bd1dbb4e26aab94b10410c73`
+- source_zip: `.aistudio-sync/aistudio-latest/source.zip`
+- summary: `.aistudio-sync/cycles/20260622-150000-export-6-local-frontend-merge/aistudio-export-summary.md`
+- merge_status: `not-started`
+
+### 2026-06-22 - local frontend merge completed 20260622-150000-export-6-local-frontend-merge
+
+- cycle: `.aistudio-sync/cycles/20260622-150000-export-6-local-frontend-merge`
+- local_git_ref: `eac3f4e`
+- aistudio_zip_sha256: `a139bf3755267ed339979736a84cae863f379796bd1dbb4e26aab94b10410c73`
+- merge_plan: `.aistudio-sync/cycles/20260622-150000-export-6-local-frontend-merge/local-merge-plan.md`
+- merge_constraints: `.aistudio-sync/cycles/20260622-150000-export-6-local-frontend-merge/merge-constraints.md`
+- verification: `.aistudio-sync/cycles/20260622-150000-export-6-local-frontend-merge/verification.md`
+- merge_status: `completed`
+- imported_changes: `agent input bottom alignment, four-pillars staged waiting animation, profile combined phone/four-pillars review history`
+- checks: `npm run build; npm run lint`
+### 2026-06-25 - registered AI Studio export 20260625-170000-export-7-four-pillars-shensha-merge
+
+- cycle: `.aistudio-sync/cycles/20260625-170000-export-7-four-pillars-shensha-merge`
+- local_git_ref: `eac3f4e`
+- aistudio_zip_sha256: `4059a24cc34a20e6e5e356701529d78ce5be05671ae477902487e606d2b8fd7c`
+- source_zip: `.aistudio-sync/aistudio-latest/source.zip`
+- summary: `.aistudio-sync/cycles/20260625-170000-export-7-four-pillars-shensha-merge/aistudio-export-summary.md`
+- merge_status: `not-started`
+
+### 2026-06-25 - local frontend merge completed 20260625-170000-export-7-four-pillars-shensha-merge
+
+- cycle: `.aistudio-sync/cycles/20260625-170000-export-7-four-pillars-shensha-merge`
+- local_git_ref: `eac3f4e`
+- aistudio_zip_sha256: `4059a24cc34a20e6e5e356701529d78ce5be05671ae477902487e606d2b8fd7c`
+- merge_plan: `.aistudio-sync/cycles/20260625-170000-export-7-four-pillars-shensha-merge/local-merge-plan.md`
+- merge_constraints: `.aistudio-sync/cycles/20260625-170000-export-7-four-pillars-shensha-merge/merge-constraints.md`
+- verification: `.aistudio-sync/cycles/20260625-170000-export-7-four-pillars-shensha-merge/verification.md`
+- merge_status: `completed`
+- imported_changes: `four-pillars natal/luck-table shen-sha row order, arrow-only expand controls, +N collapsed overflow, plain text shen-sha styling, luck-table text parity`
+- checks: `npm run build; npm run lint`

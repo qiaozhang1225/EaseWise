@@ -14,7 +14,7 @@ const emit = defineEmits<{
   <header class="fixed top-0 left-0 right-0 w-full bg-brand-paper/80 backdrop-blur-md z-50 max-w-md mx-auto border-b border-gray-100">
     <div class="flex justify-between items-center px-margin-mobile h-16 w-full">
       <div class="flex items-center gap-1.5">
-        <button
+        <button 
           @click="emit('menu-click')"
           class="p-2 hover:bg-gray-100 rounded-full transition-colors outline-none cursor-pointer"
         >

@@ -70,7 +70,7 @@ function mockYearRenderResult(year: number, cycleKey: string): any {
 
 function generateMockLuckCycles(userId: string, birthYear: number = 1995): any[] {
   const currentYear = new Date().getFullYear();
-
+  
   // Cycle 1: 2024 - 2033
   const cycle1Years: any[] = [];
   for (let y = 2024; y <= 2033; y++) {
@@ -684,10 +684,15 @@ function generateCompleteBaziReview(userId: string, gender: string, birth_date: 
           xun_kong: "午未",
           di_shi: "绝",
           self_sitting: "绝地自坐",
-          shen_sha: ["天乙贵人", "驿马"],
+          shen_sha: ["天乙贵人", "驿马", "太极贵人", "华盖", "将星", "孤辰", "劫煞"],
           shen_sha_details: [
             { name: "天乙贵人", category: "support", basis: "日干甲见支申", basis_value: "申", target: "日柱", target_value: "申", rule: "甲戊庚见丑未", meaning: "至高吉星，逢凶化吉，一生常得天恩贵人扶助。" },
-            { name: "驿马", category: "movement", basis: "支见申", basis_value: "申", target: "日柱", target_value: "申", rule: "申子辰见申", meaning: "奔波迁徙，多出外创业或频繁差旅，不耐久静。" }
+            { name: "驿马", category: "movement", basis: "支见申", basis_value: "申", target: "日柱", target_value: "申", rule: "申子辰见申", meaning: "奔波迁徙，多出外创业或频繁差旅，不耐久静。" },
+            { name: "太极贵人", category: "talent", basis: "日干甲见支申", basis_value: "申", target: "日柱", target_value: "申", rule: "甲见申", meaning: "太极星临，聪颖好学，一生易得仙缘道气及长辈荫庇。" },
+            { name: "华盖", category: "spiritual", basis: "支见申", basis_value: "申", target: "日柱", target_value: "申", rule: "华盖入命", meaning: "艺术直觉敏锐，清高孤傲，喜玄学遁甲修行。" },
+            { name: "将星", category: "support", basis: "支见申", basis_value: "申", target: "日柱", target_value: "申", rule: "将星临绝", meaning: "有组织领导之才，在官场或职场中易得人望。" },
+            { name: "孤辰", category: "relationship", basis: "支见申", basis_value: "申", target: "日柱", target_value: "申", rule: "孤辰临日", meaning: "性格略显孤介，内心世界丰富，喜欢独立思考。" },
+            { name: "劫煞", category: "risk", basis: "支见申", basis_value: "申", target: "日柱", target_value: "申", rule: "劫煞主事", meaning: "行事宜多加严谨，防患未然，增强抗压韧性。" }
           ]
         },
         hour: {
@@ -705,10 +710,14 @@ function generateCompleteBaziReview(userId: string, gender: string, birth_date: 
           xun_kong: "戌亥",
           di_shi: "病",
           self_sitting: "临官",
-          shen_sha: ["天医", "禄神"],
+          shen_sha: ["天医", "禄神", "文昌", "福星贵人", "亡神", "五鬼"],
           shen_sha_details: [
             { name: "天医", category: "health", basis: "生月戌见支巳", basis_value: "巳", target: "时柱", target_value: "巳", rule: "月后一辰", meaning: "天医高照，健体强身，在医药、玄学或康养上极具天赋智觉。" },
-            { name: "禄神", category: "wealth", basis: "日干甲见支寅", basis_value: "寅", target: "时柱", target_value: "巳", rule: "甲禄在寅", meaning: "财禄丰厚，岁运逢之必得衣食富足，自立门户之气。" }
+            { name: "禄神", category: "wealth", basis: "日干甲见支寅", basis_value: "寅", target: "时柱", target_value: "巳", rule: "甲禄在寅", meaning: "财禄丰厚，岁运逢之必得衣食富足，自立门户之气。" },
+            { name: "文昌", category: "talent", basis: "日干甲见支巳", basis_value: "巳", target: "时柱", target_value: "巳", rule: "文昌临官", meaning: "文采斐然，逢考必过，常带清健文雅之气。" },
+            { name: "福星贵人", category: "support", basis: "日干甲见支巳", basis_value: "巳", target: "时柱", target_value: "巳", rule: "福星临门", meaning: "一生福禄无缺，安康少忧，常有贵人暗中庇护。" },
+            { name: "亡神", category: "risk", basis: "支见巳", basis_value: "巳", target: "时柱", target_value: "巳", rule: "亡神临柱", meaning: "做事需深思熟虑，避免急躁，保持从容淡定之姿。" },
+            { name: "五鬼", category: "risk", basis: "支见巳", basis_value: "巳", target: "时柱", target_value: "巳", rule: "五鬼惊扰", meaning: "言行宜谨慎，凡事退一步海阔天空，少惹口舌之争。" }
           ]
         }
       },
@@ -917,7 +926,7 @@ app.post("/api/v1/auth/phone/register", (req, res) => {
 
   const userId = `u_${phone}`;
   const now = new Date().toISOString();
-
+  
   usersMock[phone] = {
     user_id: userId,
     uid: userId,
@@ -1215,7 +1224,7 @@ app.post("/api/v1/billing/recharge-orders/:orderId/payments", (req, res) => {
     if (userId) {
       if (!pointsMock[userId]) pointsMock[userId] = { balance: 0, frozen_balance: 0 };
       pointsMock[userId].balance += order.points_amount;
-
+      
       pointsLedgerMock[userId].unshift({
         ledger_id: `led_pay_${orderId}`,
         change_type: "add",
@@ -1840,7 +1849,7 @@ app.post("/api/v1/agent/chat", async (req, res) => {
       // Build chat conversation sequence matching new SDK parameters
       // Group history into correct parts format
       const contentsList: any[] = [];
-
+      
       if (history && Array.isArray(history)) {
         history.forEach((h: any) => {
           contentsList.push({
@@ -1849,7 +1858,7 @@ app.post("/api/v1/agent/chat", async (req, res) => {
           });
         });
       }
-
+      
       // Append latest message
       contentsList.push({
         role: 'user',

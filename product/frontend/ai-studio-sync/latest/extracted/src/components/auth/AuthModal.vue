@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import {
-  X, Phone, Key, HelpCircle, Loader2, ArrowRight, ShieldCheck,
+import { 
+  X, Phone, Key, HelpCircle, Loader2, ArrowRight, ShieldCheck, 
   Lock, Eye, EyeOff, MessageSquare, AlertCircle, ShieldAlert
 } from 'lucide-vue-next';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 
-const {
-  state, checkPhoneAuthStatus, registerWithPhonePassword, loginWithPhonePassword,
-  cancelAuthRequest, humanizeError
+const { 
+  state, checkPhoneAuthStatus, registerWithPhonePassword, loginWithPhonePassword, 
+  cancelAuthRequest, humanizeError 
 } = useEaseWiseApp();
 
 type AuthMode = 'options' | 'phone' | 'login' | 'register' | 'forgot_password' | 'wechat_loading';
@@ -111,7 +111,7 @@ async function handleLogin() {
 async function handleRegister() {
   errorText.value = null;
   const normalized = phone.value.replace(/\D/g, '');
-
+  
   if (!password.value) {
     errorText.value = '请设定灵阁登录安全密码。';
     return;
@@ -155,13 +155,13 @@ function showSupportScene() {
 
 <template>
   <transition name="fade">
-    <div
-      v-if="state.authPromptVisible"
+    <div 
+      v-if="state.authPromptVisible" 
       class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
     >
       <div class="bg-white rounded-3xl w-full max-w-sm p-6 border border-brand-paper shadow-2xl relative text-left">
         <!-- Close button helper -->
-        <button
+        <button 
           @click="handleClose"
           class="absolute top-4 right-4 text-brand-secondary/50 hover:text-brand-ink-strong cursor-pointer p-1.5 rounded-full hover:bg-gray-100 border-none bg-transparent outline-none transition-colors"
         >
@@ -190,8 +190,8 @@ function showSupportScene() {
 
         <!-- System Error display -->
         <transition name="shrink">
-          <div
-            v-if="errorText"
+          <div 
+            v-if="errorText" 
             class="mb-4 bg-amber-50 border border-amber-200/55 text-zinc-700/90 rounded-xl px-3.5 py-2.5 text-[11px] font-sans leading-normal flex items-start gap-2 animate-fadeIn"
           >
             <AlertCircle :size="14" class="text-brand-gold-fixed shrink-0 mt-0.5" />
@@ -231,9 +231,9 @@ function showSupportScene() {
           <div class="space-y-1.5">
             <span class="font-sans text-[11px] font-bold text-brand-secondary block">手机号（11位中国大陆号）</span>
             <div class="relative flex items-center">
-              <input
-                v-model="phone"
-                type="tel"
+              <input 
+                v-model="phone" 
+                type="tel" 
                 :maxlength="maxPhoneLength"
                 placeholder="请输入您的手机号..."
                 class="w-full bg-brand-paper/40 px-4 py-3 rounded-2xl border border-gray-150 outline-none font-sans text-[13px] text-brand-ink pl-10"
@@ -271,15 +271,15 @@ function showSupportScene() {
           <div class="space-y-1.5">
             <span class="font-sans text-[11px] font-bold text-brand-secondary block">同修登录密钥</span>
             <div class="relative flex items-center">
-              <input
-                v-model="password"
-                :type="passwordVisible ? 'text' : 'password'"
+              <input 
+                v-model="password" 
+                :type="passwordVisible ? 'text' : 'password'" 
                 placeholder="请输入登录密钥密码..."
                 class="w-full bg-brand-paper/40 px-4 py-3 rounded-2xl border border-gray-150 outline-none font-sans text-[13px] text-brand-ink pl-10 pr-10"
                 @keyup.enter="handleLogin()"
               />
               <Lock :size="14" class="absolute left-3.5 text-brand-secondary/60" />
-              <button
+              <button 
                 type="button"
                 @click="passwordVisible = !passwordVisible"
                 class="absolute right-3.5 border-none bg-transparent cursor-pointer text-brand-secondary/50 hover:text-brand-ink outline-none"
@@ -325,14 +325,14 @@ function showSupportScene() {
             <div class="space-y-1.5">
               <span class="font-sans text-[11px] font-bold text-brand-secondary block">设定同修安全密码</span>
               <div class="relative flex items-center">
-                <input
-                  v-model="password"
-                  :type="passwordVisible ? 'text' : 'password'"
+                <input 
+                  v-model="password" 
+                  :type="passwordVisible ? 'text' : 'password'" 
                   placeholder="确保字母+数字任意两类，至少8位..."
                   class="w-full bg-brand-paper/40 px-4 py-3 rounded-2xl border border-gray-150 outline-none font-sans text-[13px] text-brand-ink pl-10 pr-10"
                 />
                 <Lock :size="14" class="absolute left-3.5 text-brand-secondary/60" />
-                <button
+                <button 
                   type="button"
                   @click="passwordVisible = !passwordVisible"
                   class="absolute right-3.5 border-none bg-transparent cursor-pointer text-brand-secondary/50 hover:text-brand-ink outline-none"
@@ -346,9 +346,9 @@ function showSupportScene() {
             <div class="space-y-1.5">
               <span class="font-sans text-[11px] font-bold text-brand-secondary block">再次输入密码以确印</span>
               <div class="relative flex items-center">
-                <input
-                  v-model="confirmPassword"
-                  type="password"
+                <input 
+                  v-model="confirmPassword" 
+                  type="password" 
                   placeholder="确保二次录入完全匹配..."
                   class="w-full bg-brand-paper/40 px-4 py-3 rounded-2xl border border-gray-150 outline-none font-sans text-[13px] text-brand-ink pl-10"
                 />

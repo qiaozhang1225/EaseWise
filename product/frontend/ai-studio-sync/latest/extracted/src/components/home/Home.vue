@@ -73,7 +73,7 @@ onMounted(() => {
   <div class="pt-4 pb-32 max-w-md mx-auto px-margin-mobile relative">
     <!-- Toast Notification -->
     <transition name="fade-slide">
-      <div
+      <div 
         v-if="toast"
         class="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-brand-ink-strong text-white px-4 py-2.5 rounded-full font-sans text-[13px] shadow-lg font-medium flex items-center gap-2 max-w-[90%] whitespace-nowrap"
       >
@@ -119,7 +119,7 @@ onMounted(() => {
             {{ almanacMetaText }}
           </p>
         </div>
-
+        
         <!-- Custom Auspicious Grid -->
         <div class="grid grid-cols-2 gap-3 py-2.5 border-t border-b border-gray-100/80 mb-2 text-left">
           <div class="flex items-start gap-1.5">
@@ -172,7 +172,7 @@ onMounted(() => {
 
     <!-- Primary CTA Card: Phone Number metaphysical calculation -->
     <section class="mb-4">
-      <button
+      <button 
         @click="emit('phone-click')"
         class="w-full bg-brand-primary text-white rounded-2xl p-5 shadow-md flex items-center justify-between active:scale-[0.99] transition-transform text-left relative overflow-hidden cursor-pointer border-none"
       >
@@ -234,7 +234,7 @@ onMounted(() => {
 
     <!-- Secondary Feature Grid (Other 5 placeholder ones) -->
     <section class="grid grid-cols-2 gap-4">
-      <div
+      <div 
         v-for="tool in tools"
         :key="tool.id"
         @click="showToast(`「${tool.name}」正在准备中，后续版本开放。`)"
@@ -243,11 +243,11 @@ onMounted(() => {
         <div class="absolute top-2 right-2 bg-gray-100 font-sans text-[10px] px-1.5 py-0.5 rounded text-brand-secondary font-bold tracking-tight uppercase shrink-0">
           Upcoming
         </div>
-
+        
         <div class="w-10 h-10 rounded-full bg-brand-paper flex items-center justify-center mb-3 text-brand-secondary group-hover:text-brand-primary transition-colors duration-150">
           <component :is="tool.icon" :size="22" class="shrink-0" />
         </div>
-
+        
         <span class="font-sans text-[15px] font-bold text-brand-ink-strong">{{ tool.name }}</span>
         <span class="font-sans text-[10px] text-brand-secondary mt-1">{{ tool.desc }}</span>
       </div>

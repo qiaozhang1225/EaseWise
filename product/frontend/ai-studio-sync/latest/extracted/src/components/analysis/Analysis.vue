@@ -950,7 +950,7 @@ async function handleExportImage() {
   exportingImage.value = true;
   showToast('正在为您汇出奇门数理定盘图，请稍候...');
   await nextTick();
-
+  
   setTimeout(() => {
     try {
       const canvas = document.createElement('canvas');
@@ -958,53 +958,53 @@ async function handleExportImage() {
       canvas.height = 1350;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-
+      
       const grad = ctx.createLinearGradient(0, 0, 0, 1350);
       grad.addColorStop(0, '#FAF9F5');
       grad.addColorStop(1, '#F2EFE9');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 750, 1350);
-
+      
       ctx.strokeStyle = '#D97706';
       ctx.lineWidth = 4;
       ctx.strokeRect(20, 20, 710, 1310);
-
+      
       ctx.fillStyle = '#4F46E5';
       ctx.font = 'bold 36px serif';
       ctx.textAlign = 'center';
       ctx.fillText('易如反掌 · 起盘结果', 375, 120);
-
+      
       ctx.fillStyle = '#111827';
       ctx.font = 'bold 22px sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(`评测号码：${reviewPhoneDisplay.value}`, 80, 220);
       ctx.fillText(`局象评分：${reviewScore.value} 分`, 80, 260);
-
+      
       ctx.fillStyle = '#FFFFFF';
       ctx.strokeStyle = '#E5E7EB';
       ctx.fillRect(80, 310, 590, 100);
       ctx.strokeRect(80, 310, 590, 100);
-
+      
       ctx.fillStyle = '#1F2937';
       ctx.font = '16px serif';
       ctx.fillText(`本局值符引： ${singlePalaceData.value.trigger}`, 110, 365);
       ctx.fillText(`定宫定位：${singlePalaceData.value.palaceName} [ ${singlePalaceData.value.direction} ]`, 320, 365);
-
+      
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(80, 440, 590, 280);
       ctx.strokeRect(80, 440, 590, 280);
-
+      
       ctx.fillStyle = '#4B5563';
       ctx.font = 'bold 16px sans-serif';
       ctx.fillText('【综合命理断案】', 100, 490);
       ctx.fillStyle = '#111827';
       ctx.font = '14px serif';
       drawWrappedText(ctx, phoneSummaryTitle.value, 100, 530, 550, 24, 6);
-
+      
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(80, 750, 590, 220);
       ctx.strokeRect(80, 750, 590, 220);
-
+      
       ctx.fillStyle = '#B45309';
       ctx.font = 'bold 16px sans-serif';
       ctx.fillText('【长期使用气运点评】', 100, 800);
@@ -1012,7 +1012,7 @@ async function handleExportImage() {
       ctx.font = '14px sans-serif';
       drawWrappedText(ctx, `点评判定：${stabilityLabel.value}`, 100, 840, 550, 22, 1);
       drawWrappedText(ctx, stabilityValue.value, 100, 875, 550, 22, 4);
-
+      
       ctx.shadowColor = 'rgba(0,0,0,0.1)';
       ctx.fillStyle = '#4F46E5';
       ctx.fillRect(180, 1050, 390, 60);
@@ -1020,7 +1020,7 @@ async function handleExportImage() {
       ctx.font = 'bold 18px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('扫描或浏览器打开易如反掌查看详情', 375, 1088);
-
+      
       const link = document.createElement('a');
       link.download = `易如反掌_定盘手机报告_${reviewPhoneDisplay.value}.png`;
       link.href = canvas.toDataURL('image/png');

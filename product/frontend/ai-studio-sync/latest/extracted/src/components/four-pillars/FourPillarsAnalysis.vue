@@ -5,11 +5,13 @@ import {
   ArrowLeft,
   CalendarDays,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Clock,
   Heart,
   HeartPulse,
+  Loader2,
   Lock,
   MapPin,
   Mountain,
@@ -186,6 +188,167 @@ const unlockWaitingAttempt = ref(0);
 const generatingLuckTargets = ref<string[]>([]);
 const selectedLuckYear = ref<number | null>(null);
 const luckShenShaExpanded = ref(false);
+
+const isGeneratingAnimationActive = ref(false);
+const animStep = ref(1);
+const animStep1Progress = ref(0);
+const animStep2Progress = ref(0);
+const animStep3Progress = ref(0);
+const animStep4Progress = ref(0);
+const apiCompletedReview = ref<FourPillarsReviewRecord | null>(null);
+const apiErrorOccurred = ref<any>(null);
+
+const stepNumSymbol = computed(() => ['', '壹', '贰', '叁', '肆'][animStep.value] || '肆');
+
+const waitingPoemLines = [
+  '三元及第冠群芳',
+  '万般皆是命排来',
+  '乾坤造化归神妙',
+  '五行中和呈造化',
+  '大运流年皆有定',
+  '推星算理释疑忧'
+];
+const waitingPoemIndex = ref(0);
+const waitingPoemLine = computed(() => waitingPoemLines[waitingPoemIndex.value]);
+
+const currentStepActionText = computed(() => {
+  if (animStep.value === 1) return '正在校验出生时间与真太阳时';
+  if (animStep.value === 2) return '正在精排格造八字乾坤盘';
+  if (animStep.value === 3) return '正在推演五行衰旺与十神格局';
+  if (animStep.value === 4) return '正在编织大运流年终身基本盘';
+  return '正在准备四柱八字评测内容';
+});
+
+const totalProgress = computed(() => {
+  return Math.min(
+    100,
+    Math.round(
+      (animStep1Progress.value +
+        animStep2Progress.value +
+        animStep3Progress.value +
+        animStep4Progress.value) /
+        4
+    )
+  );
+});
+
+function getStepProgress(stepIdx: number): number {
+  if (stepIdx === 1) return animStep1Progress.value;
+  if (stepIdx === 2) return animStep2Progress.value;
+  if (stepIdx === 3) return animStep3Progress.value;
+  if (stepIdx === 4) return animStep4Progress.value;
+  return 0;
+}
+
+const animStepsDef = [
+  {
+    title: '出生信息与时间校验',
+    desc: '真太阳时校准、时区差值计算与天理经纬度校验',
+    subtasks: ['解析公历生辰...', '校对地方太阳时...', '测定经纬度磁偏角...'],
+  },
+  {
+    title: '排定四柱干支结构',
+    desc: '依六十甲子排定年柱、月柱、日柱与时柱神机干支对',
+    subtasks: ['起造乾坤八字...', '推算纳音五行...', '寻配藏干神煞...'],
+  },
+  {
+    title: '推演五行旺衰与专项结论',
+    desc: '十神格局剖析、五行守恒强弱判定与主格调评定',
+    subtasks: ['算定日主得令...', '析解生克制化...', '拟定格局高低格调...'],
+  },
+  {
+    title: '生成大运与流年基本盘',
+    desc: '演算人生百年起岁、大运势交接及岁运命图',
+    subtasks: ['起排十年大运...', '精算流年交互神煞...', '织造时局推敲大纲...'],
+  },
+];
+
+function getActiveSubtask(stepIdx: number): string {
+  const progress = getStepProgress(stepIdx);
+  const def = animStepsDef[stepIdx - 1];
+  if (!def) return '';
+  if (progress === 100) return '计算完毕';
+  if (progress === 0) return '等待计算';
+  if (progress < 35) return def.subtasks[0];
+  if (progress < 70) return def.subtasks[1];
+  return def.subtasks[2];
+}
+
+async function runStepAnimation(): Promise<void> {
+  animStep.value = 1;
+  animStep1Progress.value = 0;
+  animStep2Progress.value = 0;
+  animStep3Progress.value = 0;
+  animStep4Progress.value = 0;
+  apiCompletedReview.value = null;
+  apiErrorOccurred.value = null;
+
+  waitingPoemIndex.value = 0;
+  const poemTimer = setInterval(() => {
+    waitingPoemIndex.value = (waitingPoemIndex.value + 1) % waitingPoemLines.length;
+  }, 1000);
+
+  try {
+    // Step 1: Birth info and time validation - Fixed 2s
+    const step1Duration = 2000;
+    const step1Interval = 50;
+    const step1Steps = step1Duration / step1Interval;
+    for (let i = 1; i <= step1Steps; i++) {
+      if (apiErrorOccurred.value) throw apiErrorOccurred.value;
+      await sleep(step1Interval);
+      animStep1Progress.value = Math.min(100, Math.round((i / step1Steps) * 100));
+    }
+
+    // Step 2: Establish four pillars stem and branch structure - Fixed 2s
+    animStep.value = 2;
+    const step2Duration = 2000;
+    const step2Interval = 50;
+    const step2Steps = step2Duration / step2Interval;
+    for (let i = 1; i <= step2Steps; i++) {
+      if (apiErrorOccurred.value) throw apiErrorOccurred.value;
+      await sleep(step2Interval);
+      animStep2Progress.value = Math.min(100, Math.round((i / step2Steps) * 100));
+    }
+
+    // Step 3: Elements deduction & special conclusions - Min 5s
+    animStep.value = 3;
+    const step3MinDuration = 5000;
+    const step3Interval = 100;
+    const step3MinSteps = step3MinDuration / step3Interval;
+    for (let i = 1; i <= step3MinSteps; i++) {
+      if (apiErrorOccurred.value) throw apiErrorOccurred.value;
+      await sleep(step3Interval);
+      animStep3Progress.value = Math.min(100, Math.round((i / step3MinSteps) * 100));
+    }
+
+    // Step 4: Big fortune & Flowing year generation - Min 5s
+    animStep.value = 4;
+    const step4MinDuration = 5000;
+    const step4Interval = 100;
+    const step4MinSteps = step4MinDuration / step4Interval;
+    for (let i = 1; i < step4MinSteps; i++) {
+      if (apiErrorOccurred.value) throw apiErrorOccurred.value;
+      await sleep(step4Interval);
+      animStep4Progress.value = Math.min(95, Math.round((i / step4MinSteps) * 95));
+    }
+
+    // Once Step 4 is at 95% (after 5s), wait for actual API to succeed
+    while (!apiCompletedReview.value && !apiErrorOccurred.value) {
+      if (disposed) return;
+      if (apiErrorOccurred.value) throw apiErrorOccurred.value;
+      await sleep(100);
+    }
+
+    if (apiErrorOccurred.value) {
+      throw apiErrorOccurred.value;
+    }
+
+    animStep4Progress.value = 100;
+    await sleep(300);
+  } finally {
+    clearInterval(poemTimer);
+  }
+}
 
 let disposed = false;
 let pollingPromise: Promise<FourPillarsReviewRecord> | null = null;
@@ -401,6 +564,28 @@ watch(
   { immediate: true },
 );
 
+watch(
+  viewState,
+  (newState) => {
+    if (newState === 'waiting') {
+      if (!isGeneratingAnimationActive.value) {
+        isGeneratingAnimationActive.value = true;
+        runStepAnimation().then(() => {
+          isGeneratingAnimationActive.value = false;
+          if (currentReview.value) {
+            syncViewFromReview(currentReview.value);
+          }
+        }).catch((err) => {
+          isGeneratingAnimationActive.value = false;
+          handleReviewSyncError(err);
+        });
+      }
+    } else {
+      isGeneratingAnimationActive.value = false;
+    }
+  }
+);
+
 onMounted(() => {
   void bootstrapApp();
   // Pre-seed default birth parameters for interactive testing in the AI Studio preview
@@ -484,27 +669,70 @@ function shenShaRows(namesValue: unknown, detailsValue: unknown, diShiValue: unk
 }
 
 function sortShenShaRows(rows: ShenShaCellItem[]): ShenShaCellItem[] {
-  return rows
+  return [...rows]
     .map((item, index) => ({ ...item, index }))
     .sort((left, right) => {
+      const toneLeft = getShenShaToneScore(left);
+      const toneRight = getShenShaToneScore(right);
+      if (toneLeft !== toneRight) return toneLeft - toneRight;
+
       const nameDelta = (SHEN_SHA_NAME_ORDER[left.name] ?? 500) - (SHEN_SHA_NAME_ORDER[right.name] ?? 500);
       if (nameDelta !== 0) return nameDelta;
+
       const categoryDelta = (SHEN_SHA_CATEGORY_ORDER[left.category] ?? 99) - (SHEN_SHA_CATEGORY_ORDER[right.category] ?? 99);
       if (categoryDelta !== 0) return categoryDelta;
+
       return left.index - right.index;
     })
     .map(({ index: _index, ...item }) => item);
 }
 
 function visibleLuckShenShaRows(column: LuckTableColumn): ShenShaCellItem[] {
-  return luckShenShaExpanded.value ? column.shenShaRows : column.shenShaRows.slice(0, MAX_SHEN_SHA_ROWS);
+  const rows = column.shenShaRows;
+  if (luckShenShaExpanded.value) {
+    return rows;
+  }
+  if (rows.length > MAX_SHEN_SHA_ROWS) {
+    return rows.slice(0, 2);
+  }
+  return rows;
 }
 
 function shenShaToneClass(item: ShenShaCellItem): string {
-  const text = `${item.category}${item.name}${item.meaning}`;
+  const name = item.name.trim();
+  const category = item.category || '';
+  
+  const positiveShenSha = [
+    '天乙贵人', '太极贵人', '福星贵人', '天德贵人', '月德贵人', 
+    '天德合', '月德合', '文昌', '国印贵人', '金舆', '禄神', '天喜', 
+    '红鸾', '天医', '天赦', '将星', '华盖'
+  ];
+  
+  const cautionShenSha = [
+    '孤辰', '寡宿', '羊刃', '飞刃', '亡神', '劫煞', 
+    '灾煞', '元辰', '勾煞', '绞煞', '五鬼', '阴阳差错', 
+    '空亡', '童子', '魁罡'
+  ];
+
+  if (positiveShenSha.some(p => name.includes(p))) {
+    return 'shen-sha-positive';
+  }
+  if (cautionShenSha.some(c => name.includes(c))) {
+    return 'shen-sha-caution';
+  }
+  
+  const text = `${category}${name}${item.meaning}`;
   if (/[贵人德福喜禄昌合]/u.test(text)) return 'shen-sha-positive';
   if (/[煞亡劫灾孤寡空刃]/u.test(text)) return 'shen-sha-caution';
+  
   return 'shen-sha-neutral';
+}
+
+function getShenShaToneScore(item: ShenShaCellItem): number {
+  const tone = shenShaToneClass(item);
+  if (tone === 'shen-sha-positive') return 1;
+  if (tone === 'shen-sha-neutral') return 2;
+  return 3;
 }
 
 function calculateTenGod(dayStem: string, targetStem: string): string {
@@ -529,6 +757,38 @@ function elementOfStem(stem: string): string {
 function elementOfBranch(branch: string): string {
   const hidden = hiddenStemMap[branch]?.[0];
   return hidden?.element || '';
+}
+
+function getStemOfGanzhi(ganzhi: string | null | undefined): string {
+  const text = String(ganzhi || '').trim();
+  return text.charAt(0) || '-';
+}
+
+function getBranchOfGanzhi(ganzhi: string | null | undefined): string {
+  const text = String(ganzhi || '').trim();
+  return text.charAt(1) || '-';
+}
+
+function getStemColorClass(ganzhi: string | null | undefined): string {
+  const stem = getStemOfGanzhi(ganzhi);
+  const element = elementOfStem(stem);
+  if (element === '木') return 'text-[#059669]';
+  if (element === '火') return 'text-[#E11D48]';
+  if (element === '土') return 'text-[#78350F]';
+  if (element === '金') return 'text-[#CA8A04]';
+  if (element === '水') return 'text-[#2563EB]';
+  return 'text-slate-700';
+}
+
+function getBranchColorClass(ganzhi: string | null | undefined): string {
+  const branch = getBranchOfGanzhi(ganzhi);
+  const element = elementOfBranch(branch);
+  if (element === '木') return 'text-[#059669]';
+  if (element === '火') return 'text-[#E11D48]';
+  if (element === '土') return 'text-[#78350F]';
+  if (element === '金') return 'text-[#CA8A04]';
+  if (element === '水') return 'text-[#2563EB]';
+  return 'text-slate-700';
 }
 
 function calculateDiShi(dayStem: string, branch: string): string {
@@ -558,8 +818,8 @@ function calculateDiShi(dayStem: string, branch: string): string {
 function elementBadgeClass(element: string): string {
   if (element === '木') return 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]';
   if (element === '火') return 'bg-[#FFF1F2] text-[#E11D48] border-[#FECDD3]';
-  if (element === '土') return 'bg-[#FFFBEB] text-[#B45309] border-[#FCD34D]';
-  if (element === '金') return 'bg-[#FFF7DA] text-[#B7791F] border-[#F4D27A]';
+  if (element === '土') return 'bg-[#FFFBEB] text-[#78350F] border-[#FCD34D]';
+  if (element === '金') return 'bg-[#FFF7DA] text-[#CA8A04] border-[#F4D27A]';
   if (element === '水') return 'bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]';
   return 'bg-white text-slate-500 border-slate-100';
 }
@@ -658,6 +918,9 @@ function syncViewFromReview(review: FourPillarsReviewRecord | null): void {
   currentProgressStage.value = review.progress_stage;
   currentProgressMessage.value = review.progress_message || '';
   if (review.status === 'completed') {
+    if (isGeneratingAnimationActive.value) {
+      return;
+    }
     viewState.value = 'result';
     return;
   }
@@ -665,9 +928,11 @@ function syncViewFromReview(review: FourPillarsReviewRecord | null): void {
     setError('review_failed', review.error_message || review.progress_message || '四柱评测生成失败');
     return;
   }
-  viewState.value = 'waiting';
-  if (pollingReviewId.value !== review.id) {
-    void startReviewPolling(review).catch(handleReviewSyncError);
+  if (!isGeneratingAnimationActive.value) {
+    viewState.value = 'waiting';
+    if (pollingReviewId.value !== review.id) {
+      void startReviewPolling(review).catch(handleReviewSyncError);
+    }
   }
 }
 
@@ -715,7 +980,15 @@ async function handleSubmit(): Promise<void> {
     syncViewFromReview(completed);
     showToast('四柱评测完成，可查看整体结果与专项分析。');
   } catch (error) {
+    apiErrorOccurred.value = error;
     handleReviewSyncError(error);
+  }
+}
+
+function handleAspectClick(aspect: any, index: number): void {
+  activeAspect.value = index;
+  if (aspect && !aspect.is_unlocked) {
+    void handleUnlockAspect(index);
   }
 }
 
@@ -828,6 +1101,8 @@ async function ensureRegisteredForAction(reason: string): Promise<boolean> {
 
 async function pollReviewUntilReady(review: FourPillarsReviewRecord): Promise<FourPillarsReviewRecord> {
   let latestReview = review;
+  apiCompletedReview.value = null;
+  apiErrorOccurred.value = null;
   for (let attempt = 0; attempt < REVIEW_READY_RETRY_LIMIT; attempt += 1) {
     if (disposed) {
       return latestReview;
@@ -835,15 +1110,20 @@ async function pollReviewUntilReady(review: FourPillarsReviewRecord): Promise<Fo
     currentProgressStage.value = latestReview.progress_stage;
     currentProgressMessage.value = latestReview.progress_message || '';
     if (latestReview.status === 'completed') {
+      apiCompletedReview.value = latestReview;
       return latestReview;
     }
     if (latestReview.status === 'failed') {
-      throw new Error(latestReview.error_message || latestReview.progress_message || '四柱评测生成失败');
+      const err = new Error(latestReview.error_message || latestReview.progress_message || '四柱评测生成失败');
+      apiErrorOccurred.value = err;
+      throw err;
     }
     await sleep(REVIEW_READY_RETRY_DELAY_MS);
     latestReview = await refreshCurrentFourPillarsReview(latestReview.id);
   }
-  throw new Error('四柱评测时间比预期更长，请稍后在“我的”页面查看结果。');
+  const timeoutErr = new Error('四柱评测时间比预期更长，请稍后在“我的”页面查看结果。');
+  apiErrorOccurred.value = timeoutErr;
+  throw timeoutErr;
 }
 
 function startReviewPolling(review: FourPillarsReviewRecord): Promise<FourPillarsReviewRecord> {
@@ -1188,41 +1468,59 @@ function refreshActiveReview(): void {
             {{ moduleEnabled ? '生成四柱盘面' : '八字模块暂缓开放' }}
           </button>
         </div>
-
-        <div v-if="recentHistory.length" class="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-3">
-          <h3 class="font-serif text-[16px] font-bold text-brand-ink-strong">历史起盘记录</h3>
-          <div class="space-y-2">
-            <button
-              v-for="item in recentHistory"
-              :key="item.id"
-              class="w-full bg-brand-paper rounded-xl px-3 py-2.5 flex items-center justify-between text-left border-none cursor-pointer"
-              @click="void restoreReview(item.id)"
-            >
-              <span>
-                <span class="block font-sans text-[13px] font-bold text-brand-ink-strong">{{ formatDateTime(item.birth_date, item.birth_time) }}</span>
-                <span class="block font-sans text-[11px] text-brand-secondary mt-0.5">{{ item.status === 'completed' ? '排盘就绪' : item.progress_message || item.status }}</span>
-              </span>
-              <span class="font-serif text-[20px] font-bold" :class="scoreToneClass(item.score)">{{ item.score ?? '--' }}</span>
-            </button>
-          </div>
-        </div>
       </section>
 
-      <section v-else-if="viewState === 'waiting'" class="py-8 flex flex-col justify-center min-h-[62vh]">
-        <div class="bg-white rounded-2xl p-5 border border-gray-150/75 shadow-sm space-y-5 text-center">
-          <div class="relative w-28 h-28 mx-auto flex items-center justify-center select-none">
+      <section v-else-if="viewState === 'waiting'" class="py-10 max-w-md mx-auto px-margin-mobile flex flex-col justify-center min-h-[65vh]" id="bazi-waiting-state">
+        <div class="bg-white rounded-2xl p-6 border border-gray-150/75 shadow-sm space-y-6 text-center">
+          <!-- Circular aura icon -->
+          <div class="relative w-28 h-28 mx-auto flex items-center justify-center select-none" id="bazi-waiting-aura">
             <div class="absolute inset-0 bg-brand-primary/5 rounded-full blur-md animate-pulse"></div>
-            <svg class="absolute w-28 h-28 text-brand-primary/25 animate-[spin_40s_linear_infinite]" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-dasharray="1 3" stroke-width="1.5" />
-            </svg>
-            <div class="absolute w-11 h-11 bg-white rounded-full border border-brand-primary/20 shadow-md flex items-center justify-center animate-[spin_8s_ease-in-out_infinite]">
-              <Sparkles :size="20" class="text-brand-primary animate-pulse" />
+            <div class="absolute w-12 h-12 bg-white rounded-full border border-brand-primary/20 shadow-md flex items-center justify-center">
+              <Sparkles :size="24" class="text-brand-primary animate-pulse" />
             </div>
           </div>
 
-          <div class="space-y-1">
-            <h2 class="font-serif text-[18px] font-bold text-brand-ink-strong tracking-wide">排定生辰天盘元神</h2>
-            <p class="font-sans text-[12px] text-brand-secondary leading-relaxed">{{ progressMessage }}</p>
+          <!-- Dynamic heading & Bazi poem line -->
+          <div class="space-y-1 py-1" id="bazi-waiting-titles">
+            <h4 class="font-serif text-[17.5px] font-bold text-brand-ink-strong tracking-wide">四柱八字命盘推演中</h4>
+            <p class="font-serif text-[15px] font-bold text-brand-secondary/85 leading-relaxed tracking-wide min-h-[1.6em]">
+              {{ waitingPoemLine }}
+            </p>
+          </div>
+
+          <!-- Progress status text & main linear progress bar -->
+          <div class="text-center space-y-1.5" id="bazi-waiting-progress">
+            <div class="flex items-center justify-between text-[11px] font-bold text-brand-secondary">
+              <span>{{ currentStepActionText }}</span>
+              <span class="text-brand-primary">{{ totalProgress }}%</span>
+            </div>
+            <div class="w-full h-1.5 bg-gray-150 rounded-full overflow-hidden">
+              <div class="bg-brand-primary h-full transition-all duration-300" :style="{ width: `${totalProgress}%` }"></div>
+            </div>
+          </div>
+
+          <div class="h-px bg-gray-100"></div>
+
+          <!-- List showing the stages -->
+          <div class="space-y-4 px-1 text-left" id="bazi-waiting-steps">
+            <div
+              v-for="(step, index) in animStepsDef"
+              :key="step.title"
+              class="flex items-start gap-3.5 transition-all duration-300"
+              :class="(index + 1) === animStep ? 'opacity-100 scale-[1.01]' : (index + 1) < animStep ? 'opacity-80' : 'opacity-35'"
+            >
+              <div class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
+                   :class="(index + 1) < animStep ? 'bg-emerald-100 text-emerald-700' : (index + 1) === animStep ? 'bg-brand-primary text-white' : 'bg-gray-100 text-gray-400'">
+                <span v-if="(index + 1) < animStep">✓</span>
+                <span v-else>{{ index + 1 }}</span>
+              </div>
+              <div>
+                <h5 class="font-serif text-[14px] font-bold text-brand-ink-strong">{{ step.title }}</h5>
+                <p class="text-[11px] text-brand-secondary mt-0.5">
+                  {{ (index + 1) === animStep ? getActiveSubtask(index + 1) : step.desc }}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -1386,30 +1684,37 @@ function refreshActiveReview(): void {
                     </td>
                   </tr>
                   <tr class="bg-white">
-                    <td class="luck-row-label">
-                      <span class="block">神煞</span>
+                    <td class="luck-row-label text-center">
+                      <span class="block text-inherit">神煞</span>
                       <button
                         v-if="luckHasOverflowingShenSha"
                         type="button"
-                        class="luck-shen-sha-toggle border-none bg-transparent"
-                        :aria-label="luckShenShaExpanded ? '收起神煞' : '展开神煞'"
-                        :title="luckShenShaExpanded ? '收起神煞' : '展开神煞'"
                         @click="luckShenShaExpanded = !luckShenShaExpanded"
+                        class="luck-shen-sha-toggle cursor-pointer outline-none hover:bg-indigo-50/20"
+                        :title="luckShenShaExpanded ? '收起神煞详情' : '展开神煞详情'"
                       >
-                        <ChevronUp v-if="luckShenShaExpanded" :size="11" />
-                        <ChevronDown v-else :size="11" />
+                        <ChevronUp v-if="luckShenShaExpanded" :size="10" />
+                        <ChevronDown v-else :size="10" />
                       </button>
                     </td>
                     <td v-for="column in luckTableColumns" :key="`${column.label}-shen-sha`" class="luck-cell luck-shen-sha" :class="column.isLuck ? 'bg-[#DBEAFE]/20 text-[#1E3A8A]' : ''">
-                      <div v-if="column.shenShaRows.length" class="luck-shen-sha-stack">
+                      <div v-if="column.shenShaRows.length" class="flex flex-col items-center justify-center gap-1 w-full">
+                        <div class="luck-shen-sha-stack">
+                          <span
+                            v-for="item in visibleLuckShenShaRows(column)"
+                            :key="`${column.label}-${item.name}`"
+                            class="luck-text block text-[10.5px]"
+                            :title="item.meaning || item.name"
+                          >
+                            {{ item.name }}
+                          </span>
+                        </div>
+                        <!-- Indicator for remaining hidden Luck Shen Sha -->
                         <span
-                          v-for="item in visibleLuckShenShaRows(column)"
-                          :key="`${column.label}-${item.name}`"
-                          class="luck-shen-sha-item"
-                          :class="shenShaToneClass(item)"
-                          :title="item.meaning || item.name"
+                          v-if="!luckShenShaExpanded && column.shenShaRows.length > MAX_SHEN_SHA_ROWS"
+                          class="text-[9.5px] font-bold text-slate-400 mt-0.5 block whitespace-nowrap"
                         >
-                          {{ item.name }}
+                          +{{ column.shenShaRows.length - 2 }} 更多
                         </span>
                       </div>
                       <span v-else class="text-[10px] text-[#94A3B8]">-</span>
@@ -1433,7 +1738,10 @@ function refreshActiveReview(): void {
                     >
                       <span v-if="cycle.is_current" class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
                       <span class="font-mono text-[8px] leading-none">{{ cycle.start_age ?? '-' }}岁</span>
-                      <span class="luck-strip-ganzhi vertical-ganzhi font-serif font-bold text-center" :class="ganzhiElementClasses(cycle.display_ganzhi || cycle.ganzhi || '')">{{ cycle.display_ganzhi || cycle.ganzhi || '-' }}</span>
+                      <span class="flex flex-col items-center justify-center font-serif font-black text-center text-[15px] leading-none mt-1 select-none">
+                        <span :class="getStemColorClass(cycle.display_ganzhi || cycle.ganzhi)">{{ getStemOfGanzhi(cycle.display_ganzhi || cycle.ganzhi) }}</span>
+                        <span :class="getBranchColorClass(cycle.display_ganzhi || cycle.ganzhi)" class="mt-0.5">{{ getBranchOfGanzhi(cycle.display_ganzhi || cycle.ganzhi) }}</span>
+                      </span>
                       <span class="font-mono text-[7px] leading-none mt-1 text-[#64748B]">{{ cycle.start_year }}</span>
                     </button>
                   </div>
@@ -1453,7 +1761,10 @@ function refreshActiveReview(): void {
                     >
                       <span v-if="item.is_current" class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
                       <span class="font-mono text-[8px] leading-none">{{ item.age ?? '-' }}岁</span>
-                      <span class="luck-year-ganzhi font-serif font-bold text-center" :class="ganzhiElementClasses(item.ganzhi)">{{ item.ganzhi }}</span>
+                      <span class="flex flex-row items-center justify-center gap-0.5 font-serif font-black text-center text-[13px] leading-none mt-1 select-none">
+                        <span :class="getStemColorClass(item.ganzhi)">{{ getStemOfGanzhi(item.ganzhi) }}</span>
+                        <span :class="getBranchColorClass(item.ganzhi)">{{ getBranchOfGanzhi(item.ganzhi) }}</span>
+                      </span>
                       <span class="font-mono text-[7px] leading-none mt-1 text-[#64748B]">{{ item.year }}</span>
                     </button>
                   </div>
@@ -1674,9 +1985,11 @@ function refreshActiveReview(): void {
 }
 
 .luck-text {
-  color: #334155;
-  font-family: serif;
+  font-family: inherit;
+  font-size: 10.5px;
   font-weight: 800;
+  line-height: 1.25;
+  color: #334155;
 }
 
 .luck-shen-sha {
@@ -1704,40 +2017,45 @@ function refreshActiveReview(): void {
 
 .luck-shen-sha-stack {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 4px;
+  width: 100%;
 }
 
 .luck-shen-sha-item {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid;
-  border-radius: 999px;
-  padding: 2px 5px;
-  font-size: 8.5px;
+  width: 90%;
+  max-width: 68px;
+  border: 1.5px solid;
+  border-radius: 4px;
+  padding: 2px 3px;
+  font-size: 9.5px;
   font-weight: 800;
-  line-height: 1.15;
+  line-height: 1.1;
+  word-break: keep-all;
   white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .luck-shen-sha-item.shen-sha-positive {
-  background: #F8FAFF;
+  background: #ECFDF5;
+  border-color: #A7F3D0;
+  color: #047857;
+}
+
+.luck-shen-sha-item.shen-sha-neutral {
+  background: #EFF6FF;
   border-color: #BFDBFE;
   color: #1D4ED8;
 }
 
 .luck-shen-sha-item.shen-sha-caution {
-  background: #FFF7ED;
-  border-color: #FED7AA;
-  color: #C2410C;
-}
-
-.luck-shen-sha-item.shen-sha-neutral {
   background: #F8FAFC;
   border-color: #E2E8F0;
-  color: #475569;
+  color: #64748B;
 }
 </style>

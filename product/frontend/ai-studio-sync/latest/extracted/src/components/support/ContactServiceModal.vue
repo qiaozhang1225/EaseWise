@@ -3,10 +3,10 @@ import { ref, computed } from 'vue';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 import { X, Copy, CheckCircle, MessageSquare, AlertCircle, HelpCircle } from 'lucide-vue-next';
 
-const {
-  state, customerServiceContact, customerServiceQrCodeUrl, customerServiceQrGuidanceText,
+const { 
+  state, customerServiceContact, customerServiceQrCodeUrl, customerServiceQrGuidanceText, 
   customerServiceCopyButtonText, customerServiceUnconfiguredText, customerServiceCopyForScene,
-  customerServiceWechatId, closeCustomerServiceModal
+  customerServiceWechatId, closeCustomerServiceModal 
 } = useEaseWiseApp();
 
 const copySuccess = ref(false);
@@ -47,13 +47,13 @@ async function handleCopy() {
 
 <template>
   <transition name="fade">
-    <div
-      v-if="state.contactServiceModalVisible"
+    <div 
+      v-if="state.contactServiceModalVisible" 
       class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
     >
       <div class="bg-white rounded-3xl w-full max-w-sm p-6 border border-brand-paper shadow-2xl relative text-left">
         <!-- Close icon -->
-        <button
+        <button 
           @click="closeCustomerServiceModal"
           class="absolute top-4.5 right-4.5 text-brand-secondary/50 hover:text-brand-ink-strong cursor-pointer p-1.5 rounded-full hover:bg-gray-100 border-none bg-transparent outline-none transition-colors"
         >
@@ -86,12 +86,12 @@ async function handleCopy() {
         <div v-else class="space-y-4">
           <!-- QR Code section -->
           <div class="flex flex-col items-center justify-center bg-zinc-50 rounded-2xl p-4 border border-dashed border-gray-250 text-center">
-            <img
-              v-if="customerServiceQrCodeUrl && !qrCodeFailed"
-              :src="customerServiceQrCodeUrl"
+            <img 
+              v-if="customerServiceQrCodeUrl && !qrCodeFailed" 
+              :src="customerServiceQrCodeUrl" 
               @error="qrCodeFailed = true"
               referrerpolicy="no-referrer"
-              class="w-36 h-36 object-cover rounded-xl shadow-md border-2 border-white select-none pointer-events-none"
+              class="w-36 h-36 object-cover rounded-xl shadow-md border-2 border-white select-none pointer-events-none" 
             />
             <div v-else class="w-36 h-36 bg-gray-100 rounded-xl flex flex-col items-center justify-center border text-zinc-400 p-2">
               <HelpCircle :size="24" class="mb-1.5 text-zinc-300" />
@@ -109,7 +109,7 @@ async function handleCopy() {
               <span class="font-mono text-[12.5px] font-extrabold text-brand-ink-strong select-all">{{ customerServiceContact }}</span>
             </div>
 
-            <button
+            <button 
               @click="handleCopy"
               class="w-full bg-brand-primary hover:bg-brand-primary/95 text-white py-3 rounded-2xl cursor-pointer font-sans text-[12.5px] font-bold shadow-md active:scale-95 transition-transform border-none flex items-center justify-center gap-1.5 outline-none select-none"
             >

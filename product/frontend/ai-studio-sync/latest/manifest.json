@@ -1,6 +1,6 @@
 {
   "source_zip": ".aistudio-sync/aistudio-latest/source.zip",
-  "sha256": "475b1745f0459379df28815be2043dc2bdbadf6045eb05e4d2e5be3ab94aac91",
+  "sha256": "4059a24cc34a20e6e5e356701529d78ce5be05671ae477902487e606d2b8fd7c",
   "extracted_file_count": 36,
   "text_file_count": 34,
   "pages": [
@@ -35,16 +35,17 @@
     ".env.example"
   ],
   "state_signals": {
-    "auth": 10,
+    "auth": 11,
     "permission": 1,
     "empty": 2,
-    "error": 13,
+    "error": 14,
     "success": 5,
     "disabled": 10,
     "login": 7,
     "payment": 5,
     "invalid": 3,
-    "loading": 6,
+    "loading": 7,
+    "validation": 1,
     "expired": 1
   }
 }

@@ -45,7 +45,7 @@ async function handleSendMessage(textToSend?: string) {
 
   // Let guests use, but request login on deep interaction if requested
   userInput.value = '';
-
+  
   messages.value.push({
     id: `u_${Date.now()}`,
     role: 'user',
@@ -54,7 +54,7 @@ async function handleSendMessage(textToSend?: string) {
   scrollToBottom();
 
   loading.value = true;
-
+  
   try {
     const apiHistory = messages.value
       .filter(m => m.id !== 'welcome')
@@ -65,7 +65,7 @@ async function handleSendMessage(textToSend?: string) {
       }));
 
     const response = await sendChatToAgent(text, apiHistory);
-
+    
     messages.value.push({
       id: `a_${Date.now()}`,
       role: 'assistant',
@@ -89,106 +89,111 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="pt-2 pb-20 max-w-md mx-auto px-margin-mobile flex flex-col h-[calc(100vh-60px)] text-left">
-    <!-- Header visual -->
-    <div class="bg-white rounded-2xl p-4 border border-brand-paper shadow-sm mb-4 flex items-center gap-3">
-      <div class="w-12 h-12 rounded-full bg-brand-primary/10 flex items-center justify-center shrink-0">
-        <Bot :size="24" class="text-brand-primary" />
+  <div class="pt-3 max-w-md mx-auto flex flex-col h-[calc(100dvh-82px)] md:h-[calc(100vh-82px)] text-left relative overflow-hidden pb-0 bg-brand-paper/30">
+    <!-- Upper scrollable area with side margins -->
+    <div class="flex-1 px-margin-mobile flex flex-col min-h-0 min-w-0 mb-3">
+      <!-- Header visual -->
+      <div class="bg-white rounded-2xl p-4 border border-brand-paper shadow-sm mb-3 flex items-center gap-3 shrink-0">
+        <div class="w-12 h-12 rounded-full bg-brand-primary/10 flex items-center justify-center shrink-0">
+          <Bot :size="24" class="text-brand-primary" />
+        </div>
+        <div>
+          <h2 class="font-serif text-[17px] font-bold text-brand-ink-strong flex items-center gap-1.5">
+            玄学命局 AI 智能体
+            <span class="bg-brand-gold-fixed/15 text-brand-gold-fixed font-sans text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider scale-90">ONLINE</span>
+          </h2>
+          <p class="font-sans text-[11.5px] text-brand-secondary leading-normal mt-0.5">
+            基于奇门遁甲、周易六爻、八字命理模型，为您提供极速推算。
+          </p>
+        </div>
       </div>
-      <div>
-        <h2 class="font-serif text-[17px] font-bold text-brand-ink-strong flex items-center gap-1.5">
-          玄学命局 AI 智能体
-          <span class="bg-brand-gold-fixed/15 text-brand-gold-fixed font-sans text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider scale-90">ONLINE</span>
-        </h2>
-        <p class="font-sans text-[11.5px] text-brand-secondary leading-normal mt-0.5">
-          基于奇门遁甲、周易六爻、八字命理模型，为您提供极速推算。
-        </p>
-      </div>
-    </div>
 
-    <!-- Chat container area -->
-    <div class="flex-1 bg-white rounded-2xl border border-brand-paper shadow-sm flex flex-col overflow-hidden mb-4">
-      <div
-        ref="chatContainer"
-        class="flex-1 p-4 overflow-y-auto space-y-4 font-sans text-[13px] leading-relaxed select-text"
-      >
-        <div
-          v-for="msg in messages"
-          :key="msg.id"
-          class="flex items-start gap-2 max-w-[90%]"
-          :class="msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''"
+      <!-- Chat container area -->
+      <div class="flex-1 bg-white rounded-2xl border border-brand-paper shadow-sm flex flex-col overflow-hidden min-h-0">
+        <div 
+          ref="chatContainer"
+          class="flex-1 p-4 overflow-y-auto space-y-4 font-sans text-[13px] leading-relaxed select-text"
         >
-          <!-- User vs Bot Avatar -->
-          <div
-            class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 shadow-sm"
-            :class="msg.role === 'user' ? 'bg-brand-primary text-white' : 'bg-brand-paper text-brand-ink-strong'"
+          <div 
+            v-for="msg in messages" 
+            :key="msg.id"
+            class="flex items-start gap-2 max-w-[90%]"
+            :class="msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''"
           >
-            <User v-if="msg.role === 'user'" :size="14" />
-            <Bot v-else :size="14" class="text-brand-primary" />
+            <!-- User vs Bot Avatar -->
+            <div 
+              class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 shadow-sm"
+              :class="msg.role === 'user' ? 'bg-brand-primary text-white' : 'bg-brand-paper text-brand-ink-strong'"
+            >
+              <User v-if="msg.role === 'user'" :size="14" />
+              <Bot v-else :size="14" class="text-brand-primary" />
+            </div>
+
+            <!-- Message bubble -->
+            <div 
+              class="p-3 rounded-2xl relative"
+              :class="msg.role === 'user' 
+                ? 'bg-brand-primary text-white rounded-tr-none' 
+                : 'bg-brand-paper/55 text-brand-ink border border-gray-100 rounded-tl-none'"
+            >
+              <div class="whitespace-pre-wrap select-text selection:bg-brand-primary/20">{{ msg.content }}</div>
+            </div>
           </div>
 
-          <!-- Message bubble -->
-          <div
-            class="p-3 rounded-2xl relative"
-            :class="msg.role === 'user'
-              ? 'bg-brand-primary text-white rounded-tr-none'
-              : 'bg-brand-paper/55 text-brand-ink border border-gray-100 rounded-tl-none'"
-          >
-            <div class="whitespace-pre-wrap select-text selection:bg-brand-primary/20">{{ msg.content }}</div>
+          <!-- System Loading state -->
+          <div v-if="loading" class="flex items-start gap-2 max-w-[80%]">
+            <div class="w-7 h-7 rounded-full bg-brand-paper flex items-center justify-center shrink-0">
+              <Bot :size="14" class="text-brand-primary animate-spin" />
+            </div>
+            <div class="bg-brand-paper/55 border border-gray-100 p-3 rounded-2xl rounded-tl-none flex items-center gap-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce"></span>
+              <span class="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce delay-100"></span>
+              <span class="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce delay-200"></span>
+              <span class="text-brand-secondary text-[11px] font-serif font-semibold ml-1">神机测算中...</span>
+            </div>
           </div>
         </div>
 
-        <!-- System Loading state -->
-        <div v-if="loading" class="flex items-start gap-2 max-w-[80%]">
-          <div class="w-7 h-7 rounded-full bg-brand-paper flex items-center justify-center shrink-0">
-            <Bot :size="14" class="text-brand-primary animate-spin" />
+        <!-- Quick recommendation blocks -->
+        <div class="p-3 bg-brand-paper/20 border-t border-gray-50 text-left shrink-0">
+          <span class="text-brand-secondary text-[10.5px] font-extrabold flex items-center gap-1 mb-2">
+            <Sparkles :size="11" class="text-brand-gold-fixed" />
+            <span>推荐问题（轻按快速发送）：</span>
+          </span>
+          <div class="flex flex-wrap gap-1.5 max-h-[110px] overflow-y-auto">
+            <button
+              v-for="s in suggestions"
+              :key="s"
+              @click="handleSendMessage(s)"
+              :disabled="loading"
+              class="bg-white border border-gray-150 rounded-xl px-2.5 py-1.5 text-brand-secondary font-medium text-[11px] cursor-pointer hover:border-brand-primary/50 transition-colors flex items-center gap-1 outline-none relative"
+            >
+              <span>{{ s }}</span>
+              <ArrowRight :size="10" class="text-brand-secondary" />
+            </button>
           </div>
-          <div class="bg-brand-paper/55 border border-gray-100 p-3 rounded-2xl rounded-tl-none flex items-center gap-2">
-            <span class="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce"></span>
-            <span class="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce delay-100"></span>
-            <span class="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce delay-200"></span>
-            <span class="text-brand-secondary text-[11px] font-serif font-semibold ml-1">神机测算中...</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Quick recommendation blocks -->
-      <div class="p-3 bg-brand-paper/20 border-t border-gray-50 text-left shrink-0">
-        <span class="text-brand-secondary text-[10.5px] font-extrabold flex items-center gap-1 mb-2">
-          <Sparkles :size="11" class="text-brand-gold-fixed" />
-          <span>推荐问题（轻按快速发送）：</span>
-        </span>
-        <div class="flex flex-wrap gap-1.5 max-h-[110px] overflow-y-auto">
-          <button
-            v-for="s in suggestions"
-            :key="s"
-            @click="handleSendMessage(s)"
-            :disabled="loading"
-            class="bg-white border border-gray-150 rounded-xl px-2.5 py-1.5 text-brand-secondary font-medium text-[11px] cursor-pointer hover:border-brand-primary/50 transition-colors flex items-center gap-1 outline-none relative"
-          >
-            <span>{{ s }}</span>
-            <ArrowRight :size="10" class="text-brand-secondary" />
-          </button>
         </div>
       </div>
     </div>
 
-    <!-- Input Box area -->
-    <div class="bg-white rounded-2xl border border-brand-paper shadow-sm p-2 flex items-center gap-2 shrink-0">
-      <input
-        v-model="userInput"
-        @keydown.enter="handleSendMessage()"
-        type="text"
-        placeholder="在这里输入您想咨询的玄学奥秘..."
-        :disabled="loading"
-        class="flex-1 bg-transparent px-3 py-2 border-none outline-none font-sans text-[13px] text-brand-ink-strong disabled:text-gray-400"
-      />
-      <button
+    <!-- Input Box area (Full-width, flat, touches the navigation bar) -->
+    <div class="bg-white border-t border-gray-100 px-4 py-3 pb-3.5 flex items-center gap-2.5 shrink-0 w-full shadow-[0_-2px_10px_rgba(0,0,0,0.02)]">
+      <div class="flex-1 bg-brand-paper focus-within:bg-white focus-within:ring-1 focus-within:ring-brand-primary/20 rounded-xl px-3 py-2 flex items-center transition-all border border-gray-100/50">
+        <input 
+          v-model="userInput" 
+          @keydown.enter="handleSendMessage()"
+          type="text" 
+          placeholder="在这里输入您想咨询的玄学奥秘..."
+          :disabled="loading"
+          class="flex-1 bg-transparent border-none outline-none font-sans text-[13px] text-brand-ink-strong disabled:text-gray-400 placeholder:text-zinc-400"
+        />
+      </div>
+      <button 
         @click="handleSendMessage()"
         :disabled="!userInput.trim() || loading"
-        class="w-9 h-9 rounded-xl bg-brand-primary text-white flex items-center justify-center hover:bg-brand-primary/90 active:scale-95 transition-all disabled:opacity-40 disabled:scale-100 cursor-pointer border-none shadow-sm"
+        class="w-9 h-9 rounded-xl bg-brand-primary text-white flex items-center justify-center hover:bg-brand-primary/95 active:scale-95 transition-all disabled:opacity-35 disabled:scale-100 cursor-pointer border-none shadow-sm shrink-0"
       >
-        <Send :size="15" />
+        <Send :size="14" />
       </button>
     </div>
   </div>

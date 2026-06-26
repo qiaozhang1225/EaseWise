@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import {
-  ArrowLeft, Coins, CheckCircle2, ChevronRight, Upload, AlertCircle, ShoppingBag,
+import { 
+  ArrowLeft, Coins, CheckCircle2, ChevronRight, Upload, AlertCircle, ShoppingBag, 
   Loader2, BadgeHelp
 } from 'lucide-vue-next';
-import {
-  listRechargePackages, createRechargeOrder, createRechargePayment,
-  getRechargePaymentStatus
+import { 
+  listRechargePackages, createRechargeOrder, createRechargePayment, 
+  getRechargePaymentStatus 
 } from '../../lib/api';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 
@@ -63,7 +63,7 @@ async function loadPackages() {
 
 async function handleCheckout() {
   if (!selectedPackageKey.value || placingOrder.value) return;
-
+  
   placingOrder.value = true;
   try {
     // 1. Create Order
@@ -75,7 +75,7 @@ async function handleCheckout() {
 
     const order = await createRechargeOrder(state.accessToken || '', orderPayload);
     activeOrder.value = order;
-
+    
     // 2. Trigger Payment execution
     const payRes = await createRechargePayment(state.accessToken || '', order.id, {
       payment_method: paymentMethod.value === 'wechat' ? 'wechat_h5' : 'offline_upload',
@@ -108,7 +108,7 @@ onMounted(() => {
   <div class="pt-4 pb-32 max-w-md mx-auto px-margin-mobile text-left relative">
     <!-- Header control -->
     <div class="flex items-center gap-2 mb-4">
-      <button
+      <button 
         @click="emit('navigate-to-tab', 'profile')"
         class="bg-white border border-gray-150 p-2.5 rounded-xl cursor-pointer hover:bg-zinc-150 flex items-center justify-center outline-none shrink-0"
       >
@@ -118,7 +118,7 @@ onMounted(() => {
     </div>
 
     <!-- Active order processing banner -->
-    <div
+    <div 
       v-if="activeOrder && activeOrder.status === 'reviewing'"
       class="bg-amber-50 border border-thin border-amber-200 rounded-2xl p-4.5 mb-5 space-y-2 animate-fadeIn"
     >
@@ -129,7 +129,7 @@ onMounted(() => {
       <p class="font-sans text-[11.5px] text-brand-secondary leading-relaxed">
         系统已锁存您的订单 <strong class="font-mono text-zinc-700">{{ activeOrder.id }}</strong>。一旦微信或银行凭条核实无误，我们将当即补入 {{ activeOrder.points_amount }} 积分！
       </p>
-      <button
+      <button 
         @click="activeOrder = null"
         class="text-brand-primary-strong font-bold font-sans text-[11px] underline cursor-pointer hover:text-brand-primary"
       >
@@ -166,10 +166,10 @@ onMounted(() => {
           :class="selectedPackageKey === pkg.package_key ? 'border-brand-primary bg-brand-primary/5 shadow-md' : 'border-gray-150 hover:border-gray-200 bg-white'"
         >
           <!-- Spark icon at top corner -->
-          <CheckCircle2
-            v-if="selectedPackageKey === pkg.package_key"
-            :size="16"
-            class="absolute top-2.5 right-2.5 text-brand-primary"
+          <CheckCircle2 
+            v-if="selectedPackageKey === pkg.package_key" 
+            :size="16" 
+            class="absolute top-2.5 right-2.5 text-brand-primary" 
           />
 
           <span class="font-serif text-[13.5px] font-extrabold text-brand-ink-strong leading-tight select-none">
@@ -197,15 +197,15 @@ onMounted(() => {
 
       <div class="space-y-3.5 text-left">
         <!-- WeChat native pay trigger simulation -->
-        <label
+        <label 
           class="flex items-center gap-3 p-3.5 bg-brand-paper/20 rounded-xl border cursor-pointer select-none"
           :class="paymentMethod === 'wechat' ? 'border-brand-primary ring-2 ring-brand-primary/5' : 'border-gray-100'"
         >
-          <input
-            type="radio"
-            value="wechat"
-            v-model="paymentMethod"
-            class="accent-brand-primary"
+          <input 
+            type="radio" 
+            value="wechat" 
+            v-model="paymentMethod" 
+            class="accent-brand-primary" 
           />
           <div class="flex-1">
             <span class="font-sans text-[13px] font-extrabold text-brand-ink-strong block">微信闪通支付（模拟沙箱）</span>
@@ -214,15 +214,15 @@ onMounted(() => {
         </label>
 
         <!-- Offline ledger check upload -->
-        <label
+        <label 
           class="flex items-center gap-3 p-3.5 bg-brand-paper/20 rounded-xl border cursor-pointer select-none"
           :class="paymentMethod === 'offline' ? 'border-brand-primary ring-2 ring-brand-primary/5' : 'border-gray-100'"
         >
-          <input
-            type="radio"
-            value="offline"
-            v-model="paymentMethod"
-            class="accent-brand-primary"
+          <input 
+            type="radio" 
+            value="offline" 
+            v-model="paymentMethod" 
+            class="accent-brand-primary" 
           />
           <div class="flex-1">
             <span class="font-sans text-[13px] font-extrabold text-brand-ink-strong block">线下付款凭证上传（转账审核）</span>
@@ -232,12 +232,12 @@ onMounted(() => {
       </div>
 
       <!-- Offline payment form -->
-      <div
-        v-if="paymentMethod === 'offline'"
+      <div 
+        v-if="paymentMethod === 'offline'" 
         class="mt-4 p-4.5 bg-zinc-50 border border-gray-100 rounded-xl space-y-3 animate-fadeIn text-left"
       >
         <p class="font-sans text-[11px] text-zinc-600 leading-normal select-none">
-          <span class="text-rose-500 font-bold">*</span>
+          <span class="text-rose-500 font-bold">*</span> 
           转账账户微信：<strong class="text-zinc-800">easewise_support</strong>。转账完成后，请选择一张本设备的交易凭据账页贴入：
         </p>
 
@@ -245,11 +245,11 @@ onMounted(() => {
         <div class="space-y-1">
           <span class="font-sans text-[11px] font-bold text-zinc-700 block">付款收条图片（URL贴图地址）</span>
           <div class="relative flex items-center">
-            <input
-              v-model="proofUrlInput"
-              type="text"
-              placeholder="请粘贴本章收支证据 URL..."
-              class="w-full bg-white px-3 py-2 border rounded-lg text-[11px] font-mono outline-none pr-8 text-zinc-700"
+            <input 
+              v-model="proofUrlInput" 
+              type="text" 
+              placeholder="请粘贴本章收支证据 URL..." 
+              class="w-full bg-white px-3 py-2 border rounded-lg text-[11px] font-mono outline-none pr-8 text-zinc-700" 
             />
             <Upload :size="13" class="absolute right-3.5 text-zinc-400" />
           </div>
@@ -257,11 +257,11 @@ onMounted(() => {
 
         <div class="space-y-1">
           <span class="font-sans text-[11px] font-bold text-zinc-700 block">附加备注说明</span>
-          <input
-            v-model="remarkInput"
-            type="text"
-            placeholder="如：微信转账 微信名xxxx 充值10元..."
-            class="w-full bg-white px-3 py-2 border rounded-lg text-[11px] font-sans outline-none text-zinc-700"
+          <input 
+            v-model="remarkInput" 
+            type="text" 
+            placeholder="如：微信转账 微信名xxxx 充值10元..." 
+            class="w-full bg-white px-3 py-2 border rounded-lg text-[11px] font-sans outline-none text-zinc-700" 
           />
         </div>
       </div>
