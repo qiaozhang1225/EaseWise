@@ -957,6 +957,29 @@ function handleWheelScroll(event: Event, scope: WheelScope, part: string): void 
   wheelScrollTimers.set(column, timer);
 }
 
+function centeredWheelValue(column: HTMLElement): string {
+  const centerY = column.getBoundingClientRect().top + column.clientHeight / 2;
+  const options = Array.from(column.querySelectorAll<HTMLElement>('.wheel-option'));
+  const centered = options.reduce<HTMLElement | null>((nearest, item) => {
+    if (!nearest) return item;
+    const itemCenter = item.getBoundingClientRect().top + item.clientHeight / 2;
+    const nearestCenter = nearest.getBoundingClientRect().top + nearest.clientHeight / 2;
+    return Math.abs(itemCenter - centerY) < Math.abs(nearestCenter - centerY) ? item : nearest;
+  }, null);
+  return centered?.dataset.value || '';
+}
+
+function syncVisibleDateWheelSelection(): void {
+  if (drawerKind.value !== 'datetime') return;
+  if (drawerTab.value !== 'solar' && drawerTab.value !== 'lunar') return;
+  const columns = Array.from(document.querySelectorAll<HTMLElement>('.drawer-sheet .wheel-frame .wheel-column'));
+  const parts = ['year', 'month', 'day', 'hour', 'minute'];
+  columns.slice(0, parts.length).forEach((column, index) => {
+    const value = centeredWheelValue(column);
+    if (value) applyWheelSelection(drawerTab.value, parts[index], value);
+  });
+}
+
 function applyWheelSelection(scope: WheelScope, part: string, value: string): void {
   if (scope === 'solar') {
     const numericValue = Number(value);
@@ -1044,26 +1067,43 @@ function selectOverseasRegion(region: string): void {
 }
 
 async function confirmDateDrawer(): Promise<void> {
+  syncVisibleDateWheelSelection();
   inputMode.value = drawerTab.value;
+  if (drawerTab.value === 'solar') {
+    closeDrawer();
+    void refreshTrueSolarPreview();
+    return;
+  }
   if (drawerTab.value === 'lunar') {
-    const resolved = await resolveFourPillarsInput({
-      mode: 'lunar',
-      lunar_input: lunarInput.value,
-      birth_location: selectedLocation.value,
-    });
-    applyBirthDateParts(String(resolved.birth_date || birthDate.value));
-    birthTime.value = String(resolved.birth_time || birthTime.value);
+    try {
+      const resolved = await resolveFourPillarsInput({
+        mode: 'lunar',
+        lunar_input: lunarInput.value,
+        birth_location: selectedLocation.value,
+      });
+      applyBirthDateParts(String(resolved.birth_date || birthDate.value));
+      birthTime.value = String(resolved.birth_time || birthTime.value);
+      closeDrawer();
+      void refreshTrueSolarPreview();
+    } catch {
+      toast.value = '农历日期转换失败，请稍后重试。';
+    }
+    return;
   }
   if (drawerTab.value === 'bazi') {
-    await searchBaziCandidates();
-    const selected = baziCandidates.value[baziInput.value.candidate_index] || baziCandidates.value[0];
-    if (selected) {
-      applyBirthDateParts(selected.birth_date);
-      birthTime.value = selected.birth_time;
+    try {
+      await searchBaziCandidates();
+      const selected = baziCandidates.value[baziInput.value.candidate_index] || baziCandidates.value[0];
+      if (selected) {
+        applyBirthDateParts(selected.birth_date);
+        birthTime.value = selected.birth_time;
+      }
+      closeDrawer();
+      void refreshTrueSolarPreview();
+    } catch {
+      toast.value = '四柱候选查询失败，请稍后重试。';
     }
   }
-  await refreshTrueSolarPreview();
-  closeDrawer();
 }
 
 async function refreshTrueSolarPreview(): Promise<void> {
@@ -1203,21 +1243,20 @@ async function handleSubmit(): Promise<void> {
   currentProgressStage.value = 'queued';
   currentProgressMessage.value = '四柱评测任务已创建，等待开始';
   try {
-	    const review = await submitFourPillarsReview({
-	      gender: gender.value,
-	      birth_date: birthDate.value,
-	      birth_time: birthTime.value,
-	      timezone: selectedLocation.value.timezone || 'Asia/Shanghai',
-	      birth_place: birthPlace.value.trim() || selectedLocation.value.display_name,
-	      name: profileName.value.trim() || null,
-	      input_mode: inputMode.value,
-	      calendar_input: { birth_date: birthDate.value, birth_time: birthTime.value },
-	      lunar_input: inputMode.value === 'lunar' ? lunarInput.value : null,
-	      bazi_input: inputMode.value === 'bazi' ? { ...baziInput.value, target_year: Number(birthYear.value || new Date().getFullYear()) } : null,
-	      birth_location: selectedLocation.value,
-	      include_markdown: true,
-	    });
-    const reviewReadyPromise = startReviewPolling(review);
+    const reviewReadyPromise = submitFourPillarsReview({
+      gender: gender.value,
+      birth_date: birthDate.value,
+      birth_time: birthTime.value,
+      timezone: selectedLocation.value.timezone || 'Asia/Shanghai',
+      birth_place: birthPlace.value.trim() || selectedLocation.value.display_name,
+      name: profileName.value.trim() || null,
+      input_mode: inputMode.value,
+      calendar_input: { birth_date: birthDate.value, birth_time: birthTime.value },
+      lunar_input: inputMode.value === 'lunar' ? lunarInput.value : null,
+      bazi_input: inputMode.value === 'bazi' ? { ...baziInput.value, target_year: Number(birthYear.value || new Date().getFullYear()) } : null,
+      birth_location: selectedLocation.value,
+      include_markdown: true,
+    }).then((review) => startReviewPolling(review));
     await runGenerationWaitingAnimation(reviewReadyPromise);
     const completed = await reviewReadyPromise;
     syncViewFromReview(completed);
@@ -2030,7 +2069,7 @@ function sleep(ms: number): Promise<void> {
               <p class="font-sans text-[10px] font-black tracking-wide text-brand-secondary">{{ drawerKind === 'datetime' ? 'BIRTH INPUT' : 'BIRTH LOCATION' }}</p>
               <h3 class="font-serif text-[17px] font-black text-brand-ink-strong">{{ drawerKind === 'datetime' ? '选择出生信息' : '选择出生地区' }}</h3>
             </div>
-            <button class="w-8 h-8 rounded-lg bg-brand-paper flex items-center justify-center text-brand-secondary" @click="closeDrawer">
+            <button type="button" class="w-8 h-8 rounded-lg bg-brand-paper flex items-center justify-center text-brand-secondary" @click="closeDrawer">
               <X :size="16" />
             </button>
           </div>
@@ -2038,16 +2077,16 @@ function sleep(ms: number): Promise<void> {
           <div v-if="drawerKind === 'datetime'" class="overflow-y-auto p-3 space-y-3">
             <div class="flex items-center justify-between gap-3">
               <div class="grid grid-cols-2 rounded-2xl bg-brand-paper p-1 w-[190px]">
-                <button v-for="tab in ['solar', 'lunar']" :key="tab" class="h-9 rounded-xl text-[13px] font-black" :class="drawerTab === tab ? 'bg-white text-brand-ink-strong shadow-sm' : 'text-brand-secondary'" @click="drawerTab = tab as InputDrawerTab">
+                <button v-for="tab in ['solar', 'lunar']" :key="tab" type="button" class="h-9 rounded-xl text-[13px] font-black" :class="drawerTab === tab ? 'bg-white text-brand-ink-strong shadow-sm' : 'text-brand-secondary'" @click="drawerTab = tab as InputDrawerTab">
                   {{ tab === 'solar' ? '公历' : '农历' }}
                 </button>
               </div>
-              <button class="h-10 px-6 rounded-full bg-[#111111] text-[#F1D7A8] text-[14px] font-black shadow-sm" @click="void confirmDateDrawer()">确定</button>
+              <button type="button" class="h-10 px-6 rounded-full bg-[#111111] text-[#F1D7A8] text-[14px] font-black shadow-sm" @click="void confirmDateDrawer()">确定</button>
             </div>
 
             <div v-if="drawerTab === 'solar'" class="space-y-2">
               <div class="wheel-tabs">
-                <button class="wheel-tab is-active" @click="quickYearOpen = !quickYearOpen">年 ⇄</button>
+                <button type="button" class="wheel-tab is-active" @click="quickYearOpen = !quickYearOpen">年 ⇄</button>
                 <span>月</span>
                 <span>日</span>
                 <span>时</span>
@@ -2056,19 +2095,19 @@ function sleep(ms: number): Promise<void> {
               <div class="wheel-frame">
                 <div class="wheel-highlight"></div>
                 <div class="wheel-column" @scroll="handleWheelScroll($event, 'solar', 'year')">
-                  <button v-for="year in yearOptions" :key="`solar-year-${year}`" class="wheel-option" :class="Number(birthYear || 1989) === year ? 'is-selected' : ''" :data-value="year" @click="setSolarPart('year', year)">{{ year }}</button>
+                  <button v-for="year in yearOptions" :key="`solar-year-${year}`" type="button" class="wheel-option" :class="Number(birthYear || 1989) === year ? 'is-selected' : ''" :data-value="year" @click="setSolarPart('year', year)">{{ year }}</button>
                 </div>
                 <div class="wheel-column" @scroll="handleWheelScroll($event, 'solar', 'month')">
-                  <button v-for="month in monthOptions" :key="`solar-month-${month}`" class="wheel-option" :class="Number(birthMonth || 1) === month ? 'is-selected' : ''" :data-value="month" @click="setSolarPart('month', month)">{{ twoDigit(month) }}</button>
+                  <button v-for="month in monthOptions" :key="`solar-month-${month}`" type="button" class="wheel-option" :class="Number(birthMonth || 1) === month ? 'is-selected' : ''" :data-value="month" @click="setSolarPart('month', month)">{{ twoDigit(month) }}</button>
                 </div>
                 <div class="wheel-column" @scroll="handleWheelScroll($event, 'solar', 'day')">
-                  <button v-for="day in dayOptions" :key="`solar-day-${day}`" class="wheel-option" :class="Number(birthDay || 1) === day ? 'is-selected' : ''" :data-value="day" @click="setSolarPart('day', day)">{{ twoDigit(day) }}</button>
+                  <button v-for="day in dayOptions" :key="`solar-day-${day}`" type="button" class="wheel-option" :class="Number(birthDay || 1) === day ? 'is-selected' : ''" :data-value="day" @click="setSolarPart('day', day)">{{ twoDigit(day) }}</button>
                 </div>
                 <div class="wheel-column" @scroll="handleWheelScroll($event, 'solar', 'hour')">
-                  <button v-for="hour in hourOptions" :key="`solar-hour-${hour}`" class="wheel-option" :class="solarHour === hour ? 'is-selected' : ''" :data-value="hour" @click="setSolarPart('hour', hour)">{{ twoDigit(hour) }}</button>
+                  <button v-for="hour in hourOptions" :key="`solar-hour-${hour}`" type="button" class="wheel-option" :class="solarHour === hour ? 'is-selected' : ''" :data-value="hour" @click="setSolarPart('hour', hour)">{{ twoDigit(hour) }}</button>
                 </div>
                 <div class="wheel-column" @scroll="handleWheelScroll($event, 'solar', 'minute')">
-                  <button v-for="minute in minuteOptions" :key="`solar-minute-${minute}`" class="wheel-option" :class="solarMinute === minute ? 'is-selected' : ''" :data-value="minute" @click="setSolarPart('minute', minute)">{{ twoDigit(minute) }}</button>
+                  <button v-for="minute in minuteOptions" :key="`solar-minute-${minute}`" type="button" class="wheel-option" :class="solarMinute === minute ? 'is-selected' : ''" :data-value="minute" @click="setSolarPart('minute', minute)">{{ twoDigit(minute) }}</button>
                 </div>
               </div>
               <div v-if="quickYearOpen" class="grid grid-cols-5 gap-1 max-h-36 overflow-y-auto rounded-xl bg-brand-paper p-2">
@@ -2078,7 +2117,7 @@ function sleep(ms: number): Promise<void> {
 
             <div v-else-if="drawerTab === 'lunar'" class="space-y-2">
               <div class="wheel-tabs">
-                <button class="wheel-tab is-active" @click="quickYearOpen = !quickYearOpen">年 ⇄</button>
+                <button type="button" class="wheel-tab is-active" @click="quickYearOpen = !quickYearOpen">年 ⇄</button>
                 <span>月</span>
                 <span>日</span>
                 <span>时</span>
@@ -2087,19 +2126,19 @@ function sleep(ms: number): Promise<void> {
               <div class="wheel-frame">
                 <div class="wheel-highlight"></div>
                 <div class="wheel-column" @scroll="handleWheelScroll($event, 'lunar', 'year')">
-                  <button v-for="year in yearOptions" :key="`lunar-year-${year}`" class="wheel-option" :class="lunarInput.year === year ? 'is-selected' : ''" :data-value="year" @click="setLunarPart('year', year)">{{ year }}</button>
+                  <button v-for="year in yearOptions" :key="`lunar-year-${year}`" type="button" class="wheel-option" :class="lunarInput.year === year ? 'is-selected' : ''" :data-value="year" @click="setLunarPart('year', year)">{{ year }}</button>
                 </div>
                 <div class="wheel-column" @scroll="handleWheelScroll($event, 'lunar', 'month')">
-                  <button v-for="month in monthOptions" :key="`lunar-month-${month}`" class="wheel-option" :class="lunarInput.month === month ? 'is-selected' : ''" :data-value="month" @click="setLunarPart('month', month)">{{ lunarMonthLabel(month) }}</button>
+                  <button v-for="month in monthOptions" :key="`lunar-month-${month}`" type="button" class="wheel-option" :class="lunarInput.month === month ? 'is-selected' : ''" :data-value="month" @click="setLunarPart('month', month)">{{ lunarMonthLabel(month) }}</button>
                 </div>
                 <div class="wheel-column" @scroll="handleWheelScroll($event, 'lunar', 'day')">
-                  <button v-for="day in dayOptions" :key="`lunar-day-${day}`" class="wheel-option" :class="lunarInput.day === day ? 'is-selected' : ''" :data-value="day" @click="setLunarPart('day', day)">{{ lunarDayLabel(day) }}</button>
+                  <button v-for="day in dayOptions" :key="`lunar-day-${day}`" type="button" class="wheel-option" :class="lunarInput.day === day ? 'is-selected' : ''" :data-value="day" @click="setLunarPart('day', day)">{{ lunarDayLabel(day) }}</button>
                 </div>
                 <div class="wheel-column" @scroll="handleWheelScroll($event, 'lunar', 'hour')">
-                  <button v-for="hour in hourOptions" :key="`lunar-hour-${hour}`" class="wheel-option" :class="lunarInput.hour === hour ? 'is-selected' : ''" :data-value="hour" @click="setLunarPart('hour', hour)">{{ twoDigit(hour) }}</button>
+                  <button v-for="hour in hourOptions" :key="`lunar-hour-${hour}`" type="button" class="wheel-option" :class="lunarInput.hour === hour ? 'is-selected' : ''" :data-value="hour" @click="setLunarPart('hour', hour)">{{ twoDigit(hour) }}</button>
                 </div>
                 <div class="wheel-column" @scroll="handleWheelScroll($event, 'lunar', 'minute')">
-                  <button v-for="minute in minuteOptions" :key="`lunar-minute-${minute}`" class="wheel-option" :class="lunarInput.minute === minute ? 'is-selected' : ''" :data-value="minute" @click="setLunarPart('minute', minute)">{{ twoDigit(minute) }}</button>
+                  <button v-for="minute in minuteOptions" :key="`lunar-minute-${minute}`" type="button" class="wheel-option" :class="lunarInput.minute === minute ? 'is-selected' : ''" :data-value="minute" @click="setLunarPart('minute', minute)">{{ twoDigit(minute) }}</button>
                 </div>
               </div>
             </div>
