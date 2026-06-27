@@ -1183,6 +1183,22 @@ function resetToInput(): void {
   resetWaitingAnimation();
 }
 
+function hasRenderableFourPillarsResult(review: FourPillarsReviewRecord | null): boolean {
+  if (!review) return false;
+  const chartDisplayPillars = review.chart_display?.pillars;
+  if (chartDisplayPillars && Object.keys(chartDisplayPillars).length >= 4) {
+    return true;
+  }
+  const chart = review.chart;
+  if (chart && typeof chart === 'object') {
+    const pillars = (chart as Record<string, unknown>).pillars;
+    if (pillars && typeof pillars === 'object' && Object.keys(pillars as Record<string, unknown>).length >= 4) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function handleHeaderBackAction(): void {
   if (viewState.value === 'result') {
     resetToInput();
@@ -1198,7 +1214,7 @@ function syncViewFromReview(review: FourPillarsReviewRecord | null): void {
   applyFormFromReview(review);
   currentProgressStage.value = review.progress_stage;
   currentProgressMessage.value = review.progress_message || '';
-  if (review.status === 'completed') {
+  if (review.status === 'completed' || hasRenderableFourPillarsResult(review)) {
     viewState.value = 'result';
     return;
   }
@@ -1289,6 +1305,9 @@ async function pollReviewUntilReady(review: FourPillarsReviewRecord): Promise<Fo
     currentProgressStage.value = latestReview.progress_stage;
     currentProgressMessage.value = latestReview.progress_message || '';
     if (latestReview.status === 'completed') {
+      return latestReview;
+    }
+    if (hasRenderableFourPillarsResult(latestReview)) {
       return latestReview;
     }
     if (latestReview.status === 'failed') {
