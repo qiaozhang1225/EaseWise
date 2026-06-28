@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -25,6 +26,21 @@ DRAWING_NS = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
 SLIDE_PATTERN = re.compile(r"ppt/slides/slide(\d+)\.xml$")
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".wma", ".aac"}
+CHINESE_LESSON_NUMBERS = {
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+    "十一": 11,
+    "十二": 12,
+}
+CHINESE_LESSON_PATTERN = re.compile(r"第(十二|十一|十|九|八|七|六|五|四|三|二|一)集")
 
 
 @dataclass
@@ -54,12 +70,37 @@ class AudioExtraction:
 
 
 @dataclass
+class AudioAuditReference:
+    file_name: str
+    media_path: str
+
+
+@dataclass
+class AudioAuditExtraction:
+    digest: str
+    media_path: str
+    extension: str
+    size_bytes: int
+    references: list[AudioAuditReference] = field(default_factory=list)
+    duration: str | None = None
+    transcript_status: str = "not_attempted"
+    transcript: str = ""
+    error: str | None = None
+    transcript_provider: str | None = None
+    transcript_model: str | None = None
+    transcript_elapsed_seconds: float | None = None
+    transcript_confidence: str | None = None
+    transcript_quality: str | None = None
+
+
+@dataclass
 class LessonExtraction:
     file_name: str
     status: str
     error: str | None = None
     slides: list[SlideExtraction] = field(default_factory=list)
     images_total: int = 0
+    audio_count: int = 0
     audio: list[AudioExtraction] = field(default_factory=list)
 
 
@@ -67,6 +108,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Extract Four Pillars PPTX lessons into markdown.")
     parser.add_argument("--source", type=Path, default=SOURCE_ROOT)
     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+    parser.add_argument("--title", default="Four Pillars Lesson-Based Knowledge")
+    parser.add_argument("--sort-by", choices=("name", "chinese-lesson"), default="name")
+    parser.add_argument(
+        "--audio-mode",
+        choices=("lesson", "audit", "skip"),
+        default="lesson",
+        help="lesson renders audio under each lesson, audit deduplicates audio into a single audit section, skip ignores audio.",
+    )
     parser.add_argument("--skip-ocr", action="store_true")
     parser.add_argument("--skip-audio-transcript", action="store_true")
     parser.add_argument(
@@ -80,21 +129,52 @@ def main() -> int:
     args = parser.parse_args()
 
     started_at = time.strftime("%Y-%m-%d %H:%M:%S")
+    lesson_paths = sorted(args.source.glob("*.pptx"), key=lambda path: lesson_path_sort_key(path, args.sort_by))
     lessons = [
         extract_lesson(
             path,
             skip_ocr=args.skip_ocr,
             skip_audio_transcript=args.skip_audio_transcript,
+            extract_lesson_audio=args.audio_mode == "lesson",
             audio_transcriber=args.audio_transcriber,
             bailian_asr_model=args.bailian_asr_model,
             ocr_limit=args.ocr_limit,
         )
-        for path in sorted(args.source.glob("*.pptx"))
+        for path in lesson_paths
     ]
+    audio_audit = (
+        extract_audio_audit(
+            lesson_paths,
+            skip_transcript=args.skip_audio_transcript,
+            transcriber=args.audio_transcriber,
+            bailian_asr_model=args.bailian_asr_model,
+        )
+        if args.audio_mode == "audit"
+        else None
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(render_markdown(lessons, started_at=started_at), encoding="utf-8")
+    args.output.write_text(
+        render_markdown(
+            lessons,
+            started_at=started_at,
+            title=args.title,
+            source_root=args.source,
+            include_lesson_audio=args.audio_mode == "lesson",
+            audio_audit=audio_audit,
+        ),
+        encoding="utf-8",
+    )
     print(f"wrote {args.output}")
     return 0
+
+
+def lesson_path_sort_key(path: Path, sort_by: str) -> tuple[object, ...]:
+    if sort_by == "chinese-lesson":
+        match = CHINESE_LESSON_PATTERN.search(path.name)
+        if match:
+            return (0, CHINESE_LESSON_NUMBERS[match.group(1)], path.name)
+        return (1, path.name)
+    return (path.name,)
 
 
 def extract_lesson(
@@ -102,6 +182,7 @@ def extract_lesson(
     *,
     skip_ocr: bool,
     skip_audio_transcript: bool,
+    extract_lesson_audio: bool,
     audio_transcriber: str,
     bailian_asr_model: str,
     ocr_limit: int,
@@ -115,6 +196,7 @@ def extract_lesson(
                 key=lambda item: int(SLIDE_PATTERN.match(item).group(1)),  # type: ignore[union-attr]
             )
             lesson.images_total = sum(1 for name in names if Path(name).suffix.lower() in IMAGE_SUFFIXES and name.startswith("ppt/media/"))
+            lesson.audio_count = sum(1 for name in names if Path(name).suffix.lower() in AUDIO_SUFFIXES and name.startswith("ppt/media/"))
             media_by_slide = build_slide_media_map(deck)
             notes_by_slide = extract_notes(deck)
             ocr_by_image = extract_ocr(deck, media_by_slide, skip_ocr=skip_ocr, ocr_limit=ocr_limit)
@@ -138,12 +220,13 @@ def extract_lesson(
                         slide.ocr_errors.append(f"{image_path}: {ocr_result.get('error') or ocr_result.get('status')}")
                 lesson.slides.append(slide)
 
-            lesson.audio = extract_audio(
-                deck,
-                skip_transcript=skip_audio_transcript,
-                transcriber=audio_transcriber,
-                bailian_asr_model=bailian_asr_model,
-            )
+            if extract_lesson_audio:
+                lesson.audio = extract_audio(
+                    deck,
+                    skip_transcript=skip_audio_transcript,
+                    transcriber=audio_transcriber,
+                    bailian_asr_model=bailian_asr_model,
+                )
     except BadZipFile:
         lesson.status = "invalid_pptx_zip"
         lesson.error = "not_a_valid_ooxml_zip"
@@ -281,6 +364,61 @@ def extract_audio(deck: ZipFile, *, skip_transcript: bool, transcriber: str, bai
             audio.transcript_quality = metadata.get("quality")
         audio_items.append(audio)
     return audio_items
+
+
+def extract_audio_audit(
+    paths: list[Path],
+    *,
+    skip_transcript: bool,
+    transcriber: str,
+    bailian_asr_model: str,
+) -> list[AudioAuditExtraction]:
+    audit_by_digest: dict[str, AudioAuditExtraction] = {}
+    data_by_digest: dict[str, bytes] = {}
+    for path in paths:
+        try:
+            with ZipFile(path) as deck:
+                media_paths = sorted(
+                    name for name in deck.namelist() if name.startswith("ppt/media/") and Path(name).suffix.lower() in AUDIO_SUFFIXES
+                )
+                for media_path in media_paths:
+                    data = deck.read(media_path)
+                    digest = hashlib.sha256(data).hexdigest()
+                    audio = audit_by_digest.get(digest)
+                    if audio is None:
+                        audio = AudioAuditExtraction(
+                            digest=digest,
+                            media_path=media_path,
+                            extension=Path(media_path).suffix.lower().lstrip("."),
+                            size_bytes=len(data),
+                            duration=probe_audio_duration(media_path, data),
+                        )
+                        audit_by_digest[digest] = audio
+                        data_by_digest[digest] = data
+                    audio.references.append(AudioAuditReference(file_name=path.name, media_path=media_path))
+        except BadZipFile:
+            continue
+
+    for digest, audio in audit_by_digest.items():
+        if skip_transcript:
+            audio.transcript_status = "skipped"
+            audio.error = "skip_audio_transcript_enabled"
+            continue
+        transcript, status, error, metadata = transcribe_audio(
+            audio.media_path,
+            data_by_digest[digest],
+            transcriber=transcriber,
+            bailian_asr_model=bailian_asr_model,
+        )
+        audio.transcript = transcript
+        audio.transcript_status = status
+        audio.error = error
+        audio.transcript_provider = metadata.get("provider")
+        audio.transcript_model = metadata.get("model")
+        audio.transcript_elapsed_seconds = metadata.get("elapsed_seconds")
+        audio.transcript_confidence = metadata.get("confidence")
+        audio.transcript_quality = metadata.get("quality")
+    return sorted(audit_by_digest.values(), key=lambda item: item.digest)
 
 
 def probe_audio_duration(media_path: str, data: bytes) -> str | None:
@@ -489,24 +627,37 @@ def classify_audio_transcript_quality(transcript: str) -> str:
     return "usable_lesson_text"
 
 
-def render_markdown(lessons: list[LessonExtraction], *, started_at: str) -> str:
+def render_markdown(
+    lessons: list[LessonExtraction],
+    *,
+    started_at: str,
+    title: str,
+    source_root: Path,
+    include_lesson_audio: bool,
+    audio_audit: list[AudioAuditExtraction] | None,
+) -> str:
     total_slides = sum(len(lesson.slides) for lesson in lessons)
-    total_audio = sum(len(lesson.audio) for lesson in lessons)
-    total_audio_transcribed = sum(1 for lesson in lessons for audio in lesson.audio if audio.transcript_status == "ok")
-    total_audio_low_information = sum(1 for lesson in lessons for audio in lesson.audio if audio.transcript_quality == "low_information_audio")
+    total_audio = sum(lesson.audio_count for lesson in lessons)
+    if audio_audit is None:
+        total_audio_transcribed = sum(1 for lesson in lessons for audio in lesson.audio if audio.transcript_status == "ok")
+        total_audio_low_information = sum(1 for lesson in lessons for audio in lesson.audio if audio.transcript_quality == "low_information_audio")
+    else:
+        total_audio_transcribed = sum(1 for audio in audio_audit if audio.transcript_status == "ok")
+        total_audio_low_information = sum(1 for audio in audio_audit if audio.transcript_quality == "low_information_audio")
     total_ocr_blocks = sum(len(slide.ocr_blocks) for lesson in lessons for slide in lesson.slides)
     lines = [
-        "# Four Pillars Lesson-Based Knowledge",
+        f"# {title}",
         "",
         f"Generated at: `{started_at}`",
         "",
         "## Extraction Summary",
         "",
-        f"- Source directory: `{SOURCE_ROOT}`",
+        f"- Source directory: `{source_root.resolve()}`",
         f"- Lesson files: {len(lessons)}",
         f"- Parsed slides: {total_slides}",
         f"- OCR text blocks: {total_ocr_blocks}",
         f"- Embedded audio files: {total_audio}",
+        *([f"- Unique embedded audio files: {len(audio_audit)}"] if audio_audit is not None else []),
         f"- Audio transcripts: {total_audio_transcribed}",
         f"- Low-information audio transcripts: {total_audio_low_information}",
         "",
@@ -518,8 +669,12 @@ def render_markdown(lessons: list[LessonExtraction], *, started_at: str) -> str:
     for lesson in lessons:
         note = lesson.error or ""
         lines.append(
-            f"| {escape_md(lesson.file_name)} | `{lesson.status}` | {len(lesson.slides)} | {lesson.images_total} | {len(lesson.audio)} | {escape_md(note)} |"
+            f"| {escape_md(lesson.file_name)} | `{lesson.status}` | {len(lesson.slides)} | {lesson.images_total} | {lesson.audio_count} | {escape_md(note)} |"
         )
+
+    if audio_audit is not None:
+        lines.extend(["", "## Embedded Audio Audit", ""])
+        lines.extend(render_audio_audit(audio_audit, total_audio))
 
     lines.extend(["", "## Lessons", ""])
     for lesson in lessons:
@@ -528,7 +683,13 @@ def render_markdown(lessons: list[LessonExtraction], *, started_at: str) -> str:
             lines.append(f"- extraction_error: `{lesson.error}`")
         lines.append("")
 
-        if lesson.audio:
+        usable_audios = find_usable_audios_for_lesson(audio_audit, lesson.file_name)
+        if usable_audios:
+            lines.extend(["#### Usable Embedded Audio Transcript", ""])
+            for audio in usable_audios:
+                lines.extend([audio.transcript.strip(), ""])
+
+        if include_lesson_audio and lesson.audio:
             lines.extend(["#### Embedded Audio", ""])
             for index, audio in enumerate(lesson.audio, start=1):
                 lines.extend(
@@ -590,6 +751,58 @@ def render_markdown(lessons: list[LessonExtraction], *, started_at: str) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def render_audio_audit(audio_audit: list[AudioAuditExtraction], total_audio_references: int) -> list[str]:
+    lines = [
+        f"- Total embedded audio references: {total_audio_references}",
+        f"- Unique embedded audio files: {len(audio_audit)}",
+        "",
+    ]
+    for index, audio in enumerate(audio_audit, start=1):
+        inclusion = "included_in_lesson_body" if audio.transcript_quality == "usable_lesson_text" else "audit_only"
+        lines.extend(
+            [
+                f"### Audio {index}: `{audio.media_path}`",
+                "",
+                f"- sha256: `{audio.digest}`",
+                f"- format: `{audio.extension}`",
+                f"- size_bytes: {audio.size_bytes}",
+                f"- duration: {audio.duration or 'unknown'}",
+                f"- referenced_by_count: {len(audio.references)}",
+                f"- transcript_status: `{audio.transcript_status}`",
+                f"- knowledge_inclusion: `{inclusion}`",
+            ]
+        )
+        if audio.transcript_provider:
+            lines.append(f"- transcript_provider: `{audio.transcript_provider}`")
+        if audio.transcript_model:
+            lines.append(f"- transcript_model: `{audio.transcript_model}`")
+        if audio.transcript_elapsed_seconds is not None:
+            lines.append(f"- transcript_elapsed_seconds: {audio.transcript_elapsed_seconds}")
+        if audio.transcript_confidence:
+            lines.append(f"- transcript_confidence: `{audio.transcript_confidence}`")
+        if audio.transcript_quality:
+            lines.append(f"- transcript_quality: `{audio.transcript_quality}`")
+        if audio.error:
+            lines.append(f"- transcript_error: `{audio.error}`")
+        lines.extend(["", "#### Referenced By", ""])
+        lines.extend(f"- {escape_md(reference.file_name)}: `{reference.media_path}`" for reference in audio.references)
+        if audio.transcript:
+            lines.extend(["", "#### Transcript", "", audio.transcript.strip(), ""])
+        else:
+            lines.append("")
+    return lines
+
+
+def find_usable_audios_for_lesson(audio_audit: list[AudioAuditExtraction] | None, file_name: str) -> list[AudioAuditExtraction]:
+    if not audio_audit:
+        return []
+    return [
+        audio
+        for audio in audio_audit
+        if audio.transcript_quality == "usable_lesson_text" and any(reference.file_name == file_name for reference in audio.references)
+    ]
 
 
 def escape_md(value: str) -> str:

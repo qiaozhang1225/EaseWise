@@ -127,10 +127,86 @@ export interface ReviewListResponse {
   offset: number;
 }
 
+export type PhoneReviewCoreStreamSection = 'phone_summary' | 'stability' | string;
+export type PhoneReviewCoreStreamDeltaField = 'title' | 'risk' | 'usage_guidance' | 'verdict' | 'content' | string;
+
+export interface PhoneReviewCoreStreamReviewData {
+  review: ReviewRecord;
+  points: PointsAccountResponse | null;
+}
+
+export type PhoneReviewCoreStreamCreatedData = PhoneReviewCoreStreamReviewData;
+export type PhoneReviewCoreStreamFactsReadyData = PhoneReviewCoreStreamReviewData;
+export type PhoneReviewCoreStreamCompleteData = PhoneReviewCoreStreamReviewData;
+
+export interface PhoneReviewCoreStreamStatusData {
+  section: PhoneReviewCoreStreamSection;
+  message: string;
+}
+
+export interface PhoneReviewCoreStreamDeltaData {
+  section: PhoneReviewCoreStreamSection;
+  field: PhoneReviewCoreStreamDeltaField;
+  delta: string;
+  text: string;
+}
+
+export interface PhoneReviewCoreStreamSectionCompleteData {
+  section: PhoneReviewCoreStreamSection;
+  payload: Record<string, unknown>;
+  model_name?: string | null;
+}
+
+export interface PhoneReviewCoreStreamErrorData {
+  detail: string;
+  message?: string;
+  refunded?: boolean;
+}
+
+export interface FourPillarsSummaryJudgement {
+  key: string;
+  label: string;
+  title: string;
+  content: string;
+  basis?: string;
+  level?: string;
+}
+
+export interface FourPillarsSummaryRiskWindow {
+  age_range: string;
+  year_range: string;
+  risk_type: string;
+  trigger: string;
+  guidance: string;
+  level?: string;
+}
+
+export interface FourPillarsSummaryTimeHighlight {
+  year: string;
+  age?: string;
+  title: string;
+  content: string;
+  trigger?: string;
+}
+
+export interface FourPillarsSummaryFavorableStrategy {
+  favorable_elements?: string[];
+  unfavorable_elements?: string[];
+  supportive_environments?: string[];
+  avoid_patterns?: string[];
+  action_guidance?: string;
+}
+
 export interface FourPillarsSummary {
   title: string;
+  comprehensive_text?: string;
+  overview?: string;
   risk: string;
   usage_guidance: string;
+  key_judgements?: FourPillarsSummaryJudgement[];
+  life_risk_windows?: FourPillarsSummaryRiskWindow[];
+  time_highlights?: FourPillarsSummaryTimeHighlight[];
+  favorable_strategy?: FourPillarsSummaryFavorableStrategy;
   elements_check: Record<string, string>;
 }
 
@@ -225,7 +301,6 @@ export interface FourPillarsAspect {
   aspect_key: string;
   title: string;
   short_title: string | null;
-  score: number | null;
   is_unlocked: boolean;
   unlock_points: number;
   content: string | null;
@@ -308,6 +383,43 @@ export interface FourPillarsLuckCycleListResponse {
   luck_analysis: FourPillarsLuckAnalysis;
 }
 
+export type FourPillarsLuckStreamDeltaField =
+  | 'title'
+  | 'trend_tendency'
+  | 'core_theme'
+  | 'opportunities'
+  | 'risks'
+  | 'action_guidance'
+  | 'year_focus'
+  | string;
+
+export interface FourPillarsLuckStreamRenderData {
+  render: FourPillarsLuckRenderRecord;
+  points: PointsAccountResponse | null;
+}
+
+export interface FourPillarsLuckStreamStatusData {
+  message: string;
+}
+
+export interface FourPillarsLuckStreamDeltaData {
+  field: FourPillarsLuckStreamDeltaField;
+  delta: string;
+  text: string;
+}
+
+export interface FourPillarsLuckStreamCompleteData {
+  render: FourPillarsLuckRenderRecord;
+  luck_analysis: FourPillarsLuckAnalysis;
+  points: PointsAccountResponse | null;
+}
+
+export interface FourPillarsLuckStreamErrorData {
+  detail: string;
+  message?: string;
+  refunded?: boolean;
+}
+
 export interface FourPillarsCreatePayload {
   gender: Gender;
   birth_date: string;
@@ -335,7 +447,6 @@ export interface FourPillarsReviewRecord {
   status: ReviewStatus;
   progress_stage: ReviewProgressStage | null;
   progress_message: string | null;
-  score: number | null;
   input_profile: Record<string, unknown>;
   chart: Record<string, unknown> | null;
   chart_display: FourPillarsChartDisplay | null;
@@ -347,7 +458,6 @@ export interface FourPillarsReviewRecord {
   aspect_unlock_points: number | null;
   free_aspect_keys: string[];
   unlock_enforcement_enabled: boolean | null;
-  score_markdown: string | null;
   error_message: string | null;
   created_at: string;
   updated_at: string;
@@ -365,7 +475,6 @@ export interface FourPillarsReviewSummary {
   status: ReviewStatus;
   progress_stage: ReviewProgressStage | null;
   progress_message: string | null;
-  score: number | null;
   error_message: string | null;
   created_at: string;
   updated_at: string;
@@ -376,6 +485,42 @@ export interface FourPillarsReviewListResponse {
   total: number;
   limit: number;
   offset: number;
+}
+
+export type FourPillarsCoreStreamSection = 'four_pillars_summary' | string;
+export type FourPillarsCoreStreamDeltaField = 'title' | 'comprehensive_text' | 'overview' | 'risk' | 'usage_guidance' | string;
+
+export interface FourPillarsCoreStreamReviewData {
+  review: FourPillarsReviewRecord;
+  points: PointsAccountResponse | null;
+}
+
+export type FourPillarsCoreStreamCreatedData = FourPillarsCoreStreamReviewData;
+export type FourPillarsCoreStreamFactsReadyData = FourPillarsCoreStreamReviewData;
+export type FourPillarsCoreStreamCompleteData = FourPillarsCoreStreamReviewData;
+
+export interface FourPillarsCoreStreamStatusData {
+  section: FourPillarsCoreStreamSection;
+  message: string;
+}
+
+export interface FourPillarsCoreStreamDeltaData {
+  section: FourPillarsCoreStreamSection;
+  field: FourPillarsCoreStreamDeltaField;
+  delta: string;
+  text: string;
+}
+
+export interface FourPillarsCoreStreamSectionCompleteData {
+  section: FourPillarsCoreStreamSection;
+  payload: Record<string, unknown>;
+  model_name?: string | null;
+}
+
+export interface FourPillarsCoreStreamErrorData {
+  detail: string;
+  message?: string;
+  refunded?: boolean;
 }
 
 export interface FourPillarsAspectUnlockResponse {
@@ -756,6 +901,42 @@ export interface PhoneReviewAspectStreamCompleteData {
 }
 
 export interface PhoneReviewAspectStreamErrorData {
+  detail: string;
+  message?: string;
+  refunded?: boolean;
+}
+
+export type FourPillarsAspectStreamDeltaField = 'title' | 'risk' | 'content';
+
+export interface FourPillarsAspectStreamUnlockData {
+  unlock_id: string;
+  review_id: string;
+  user_id: string;
+  aspect_key: string;
+  points_cost: number;
+  usage_record_id: string;
+  unlocked_at: string;
+  status: string;
+  points: PointsAccountResponse | null;
+}
+
+export interface FourPillarsAspectStreamStatusData {
+  message: string;
+}
+
+export interface FourPillarsAspectStreamDeltaData {
+  field: FourPillarsAspectStreamDeltaField;
+  delta: string;
+  text: string;
+}
+
+export interface FourPillarsAspectStreamCompleteData {
+  aspect: FourPillarsAspect | null;
+  review: FourPillarsReviewRecord;
+  points: PointsAccountResponse | null;
+}
+
+export interface FourPillarsAspectStreamErrorData {
   detail: string;
   message?: string;
   refunded?: boolean;

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Iterator, Literal
 
 from features.phone_qimen.knowledge import (
     load_section_knowledge,
@@ -12,7 +12,8 @@ from features.phone_qimen.knowledge import (
     load_section_taxonomy,
     load_shared_foundation,
 )
-from product.backend.llm import DeepSeekAPIError, DeepSeekClient
+from product.backend.llm import DeepSeekAPIError, DeepSeekClient, build_messages
+from product.backend.llm.streaming_json import build_json_stream_instruction, extract_partial_json_string_field, loads_streamed_json_object
 from features.phone_qimen.scoring.dimensions import score_phone_stability_dimensions
 from features.phone_qimen.scoring.total_score.engine import LAYER_LABELS, load_rules
 from features.phone_qimen.scoring.total_score.labels import (
@@ -93,7 +94,7 @@ def build_stability_prompts(
         "verdict": locked["verdict"],
         "content": "请用一段自然中文把这个号码的长期使用意见写出来，直接说清楚适不适合主用、问题会在什么场景里出现、继续用要怎么避开。",
         "elements_check": {
-            "整体承接": "一句话判断长期接不接得住，并翻译成主用或辅助使用感。",
+            "整体承接": "一句话判断是否适合长期主用，并翻译成主用、辅助使用或谨慎使用的感受。",
             "宫门关系": "一句话判断环境和行动是否顺接，并翻译成长期推进会不会卡。",
             "四害": "一句话判断硬伤是否会反复放大，并翻译成落空、受压、收不住或临场出错。",
             "特殊组合": "一句话判断放大效应，并翻译成长期容易在哪些场景变明显。",
@@ -119,6 +120,8 @@ def build_stability_prompts(
         "9. 不要只盯着单一切口，必须让七层都对最终结论产生影响。\n"
         "10. 不要输出 raw model output、fallback、置信度或任何内部流程字段。\n"
         "11. 分数只作为数字引用；content 和 elements_check 中都不要使用任何内部评分档位或分类标签。\n\n"
+        "12. 专业词不是禁用词，但必须先点名、再翻译、再落到现实场景；例如写“空亡”时，要解释为事情容易落空、拖延或反复确认。\n"
+        "13. content 不要出现“结构承接、可用空间、可用之处、现实承接感、底层结构、后段承接、结构封顶”等内部分析词。\n\n"
         f"{knowledge_block}"
     )
 
@@ -134,7 +137,7 @@ def build_stability_prompts(
         "- verdict：四类之一，必须和 locked_fields.verdict 一致。\n"
         "- content：一段话，直接说清楚长期使用意见和原因；必须写出用户能对照的长期使用场景。\n"
         "- elements_check：结构化对象，必须包含整体承接、宫门关系、四害、特殊组合、神星门、天干/地干、风险敏感方向、最终使用结论这八项，每项用一句话判断，并把专业层翻译成现实表现。\n"
-        "- 用户主段落不要把专业词连续堆起来；如果写术语，必须紧跟生活化解释。\n"
+        "- 用户主段落不要把专业词连续堆起来；如果写术语，必须紧跟生活化解释和现实场景。\n"
         "- 当前没有用户显式关注项，不要写“用户关注健康/稳定性”，只能写“盘面风险敏感方向”。\n"
         "- 最终只输出 JSON object。\n"
     )
@@ -238,6 +241,92 @@ def render_stability_from_package(
     )
 
 
+def stream_stability_from_package(
+    package: dict[str, Any],
+    *,
+    tone_pack: TonePack = "customer",
+    client: DeepSeekClient | None = None,
+    model: str = "deepseek-v4-pro",
+    thinking_enabled: bool = False,
+    max_tokens: int = 1800,
+    user_id: str | None = None,
+    request_id: str | None = None,
+) -> Iterator[dict[str, Any]]:
+    score_result = package.get("score_result")
+    if not isinstance(score_result, dict):
+        raise DeepSeekAPIError(DEEPSEEK_STABILITY_ERROR)
+    input_payload = score_result.get("input")
+    if not isinstance(input_payload, dict):
+        raise DeepSeekAPIError(DEEPSEEK_STABILITY_ERROR)
+    phone = str(input_payload.get("phone") or "").strip()
+    gender = str(input_payload.get("gender") or "").strip()
+    if not phone or not gender:
+        raise DeepSeekAPIError(DEEPSEEK_STABILITY_ERROR)
+
+    rules = load_rules()
+    system_prompt, user_prompt, json_example, locked = build_stability_prompts(phone, gender, tone_pack=tone_pack, rules=rules)
+    messages = build_messages(
+        system_prompt=f"{system_prompt.rstrip()}\n\n{build_json_stream_instruction(json_example)}",
+        user_prompt=user_prompt,
+    )
+
+    raw_content = ""
+    emitted_fields = {"verdict": "", "content": ""}
+    model_name = model
+    try:
+        client = client or DeepSeekClient.from_env()
+        yield {"event": "status", "data": {"message": "正在生成长期使用建议"}}
+        for chunk in client.stream_chat(
+            messages,
+            model=model,
+            thinking_enabled=thinking_enabled,
+            temperature=0.2,
+            max_tokens=max_tokens,
+            response_format={"type": "json_object"},
+            llm_scene="phone_qimen.stability",
+            priority_class="foreground_core",
+            user_id=user_id,
+            request_id=request_id,
+        ):
+            if chunk.raw.get("model"):
+                model_name = str(chunk.raw.get("model") or model_name)
+            if not chunk.content_delta:
+                continue
+            raw_content += chunk.content_delta
+            for field in ("verdict", "content"):
+                current_text = extract_partial_json_string_field(raw_content, field)
+                if current_text is None:
+                    continue
+                previous_text = emitted_fields[field]
+                if current_text == previous_text:
+                    continue
+                delta = current_text[len(previous_text):] if current_text.startswith(previous_text) else current_text
+                emitted_fields[field] = current_text
+                if delta:
+                    yield {"event": "delta", "data": {"field": field, "delta": delta, "text": current_text}}
+
+        model_output = loads_streamed_json_object(raw_content)
+        valid, reason = validate_model_output(model_output)
+        if not valid:
+            raise DeepSeekAPIError(DEEPSEEK_STABILITY_ERROR) from ValueError(f"stability_invalid_output:{reason}")
+        if str(model_output["verdict"]).strip() != locked["verdict"]:
+            raise DeepSeekAPIError(DEEPSEEK_STABILITY_ERROR) from ValueError("stability_verdict_mismatch")
+
+        public_output = _public_output(model_output)
+        result = StabilityRenderResult(
+            verdict=str(public_output["verdict"]).strip(),
+            content=str(public_output["content"]).strip(),
+            elements_check=dict(public_output["elements_check"]),
+            tone_pack=tone_pack,
+            model_name=model_name,
+        )
+        yield {"event": "result", "data": {"stability": result.to_dict(), "model_name": result.model_name}}
+    except Exception as exc:
+        if isinstance(exc, DeepSeekAPIError):
+            raise
+        raise DeepSeekAPIError(DEEPSEEK_STABILITY_ERROR) from exc
+
+
 def _locked_fields(score_result: dict[str, Any]) -> dict[str, Any]:
     stability = score_result["dimensions"]["stability"]
     harms = score_result["features"]["harms"]
@@ -324,7 +413,7 @@ def _direct_checks(score_result: dict[str, Any]) -> list[dict[str, Any]]:
         {
             "name": "神星门",
             "fact": f"{board['symbols']['god']} / {board['symbols']['star']} / {board['symbols']['door']}",
-            "meaning": "神星门决定气质、执行和长期承接感。",
+            "meaning": "神星门决定气质、执行和长期使用感。",
             "weight": "high",
         },
         {

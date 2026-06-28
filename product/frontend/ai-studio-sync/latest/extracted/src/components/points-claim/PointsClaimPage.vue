@@ -1,191 +1,114 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { 
-  getPublicPointsClaimLink, claimPublicPoints 
-} from '../../lib/api';
+import { computed, ref, onMounted } from 'vue';
+import { ArrowLeft, CheckCircle2, Coins, Gift, Loader2, Sparkles } from 'lucide-vue-next';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
-import { 
-  Sparkles, CheckCircle, Gift, AlertCircle, RefreshCw, Milestone, Coins 
-} from 'lucide-vue-next';
-
-const props = defineProps<{
-  routeQuery?: Record<string, string>;
-}>();
 
 const emit = defineEmits<{
-  (e: 'navigate-to-tab', tab: string): void;
+  (e: 'back'): void;
 }>();
 
-const { state, refreshPoints } = useEaseWiseApp();
+const { state, showToast, claimDailyPoints, bootstrapApp, humanizeError } = useEaseWiseApp();
 
-const claimCode = ref('claim_999'); // Default mock code
-const claimInfo = ref<any | null>(null);
 const loading = ref(false);
-const claiming = ref(false);
+const claimedToday = ref(false);
+const availablePoints = ref(5);
 
-const errorMsg = ref<string | null>(null);
-const successAmount = ref<number | null>(null);
+const user = computed(() => state.user);
+const isRegistered = computed(() => !!state.accessToken);
 
-async function loadClaimLink() {
-  // Pull claim code from URL/state if present
-  if (props.routeQuery?.code) {
-    claimCode.value = props.routeQuery.code;
+onMounted(() => {
+  void bootstrapApp();
+  // Simply mock claimed state based on last activity or simple flag
+  const lastClaim = localStorage.getItem('last_claim_date');
+  const today = new Date().toDateString();
+  if (lastClaim === today) {
+    claimedToday.value = true;
   }
-  
+});
+
+async function handleClaim(): Promise<void> {
+  if (claimedToday.value) {
+    showToast('您今日已领取过每日福利积分，请明日再来。');
+    return;
+  }
   loading.value = true;
-  errorMsg.value = null;
-  successAmount.value = null;
-  
   try {
-    const info = await getPublicPointsClaimLink(claimCode.value, state.accessToken);
-    claimInfo.value = info;
+    const res = await claimDailyPoints();
+    claimedToday.value = true;
+    localStorage.setItem('last_claim_date', new Date().toDateString());
+    showToast(`恭喜领取成功！已为您注入 ${res.claimed} 分每日福利积分。`);
   } catch (err: any) {
-    // If accessToken not loaded yet or offline, we mock the default
-    claimInfo.value = {
-      claim_link_id: "claim_999",
-      claim_code: "claim_999",
-      title: "新客专享回归礼包",
-      points_amount: 100,
-      enabled: true,
-      claims_count: 5
-    };
+    showToast(humanizeError(err) || '额度注入遇到一些阻碍，请稍后刷新重试');
   } finally {
     loading.value = false;
   }
 }
-
-async function handleClaim() {
-  if (claiming.value) return;
-  
-  claiming.value = true;
-  errorMsg.value = null;
-  successAmount.value = null;
-
-  try {
-    const res = await claimPublicPoints(state.accessToken || '', claimCode.value);
-    successAmount.value = res.points_amount;
-    void refreshPoints();
-  } catch (err: any) {
-    errorMsg.value = err.message || "每个账户限领一次，您可能已经领过或此福利码已过期。";
-  } finally {
-    claiming.value = false;
-  }
-}
-
-onMounted(() => {
-  void loadClaimLink();
-});
 </script>
 
 <template>
-  <div class="pt-4 pb-32 max-w-md mx-auto px-margin-mobile text-left h-[calc(100vh-80px)] flex flex-col justify-center">
-    <!-- Red envelope box container -->
-    <div class="bg-gradient-to-b from-red-650 to-red-800 rounded-3xl p-6.5 text-center text-white border-4 border-amber-400/60 shadow-2xl relative overflow-hidden flex flex-col items-center">
-      
-      <!-- Metaphysics background watermarks -->
-      <div class="absolute -top-12 -right-12 w-32 h-32 rounded-full border border-white/10 select-none pointer-events-none"></div>
-      <div class="absolute -bottom-12 -left-12 w-36 h-36 rounded-full border border-white/5 select-none pointer-events-none"></div>
+  <div class="pt-4 pb-32 max-w-md mx-auto px-margin-mobile text-left select-none">
 
-      <!-- Icon -->
-      <div class="w-16 h-16 rounded-full bg-amber-400 text-red-700 flex items-center justify-center shadow-lg font-bold mb-4 shrink-0 border-2 border-amber-300">
-        <Gift :size="32" class="animate-pulse" />
+    <div class="flex items-center gap-2 mb-4">
+      <button
+        @click="emit('back')"
+        class="text-brand-ink-strong hover:text-brand-primary font-sans text-[12.5px] font-extrabold flex items-center gap-1 cursor-pointer border-none bg-transparent outline-none p-1 rounded hover:bg-zinc-100 transition-colors"
+      >
+        <ArrowLeft :size="16" />
+        <span>返回个人中心</span>
+      </button>
+    </div>
+
+    <div class="bg-white rounded-2xl p-5 border border-brand-paper shadow-sm mb-4 space-y-4">
+      <div class="flex items-center gap-3">
+        <div class="p-2.5 rounded-xl bg-brand-primary/10 text-brand-primary shrink-0">
+          <Gift :size="20" />
+        </div>
+        <div>
+          <h2 class="font-serif text-[17px] font-black text-brand-ink-strong leading-tight">每日福利积分领取</h2>
+          <p class="font-sans text-[10.5px] text-brand-secondary mt-0.5">
+            日拱一卒，天道酬勤。每日均可免费领取体验积分。
+          </p>
+        </div>
       </div>
 
-      <!-- Redpacket title -->
-      <h2 class="font-serif text-[24px] font-black text-amber-300 tracking-wide select-none">
-        易如反掌吉祥礼
-      </h2>
-      <p class="font-sans text-[11px] text-red-100 select-none mix-blend-plus-lighter tracking-wider uppercase mt-1">
-        METAPHYSICS POINTS RED PACKET
+      <p class="font-sans text-[12px] text-brand-secondary leading-relaxed">
+        秉承互通共享、泽被众生之念，凡在 EaseWise「易如反掌」注册的用户，每日登录后均可在此免费申领福利积分，用以进行数字奇门推演或八字大运的辅助解锁。
       </p>
+    </div>
 
-      <!-- Envelope slit division line -->
-      <div class="w-full my-6 border-b border-dashed border-red-500/70 relative">
-        <div class="absolute left-1/2 -translate-x-1/2 -top-2.5 bg-amber-400 text-red-800 font-serif text-[10px] font-extrabold px-3.5 py-0.5 rounded-full shadow-sm">
-          福运广置
-        </div>
+    <!-- Claim Card -->
+    <div class="bg-white rounded-2xl p-6 border border-brand-paper shadow-sm text-center space-y-4 mb-4 relative overflow-hidden">
+      <div class="absolute -top-12 -right-12 text-brand-primary/[0.02] font-serif font-black text-[130px] pointer-events-none">
+        福
       </div>
 
-      <!-- Active Content view -->
-      <div class="w-full flex-1 flex flex-col justify-center min-h-[140px]">
-        <!-- 1. LOADING -->
-        <div v-if="loading" class="space-y-2 py-4 flex flex-col items-center">
-          <RefreshCw class="animate-spin text-amber-400" :size="24" />
-          <p class="font-serif text-[12.5px] text-red-200">正在接引喜气福礼...</p>
-        </div>
+      <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-brand-primary/10 border border-brand-primary/20 text-brand-primary">
+        <Coins :size="26" />
+      </div>
 
-        <!-- 2. SUCCESS STATE -->
-        <div v-else-if="successAmount" class="space-y-4 py-3 text-center animate-fadeIn">
-          <div class="inline-flex items-center justify-center p-2 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-1">
-            <CheckCircle :size="20" />
-          </div>
-          <h3 class="font-serif text-[19px] font-bold text-amber-300">恭喜尊驾，福喜已致！</h3>
-          
-          <div class="flex items-baseline justify-center gap-1">
-            <span class="font-serif text-[38px] font-black text-amber-300">{{ successAmount }}</span>
-            <span class="font-serif text-[14px] text-amber-200">学分</span>
-          </div>
-          
-          <p class="font-sans text-[11.5px] text-red-100 leading-relaxed px-5">
-            积分已成功录入您的同修账户。您现在可以立刻消耗积分开始「手机奇门推论」或「八字运程排盘」！
-          </p>
+      <div class="space-y-1">
+        <span class="text-[10px] text-brand-secondary font-extrabold uppercase tracking-widest block">可领福利点数</span>
+        <h3 class="font-serif text-[28px] font-black text-brand-primary-strong leading-none">+{{ availablePoints }} <span class="text-[12px] text-brand-secondary">积分</span></h3>
+      </div>
 
-          <button
-            @click="emit('navigate-to-tab', 'home')"
-            class="w-full bg-amber-400 hover:bg-amber-350 text-red-900 border-none font-sans text-[13px] font-bold py-3 rounded-2xl cursor-pointer shadow-md active:scale-95 transition-transform"
-          >
-            回主页开始测算
-          </button>
-        </div>
+      <div class="pt-2">
+        <button
+          v-if="!claimedToday"
+          @click="handleClaim"
+          :disabled="loading"
+          class="w-full bg-brand-primary hover:bg-brand-primary/95 text-white border-none py-3.5 rounded-2xl cursor-pointer font-sans text-[13px] font-extrabold shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 outline-none"
+        >
+          <Loader2 v-if="loading" class="animate-spin text-white" :size="15" />
+          <Sparkles v-else :size="15" />
+          <span>{{ loading ? '额度注入中，请稍后...' : '立即申领每日功课福利' }}</span>
+        </button>
 
-        <!-- 3. ERROR STATE -->
-        <div v-else-if="errorMsg" class="space-y-4 py-3 text-center animate-fadeIn">
-          <div class="inline-flex items-center justify-center p-2 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20 mb-1">
-            <AlertCircle :size="20" />
-          </div>
-          <h3 class="font-serif text-[16px] font-bold text-amber-200">喜气福礼接引受阻</h3>
-          <p class="font-sans text-[11.5px] text-red-100 leading-relaxed px-5">
-            {{ errorMsg }}
-          </p>
-          <div class="flex gap-2">
-            <button
-              @click="loadClaimLink()"
-              class="flex-1 bg-red-800/80 hover:bg-red-800 text-amber-200 border border-amber-400/25 font-sans text-[12.5px] font-bold py-2.5 rounded-xl cursor-pointer"
-            >
-              重试接引
-            </button>
-            <button
-              @click="emit('navigate-to-tab', 'home')"
-              class="flex-1 bg-amber-400 hover:bg-amber-350 text-red-950 border-none font-sans text-[12.5px] font-bold py-2.5 rounded-xl cursor-pointer"
-            >
-              回主页
-            </button>
-          </div>
-        </div>
-
-        <!-- 4. ACTIVE INITIAL STATE -->
-        <div v-else-if="claimInfo" class="space-y-4 py-2 text-center animate-fadeIn">
-          <h3 class="font-serif text-[18px] font-bold text-amber-300">
-            {{ claimInfo.title }}
-          </h3>
-          
-          <div class="flex items-baseline justify-center gap-1 py-1">
-            <span class="font-serif text-[42px] font-black text-amber-300">{{ claimInfo.points_amount }}</span>
-            <span class="font-serif text-[13.5px] text-amber-200 font-extrabold">学分</span>
-          </div>
-
-          <p class="font-sans text-[11.5px] text-red-100/90 max-w-[85%] mx-auto leading-relaxed select-none">
-            易学回归特惠，添加官方微信客服，即可一键领取此项专属修行大礼，绝无门槛消耗！
-          </p>
-
-          <button
-            @click="handleClaim()"
-            :disabled="claiming"
-            class="w-full bg-amber-400 hover:bg-amber-350 text-red-900 font-sans text-[13px] font-bold py-3 rounded-2xl cursor-pointer shadow-lg active:scale-95 transition-transform border-none select-none flex items-center justify-center gap-1.5"
-          >
-            <RefreshCw v-if="claiming" class="animate-spin text-red-900" :size="14" />
-            <span>{{ claiming ? '正在叩问喜礼中...' : '拆开红包 · 领取积分' }}</span>
-          </button>
+        <div
+          v-else
+          class="w-full bg-slate-100 text-slate-500 py-3.5 rounded-2xl font-sans text-[13px] font-extrabold flex items-center justify-center gap-2"
+        >
+          <CheckCircle2 :size="15" />
+          <span>今日功课福利已领，请明天再来</span>
         </div>
       </div>
     </div>
@@ -193,20 +116,13 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.from-red-650 {
-  --tw-gradient-from: #b91c1c;
-  --tw-gradient-to: rgba(185, 28, 28, 0);
-  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
-}
-.to-red-800 {
-  --tw-gradient-to: #991b1b;
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
 }
 
-.animate-fadeIn {
-  animation: fadeIn 0.25s ease-out;
-}
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.97) translateY(4px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

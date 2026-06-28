@@ -14,7 +14,7 @@
   --color-brand-ink-strong: #0F172A;
   --color-brand-accent: #FDE68A;
   --color-brand-gold-fixed: #F59E0B;
-  
+
   --spacing-margin-mobile: 16px;
   --spacing-section-padding: 24px;
 }
@@ -64,12 +64,46 @@
 }
 
 /* Hide scrollbar for Chrome, Safari and Opera */
-.no-scrollbar::-webkit-scrollbar {
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
   display: none;
 }
 
 /* Hide scrollbar for IE, Edge and Firefox */
-.no-scrollbar {
+.no-scrollbar,
+.scrollbar-none {
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
+}
+
+@keyframes bazi-gentle-float {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    filter: drop-shadow(0 2px 4px rgba(79, 70, 229, 0.1));
+  }
+  50% {
+    transform: translateY(-5px) scale(1.06);
+    filter: drop-shadow(0 6px 10px rgba(79, 70, 229, 0.2));
+  }
+}
+
+.bazi-float {
+  animation: bazi-gentle-float 3.2s ease-in-out infinite;
+}
+
+@keyframes meihua-gentle-sway {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+    filter: drop-shadow(0 2px 4px rgba(79, 70, 229, 0.15));
+  }
+  50% {
+    transform: rotate(15deg) scale(1.08);
+    filter: drop-shadow(0 6px 12px rgba(79, 70, 229, 0.35));
+  }
+}
+
+.meihua-sway {
+  animation: meihua-gentle-sway 4s ease-in-out infinite;
 }

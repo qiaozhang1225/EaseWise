@@ -4,10 +4,27 @@ import type {
   AuthLoginResponse,
   CurrentUserResponse,
   DashboardResponse,
+  FourPillarsCoreStreamCompleteData,
+  FourPillarsCoreStreamCreatedData,
+  FourPillarsCoreStreamDeltaData,
+  FourPillarsCoreStreamErrorData,
+  FourPillarsCoreStreamFactsReadyData,
+  FourPillarsCoreStreamSectionCompleteData,
+  FourPillarsCoreStreamStatusData,
+  FourPillarsAspectStreamCompleteData,
+  FourPillarsAspectStreamDeltaData,
+  FourPillarsAspectStreamErrorData,
+  FourPillarsAspectStreamStatusData,
+  FourPillarsAspectStreamUnlockData,
   FourPillarsAspectUnlockResponse,
   FourPillarsCreatePayload,
   FourPillarsLuckCycleListResponse,
   FourPillarsLuckRenderRecord,
+  FourPillarsLuckStreamCompleteData,
+  FourPillarsLuckStreamDeltaData,
+  FourPillarsLuckStreamErrorData,
+  FourPillarsLuckStreamRenderData,
+  FourPillarsLuckStreamStatusData,
   FourPillarsReviewListResponse,
   FourPillarsReviewRecord,
   Gender,
@@ -40,6 +57,13 @@ import type {
   PhoneStatusResponse,
   PasswordChangeRequest,
   PasswordChangeResponse,
+  PhoneReviewCoreStreamCompleteData,
+  PhoneReviewCoreStreamCreatedData,
+  PhoneReviewCoreStreamDeltaData,
+  PhoneReviewCoreStreamErrorData,
+  PhoneReviewCoreStreamFactsReadyData,
+  PhoneReviewCoreStreamSectionCompleteData,
+  PhoneReviewCoreStreamStatusData,
   PhoneReviewAspectStreamCompleteData,
   PhoneReviewAspectStreamDeltaData,
   PhoneReviewAspectStreamErrorData,
@@ -106,6 +130,46 @@ export type PhoneReviewAspectStreamHandlers = {
   onError?: (data: PhoneReviewAspectStreamErrorData) => void;
 };
 
+export type PhoneReviewCoreStreamHandlers = {
+  signal?: AbortSignal;
+  onCreated?: (data: PhoneReviewCoreStreamCreatedData) => void;
+  onFactsReady?: (data: PhoneReviewCoreStreamFactsReadyData) => void;
+  onCoreStatus?: (data: PhoneReviewCoreStreamStatusData) => void;
+  onCoreDelta?: (data: PhoneReviewCoreStreamDeltaData) => void;
+  onSectionComplete?: (data: PhoneReviewCoreStreamSectionCompleteData) => void;
+  onComplete?: (data: PhoneReviewCoreStreamCompleteData) => void;
+  onError?: (data: PhoneReviewCoreStreamErrorData) => void;
+};
+
+export type FourPillarsAspectStreamHandlers = {
+  signal?: AbortSignal;
+  onUnlock?: (data: FourPillarsAspectStreamUnlockData) => void;
+  onStatus?: (data: FourPillarsAspectStreamStatusData) => void;
+  onDelta?: (data: FourPillarsAspectStreamDeltaData) => void;
+  onComplete?: (data: FourPillarsAspectStreamCompleteData) => void;
+  onError?: (data: FourPillarsAspectStreamErrorData) => void;
+};
+
+export type FourPillarsCoreStreamHandlers = {
+  signal?: AbortSignal;
+  onCreated?: (data: FourPillarsCoreStreamCreatedData) => void;
+  onFactsReady?: (data: FourPillarsCoreStreamFactsReadyData) => void;
+  onCoreStatus?: (data: FourPillarsCoreStreamStatusData) => void;
+  onCoreDelta?: (data: FourPillarsCoreStreamDeltaData) => void;
+  onSectionComplete?: (data: FourPillarsCoreStreamSectionCompleteData) => void;
+  onComplete?: (data: FourPillarsCoreStreamCompleteData) => void;
+  onError?: (data: FourPillarsCoreStreamErrorData) => void;
+};
+
+export type FourPillarsLuckStreamHandlers = {
+  signal?: AbortSignal;
+  onRender?: (data: FourPillarsLuckStreamRenderData) => void;
+  onStatus?: (data: FourPillarsLuckStreamStatusData) => void;
+  onDelta?: (data: FourPillarsLuckStreamDeltaData) => void;
+  onComplete?: (data: FourPillarsLuckStreamCompleteData) => void;
+  onError?: (data: FourPillarsLuckStreamErrorData) => void;
+};
+
 async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set('Accept', 'application/json');
@@ -138,6 +202,88 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
   }
 
   return payload as T;
+}
+
+type SseRequestOptions = {
+  method?: string;
+  body?: unknown;
+  accessToken?: string | null;
+  signal?: AbortSignal;
+  onEvent: (eventName: string, payload: unknown) => void;
+};
+
+async function streamSse(path: string, options: SseRequestOptions): Promise<void> {
+  const headers = new Headers();
+  headers.set('Accept', 'text/event-stream');
+  headers.set('X-Client-Platform', 'h5');
+  headers.set('X-Client-Channel', 'h5');
+  headers.set('X-Client-Version', 'easewise-local-frontend');
+  if (options.body !== undefined) {
+    headers.set('Content-Type', 'application/json');
+  }
+  if (options.accessToken) {
+    headers.set('Authorization', `Bearer ${options.accessToken}`);
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options.method || 'GET',
+    headers,
+    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    signal: options.signal,
+  });
+
+  if (!response.ok) {
+    const rawText = await response.text();
+    const payload = rawText ? tryParseJson(rawText) : null;
+    throw new ApiError(response.status, resolveApiErrorDetail(payload, response.statusText), payload);
+  }
+  if (!response.body) {
+    throw new ApiError(500, 'stream_body_missing', null);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+
+  const processBlock = (block: string) => {
+    const lines = block.split(/\r?\n/);
+    let eventName = 'message';
+    const dataLines: string[] = [];
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim();
+        continue;
+      }
+      if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trimStart());
+      }
+    }
+    if (!dataLines.length) {
+      return;
+    }
+    options.onEvent(eventName, tryParseJson(dataLines.join('\n')));
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    let separatorIndex = buffer.search(/\r?\n\r?\n/);
+    while (separatorIndex >= 0) {
+      const block = buffer.slice(0, separatorIndex);
+      const separatorLength = buffer[separatorIndex] === '\r' ? 4 : 2;
+      buffer = buffer.slice(separatorIndex + separatorLength);
+      processBlock(block);
+      separatorIndex = buffer.search(/\r?\n\r?\n/);
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    processBlock(buffer.trim());
+  }
 }
 
 function tryParseJson(rawText: string): unknown {
@@ -342,6 +488,61 @@ export function createPhoneReview(accessToken: string, payload: { phone: string;
   });
 }
 
+export async function streamCreatePhoneReview(
+  accessToken: string,
+  payload: { phone: string; gender: Gender; include_markdown?: boolean },
+  handlers: PhoneReviewCoreStreamHandlers = {},
+): Promise<PhoneReviewCoreStreamCompleteData> {
+  let completePayload: PhoneReviewCoreStreamCompleteData | null = null;
+  await streamSse('/api/v1/phone-qimen/reviews/stream', {
+    method: 'POST',
+    accessToken,
+    body: {
+      phone: payload.phone,
+      gender: payload.gender,
+      include_markdown: payload.include_markdown ?? true,
+    },
+    signal: handlers.signal,
+    onEvent: (eventName, eventPayload) => {
+      if (eventName === 'created') {
+        handlers.onCreated?.(eventPayload as PhoneReviewCoreStreamCreatedData);
+        return;
+      }
+      if (eventName === 'facts_ready') {
+        handlers.onFactsReady?.(eventPayload as PhoneReviewCoreStreamFactsReadyData);
+        return;
+      }
+      if (eventName === 'core_status') {
+        handlers.onCoreStatus?.(eventPayload as PhoneReviewCoreStreamStatusData);
+        return;
+      }
+      if (eventName === 'core_delta') {
+        handlers.onCoreDelta?.(eventPayload as PhoneReviewCoreStreamDeltaData);
+        return;
+      }
+      if (eventName === 'section_complete') {
+        handlers.onSectionComplete?.(eventPayload as PhoneReviewCoreStreamSectionCompleteData);
+        return;
+      }
+      if (eventName === 'complete') {
+        completePayload = eventPayload as PhoneReviewCoreStreamCompleteData;
+        handlers.onComplete?.(completePayload);
+        return;
+      }
+      if (eventName === 'error') {
+        const errorPayload = eventPayload as PhoneReviewCoreStreamErrorData;
+        handlers.onError?.(errorPayload);
+        const status = errorPayload.detail === 'insufficient_points' ? 402 : 409;
+        throw new ApiError(status, errorPayload.detail || 'review_generation_failed', errorPayload);
+      }
+    },
+  });
+  if (!completePayload) {
+    throw new ApiError(409, 'review_generation_incomplete', null);
+  }
+  return completePayload;
+}
+
 export function listPhoneReviews(accessToken: string, limit = 20): Promise<ReviewListResponse> {
   return requestJson<ReviewListResponse>(`/api/v1/phone-qimen/reviews?limit=${limit}`, {
     accessToken,
@@ -484,6 +685,61 @@ export function createFourPillarsReview(accessToken: string, payload: FourPillar
   });
 }
 
+export async function streamCreateFourPillarsReview(
+  accessToken: string,
+  payload: FourPillarsCreatePayload,
+  handlers: FourPillarsCoreStreamHandlers = {},
+): Promise<FourPillarsCoreStreamCompleteData> {
+  let completePayload: FourPillarsCoreStreamCompleteData | null = null;
+  await streamSse('/api/v1/four-pillars/reviews/stream', {
+    method: 'POST',
+    accessToken,
+    body: {
+      timezone: 'Asia/Shanghai',
+      include_markdown: true,
+      ...payload,
+    },
+    signal: handlers.signal,
+    onEvent: (eventName, eventPayload) => {
+      if (eventName === 'created') {
+        handlers.onCreated?.(eventPayload as FourPillarsCoreStreamCreatedData);
+        return;
+      }
+      if (eventName === 'facts_ready') {
+        handlers.onFactsReady?.(eventPayload as FourPillarsCoreStreamFactsReadyData);
+        return;
+      }
+      if (eventName === 'core_status') {
+        handlers.onCoreStatus?.(eventPayload as FourPillarsCoreStreamStatusData);
+        return;
+      }
+      if (eventName === 'core_delta') {
+        handlers.onCoreDelta?.(eventPayload as FourPillarsCoreStreamDeltaData);
+        return;
+      }
+      if (eventName === 'section_complete') {
+        handlers.onSectionComplete?.(eventPayload as FourPillarsCoreStreamSectionCompleteData);
+        return;
+      }
+      if (eventName === 'complete') {
+        completePayload = eventPayload as FourPillarsCoreStreamCompleteData;
+        handlers.onComplete?.(completePayload);
+        return;
+      }
+      if (eventName === 'error') {
+        const errorPayload = eventPayload as FourPillarsCoreStreamErrorData;
+        handlers.onError?.(errorPayload);
+        const status = errorPayload.detail === 'insufficient_points' ? 402 : 409;
+        throw new ApiError(status, errorPayload.detail || 'review_generation_failed', errorPayload);
+      }
+    },
+  });
+  if (!completePayload) {
+    throw new ApiError(409, 'review_generation_incomplete', null);
+  }
+  return completePayload;
+}
+
 export function resolveFourPillarsInput(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   return requestJson<Record<string, unknown>>('/api/v1/four-pillars/input/resolve', {
     method: 'POST',
@@ -517,6 +773,114 @@ export function unlockFourPillarsReviewAspect(accessToken: string, reviewId: str
   });
 }
 
+export async function streamFourPillarsReviewAspectUnlock(
+  accessToken: string,
+  reviewId: string,
+  aspectKey: string,
+  handlers: FourPillarsAspectStreamHandlers = {},
+): Promise<FourPillarsAspectStreamCompleteData> {
+  const headers = new Headers();
+  headers.set('Accept', 'text/event-stream');
+  headers.set('X-Client-Platform', 'h5');
+  headers.set('X-Client-Channel', 'h5');
+  headers.set('X-Client-Version', 'easewise-local-frontend');
+  headers.set('Authorization', `Bearer ${accessToken}`);
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/four-pillars/reviews/${encodeURIComponent(reviewId)}/aspect-unlocks/${encodeURIComponent(aspectKey)}/stream`,
+    {
+      method: 'POST',
+      headers,
+      signal: handlers.signal,
+    },
+  );
+
+  if (!response.ok) {
+    const rawText = await response.text();
+    const payload = rawText ? tryParseJson(rawText) : null;
+    throw new ApiError(response.status, resolveApiErrorDetail(payload, response.statusText), payload);
+  }
+  if (!response.body) {
+    throw new ApiError(500, 'stream_body_missing', null);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let completePayload: FourPillarsAspectStreamCompleteData | null = null;
+
+  const processBlock = (block: string) => {
+    const lines = block.split(/\r?\n/);
+    let eventName = 'message';
+    const dataLines: string[] = [];
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim();
+        continue;
+      }
+      if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trimStart());
+      }
+    }
+    if (!dataLines.length) {
+      return;
+    }
+    const payload = tryParseJson(dataLines.join('\n'));
+    if (!payload || typeof payload !== 'object') {
+      return;
+    }
+
+    if (eventName === 'unlock') {
+      handlers.onUnlock?.(payload as FourPillarsAspectStreamUnlockData);
+      return;
+    }
+    if (eventName === 'status') {
+      handlers.onStatus?.(payload as FourPillarsAspectStreamStatusData);
+      return;
+    }
+    if (eventName === 'delta') {
+      handlers.onDelta?.(payload as FourPillarsAspectStreamDeltaData);
+      return;
+    }
+    if (eventName === 'complete') {
+      completePayload = payload as FourPillarsAspectStreamCompleteData;
+      handlers.onComplete?.(completePayload);
+      return;
+    }
+    if (eventName === 'error') {
+      const errorPayload = payload as FourPillarsAspectStreamErrorData;
+      handlers.onError?.(errorPayload);
+      const status = errorPayload.detail === 'insufficient_points' ? 402 : 409;
+      throw new ApiError(status, errorPayload.detail || 'aspect_generation_failed', errorPayload);
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    let separatorIndex = buffer.search(/\r?\n\r?\n/);
+    while (separatorIndex >= 0) {
+      const block = buffer.slice(0, separatorIndex);
+      const separatorLength = buffer[separatorIndex] === '\r' ? 4 : 2;
+      buffer = buffer.slice(separatorIndex + separatorLength);
+      processBlock(block);
+      separatorIndex = buffer.search(/\r?\n\r?\n/);
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    processBlock(buffer.trim());
+  }
+  if (!completePayload) {
+    throw new ApiError(409, 'aspect_generation_incomplete', null);
+  }
+  return completePayload;
+}
+
 export function getFourPillarsLuckCycles(accessToken: string, reviewId: string): Promise<FourPillarsLuckCycleListResponse> {
   return requestJson<FourPillarsLuckCycleListResponse>(`/api/v1/four-pillars/reviews/${encodeURIComponent(reviewId)}/luck-cycles`, {
     accessToken,
@@ -547,6 +911,137 @@ export function getFourPillarsLuckYearSummary(accessToken: string, reviewId: str
   return requestJson<FourPillarsLuckRenderRecord>(`/api/v1/four-pillars/reviews/${encodeURIComponent(reviewId)}/luck-cycles/${encodeURIComponent(cycleKey)}/years/${encodeURIComponent(String(year))}`, {
     accessToken,
   });
+}
+
+async function streamFourPillarsLuckRender(
+  accessToken: string,
+  path: string,
+  handlers: FourPillarsLuckStreamHandlers = {},
+): Promise<FourPillarsLuckStreamCompleteData> {
+  const headers = new Headers();
+  headers.set('Accept', 'text/event-stream');
+  headers.set('X-Client-Platform', 'h5');
+  headers.set('X-Client-Channel', 'h5');
+  headers.set('X-Client-Version', 'easewise-local-frontend');
+  headers.set('Authorization', `Bearer ${accessToken}`);
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers,
+    signal: handlers.signal,
+  });
+
+  if (!response.ok) {
+    const rawText = await response.text();
+    const payload = rawText ? tryParseJson(rawText) : null;
+    throw new ApiError(response.status, resolveApiErrorDetail(payload, response.statusText), payload);
+  }
+  if (!response.body) {
+    throw new ApiError(500, 'stream_body_missing', null);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let completePayload: FourPillarsLuckStreamCompleteData | null = null;
+
+  const processBlock = (block: string) => {
+    const lines = block.split(/\r?\n/);
+    let eventName = 'message';
+    const dataLines: string[] = [];
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim();
+        continue;
+      }
+      if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trimStart());
+      }
+    }
+    if (!dataLines.length) {
+      return;
+    }
+    const payload = tryParseJson(dataLines.join('\n'));
+    if (!payload || typeof payload !== 'object') {
+      return;
+    }
+
+    if (eventName === 'render') {
+      handlers.onRender?.(payload as FourPillarsLuckStreamRenderData);
+      return;
+    }
+    if (eventName === 'status') {
+      handlers.onStatus?.(payload as FourPillarsLuckStreamStatusData);
+      return;
+    }
+    if (eventName === 'delta') {
+      handlers.onDelta?.(payload as FourPillarsLuckStreamDeltaData);
+      return;
+    }
+    if (eventName === 'complete') {
+      completePayload = payload as FourPillarsLuckStreamCompleteData;
+      handlers.onComplete?.(completePayload);
+      return;
+    }
+    if (eventName === 'error') {
+      const errorPayload = payload as FourPillarsLuckStreamErrorData;
+      handlers.onError?.(errorPayload);
+      const status = errorPayload.detail === 'insufficient_points' ? 402 : 409;
+      throw new ApiError(status, errorPayload.detail || 'luck_generation_failed', errorPayload);
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    let separatorIndex = buffer.search(/\r?\n\r?\n/);
+    while (separatorIndex >= 0) {
+      const block = buffer.slice(0, separatorIndex);
+      const separatorLength = buffer[separatorIndex] === '\r' ? 4 : 2;
+      buffer = buffer.slice(separatorIndex + separatorLength);
+      processBlock(block);
+      separatorIndex = buffer.search(/\r?\n\r?\n/);
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    processBlock(buffer.trim());
+  }
+  if (!completePayload) {
+    throw new ApiError(409, 'luck_generation_incomplete', null);
+  }
+  return completePayload;
+}
+
+export function streamFourPillarsLuckCycleSummary(
+  accessToken: string,
+  reviewId: string,
+  cycleKey: string,
+  handlers: FourPillarsLuckStreamHandlers = {},
+): Promise<FourPillarsLuckStreamCompleteData> {
+  return streamFourPillarsLuckRender(
+    accessToken,
+    `/api/v1/four-pillars/reviews/${encodeURIComponent(reviewId)}/luck-cycles/${encodeURIComponent(cycleKey)}/summary/stream`,
+    handlers,
+  );
+}
+
+export function streamFourPillarsLuckYearSummary(
+  accessToken: string,
+  reviewId: string,
+  cycleKey: string,
+  year: number,
+  handlers: FourPillarsLuckStreamHandlers = {},
+): Promise<FourPillarsLuckStreamCompleteData> {
+  return streamFourPillarsLuckRender(
+    accessToken,
+    `/api/v1/four-pillars/reviews/${encodeURIComponent(reviewId)}/luck-cycles/${encodeURIComponent(cycleKey)}/years/${encodeURIComponent(String(year))}/stream`,
+    handlers,
+  );
 }
 
 export function createVoiceNarration(accessToken: string, payload: VoiceNarrationRequest): Promise<VoiceNarrationResponse> {

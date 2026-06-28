@@ -3,6 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import { MOCK_LOCATIONS } from "./src/components/four-pillars/mockLocations";
 
 dotenv.config();
 
@@ -70,7 +71,7 @@ function mockYearRenderResult(year: number, cycleKey: string): any {
 
 function generateMockLuckCycles(userId: string, birthYear: number = 1995): any[] {
   const currentYear = new Date().getFullYear();
-  
+
   // Cycle 1: 2024 - 2033
   const cycle1Years: any[] = [];
   for (let y = 2024; y <= 2033; y++) {
@@ -402,7 +403,7 @@ function generateBaziAspects(): any[] {
   ];
 }
 
-// ------ SEEDING PROCESS WITH 4 SPECIFIC ACCOUNTS ------
+// ------ SEEDING PROCESS WITH 5 SPECIFIC ACCOUNTS ------
 
 // User 1: 13800138000 (High Points, Full Regression Account)
 usersMock["13800138000"] = {
@@ -410,7 +411,7 @@ usersMock["13800138000"] = {
   uid: "EW-DEMO-001",
   status: 'active',
   identity_level: 'promoter',
-  nickname: "同修小易",
+  nickname: "用户小易",
   avatar_url: null,
   profile_completed: true,
   created_at: seedNow,
@@ -418,12 +419,16 @@ usersMock["13800138000"] = {
   last_active_at: seedNow,
   password: "Easewise123!"
 };
-pointsMock["u_13800138000"] = { balance: 20000, frozen_balance: 0, created_at: seedNow, updated_at: seedNow };
+pointsMock["u_13800138000"] = { balance: 19740, frozen_balance: 0, created_at: seedNow, updated_at: seedNow };
 pointsLedgerMock["u_13800138000"] = [
-  { ledger_id: "led_init_138_1", change_type: "add", delta: 10000, balance_after: 10000, biz_type: "register_bonus", biz_id: "signup", idempotency_key: null, remark: "欢迎同修小易加入灵台本命注册礼包", created_at: seedNow },
-  { ledger_id: "led_init_138_2", change_type: "add", delta: 10150, balance_after: 20150, biz_type: "recharge", biz_id: "ord_init_1", idempotency_key: null, remark: "充值5000积分同修福慧包", created_at: new Date(Date.now() - 600000).toISOString() },
+  { ledger_id: "led_init_138_1", change_type: "add", delta: 10000, balance_after: 10000, biz_type: "register_bonus", biz_id: "signup", idempotency_key: null, remark: "欢迎用户小易注册，赠送新人注册积分礼包", created_at: seedNow },
+  { ledger_id: "led_init_138_2", change_type: "add", delta: 10150, balance_after: 20150, biz_type: "recharge", biz_id: "ord_init_1", idempotency_key: null, remark: "充值5000积分送体验大礼包", created_at: new Date(Date.now() - 600000).toISOString() },
   { ledger_id: "led_init_138_3", change_type: "deduct", delta: -100, balance_after: 20050, biz_type: "phone_review", biz_id: "seed_ph_review", idempotency_key: null, remark: "快捷号码能量评测：138****8000", created_at: new Date(Date.now() - 3600000).toISOString() },
-  { ledger_id: "led_init_138_4", change_type: "deduct", delta: -50, balance_after: 20000, biz_type: "aspect_unlock", biz_id: "seed_ph_review", idempotency_key: null, remark: "解锁手机评测细项「财富积累剖析」", created_at: new Date(Date.now() - 3500000).toISOString() }
+  { ledger_id: "led_init_138_4", change_type: "deduct", delta: -50, balance_after: 20000, biz_type: "aspect_unlock", biz_id: "seed_ph_review", idempotency_key: null, remark: "解锁手机评测细项「财富积累剖析」", created_at: new Date(Date.now() - 3500000).toISOString() },
+  { ledger_id: "led_init_138_5", change_type: "deduct", delta: -100, balance_after: 19900, biz_type: "four_pillars_review", biz_id: "seed_bz_review", idempotency_key: null, remark: "四柱八字命盘精评排盘扣费", created_at: new Date(Date.now() - 3400000).toISOString() },
+  { ledger_id: "led_init_138_6", change_type: "deduct", delta: -50, balance_after: 19850, biz_type: "bazi_aspect_unlock", biz_id: "seed_bz_review", idempotency_key: null, remark: "解锁八字专项分析「事业大势」", created_at: new Date(Date.now() - 3300000).toISOString() },
+  { ledger_id: "led_init_138_7", change_type: "deduct", delta: -80, balance_after: 19770, biz_type: "luck_cycle_render", biz_id: "seed_bz_review", idempotency_key: null, remark: "生成己亥大运十年运势综述", created_at: new Date(Date.now() - 3200000).toISOString() },
+  { ledger_id: "led_init_138_8", change_type: "deduct", delta: -30, balance_after: 19740, biz_type: "luck_year_render", biz_id: "seed_bz_review", idempotency_key: null, remark: "生成2026流年运势精评", created_at: new Date(Date.now() - 3100000).toISOString() }
 ];
 
 // User 2: 13900139000 (High Points, Empty History Account)
@@ -432,7 +437,7 @@ usersMock["13900139000"] = {
   uid: "EW-DEMO-002",
   status: 'active',
   identity_level: 'standard',
-  nickname: "同修无漏",
+  nickname: "用户无漏",
   avatar_url: null,
   profile_completed: false,
   created_at: seedNow,
@@ -442,7 +447,7 @@ usersMock["13900139000"] = {
 };
 pointsMock["u_13900139000"] = { balance: 3000, frozen_balance: 0, created_at: seedNow, updated_at: seedNow };
 pointsLedgerMock["u_13900139000"] = [
-  { ledger_id: "led_init_139_1", change_type: "add", delta: 3000, balance_after: 3000, biz_type: "register_bonus", biz_id: "signup", idempotency_key: null, remark: "快捷高阶福运礼包发配", created_at: seedNow }
+  { ledger_id: "led_init_139_1", change_type: "add", delta: 3000, balance_after: 3000, biz_type: "register_bonus", biz_id: "signup", idempotency_key: null, remark: "快捷高阶尊享积分礼包", created_at: seedNow }
 ];
 
 // User 3: 13600136000 (120 points, can do base evaluation but details trigger insufficient)
@@ -451,7 +456,7 @@ usersMock["13600136000"] = {
   uid: "EW-DEMO-003",
   status: 'active',
   identity_level: 'standard',
-  nickname: "同修局促",
+  nickname: "用户局促",
   avatar_url: null,
   profile_completed: true,
   created_at: seedNow,
@@ -461,7 +466,7 @@ usersMock["13600136000"] = {
 };
 pointsMock["u_13600136000"] = { balance: 120, frozen_balance: 0, created_at: seedNow, updated_at: seedNow };
 pointsLedgerMock["u_13600136000"] = [
-  { ledger_id: "led_init_136_1", change_type: "add", delta: 120, balance_after: 120, biz_type: "register_bonus", biz_id: "signup", idempotency_key: null, remark: "修行体验大礼包赠分", created_at: seedNow }
+  { ledger_id: "led_init_136_1", change_type: "add", delta: 120, balance_after: 120, biz_type: "register_bonus", biz_id: "signup", idempotency_key: null, remark: "新人体验礼金积分赠送", created_at: seedNow }
 ];
 
 // User 4: 13500135000 (30 points, immediate insufficient-points trigger)
@@ -470,7 +475,7 @@ usersMock["13500135000"] = {
   uid: "EW-DEMO-004",
   status: 'active',
   identity_level: 'standard',
-  nickname: "同修微尘",
+  nickname: "用户微尘",
   avatar_url: null,
   profile_completed: true,
   created_at: seedNow,
@@ -480,7 +485,7 @@ usersMock["13500135000"] = {
 };
 pointsMock["u_13500135000"] = { balance: 30, frozen_balance: 0, created_at: seedNow, updated_at: seedNow };
 pointsLedgerMock["u_13500135000"] = [
-  { ledger_id: "led_init_135_1", change_type: "add", delta: 30, balance_after: 30, biz_type: "register_bonus", biz_id: "signup", idempotency_key: null, remark: "初学入门基本功德包", created_at: seedNow }
+  { ledger_id: "led_init_135_1", change_type: "add", delta: 30, balance_after: 30, biz_type: "register_bonus", biz_id: "signup", idempotency_key: null, remark: "入门基本体验积分", created_at: seedNow }
 ];
 
 // User 5: 13700137000 (Empty history fallback)
@@ -489,7 +494,7 @@ usersMock["13700137000"] = {
   uid: "EW-DEMO-005",
   status: 'active',
   identity_level: 'standard',
-  nickname: "同修初悟",
+  nickname: "用户初悟",
   avatar_url: null,
   profile_completed: true,
   created_at: seedNow,
@@ -497,9 +502,12 @@ usersMock["13700137000"] = {
   last_active_at: seedNow,
   password: "Easewise123!"
 };
-pointsMock["u_13700137000"] = { balance: 20000, frozen_balance: 0, created_at: seedNow, updated_at: seedNow };
+pointsMock["u_13700137000"] = { balance: 19750, frozen_balance: 0, created_at: seedNow, updated_at: seedNow };
 pointsLedgerMock["u_13700137000"] = [
-  { ledger_id: "led_init_137_1", change_type: "add", delta: 20000, balance_after: 20000, biz_type: "register_bonus", biz_id: "signup", idempotency_key: null, remark: "本命无执念注册福星点券赠送", created_at: seedNow }
+  { ledger_id: "led_init_137_1", change_type: "add", delta: 20000, balance_after: 20000, biz_type: "register_bonus", biz_id: "signup", idempotency_key: null, remark: "注册尊享充值体验活动积分赠送", created_at: seedNow },
+  { ledger_id: "led_init_137_2", change_type: "deduct", delta: -100, balance_after: 19900, biz_type: "phone_review", biz_id: "seed_ph_review_137", idempotency_key: null, remark: "号码能量评测扣除：137****0000", created_at: new Date(Date.now() - 3600000).toISOString() },
+  { ledger_id: "led_init_137_3", change_type: "deduct", delta: -50, balance_after: 19850, biz_type: "aspect_unlock", biz_id: "seed_ph_review_137", idempotency_key: null, remark: "解锁手机评测细项「财富积累剖析」", created_at: new Date(Date.now() - 3500000).toISOString() },
+  { ledger_id: "led_init_137_4", change_type: "deduct", delta: -100, balance_after: 19750, biz_type: "four_pillars_review", biz_id: "seed_bz_review_137", idempotency_key: null, remark: "四柱八字排盘精算扣除", created_at: new Date(Date.now() - 3400000).toISOString() }
 ];
 
 
@@ -564,7 +572,28 @@ seedPh138.aspects[1].content = "生门临值符贵人。五行得正财之力，
 seedPh138.aspects[1].risk = "忌盲目动用重杠杆进行高息套利，否则易见水火相克、损及本金之险。";
 seedPh138.aspects[1].elements_check = { "理产业曜": "稳如泰山", "开财方位": "正南与正下方" };
 
-phoneReviewsMock["u_13800138000"] = [ seedPh138 ];
+const seedPh138_2 = {
+  ...seedPh138,
+  id: "seed_ph_review_2",
+  report_id: "seed_rep_ph_2",
+  phone: "13800138000",
+  phone_number: "13800138000",
+  masked_phone: "138****8000",
+  score: 61,
+  created_at: new Date(Date.now() - 7200000).toISOString(),
+  updated_at: new Date(Date.now() - 7200000).toISOString(),
+  phone_summary: {
+    title: "坎水休囚局",
+    risk: "高",
+    usage_guidance: "此号码带有六煞之意，不利财源凝聚，建议作为辅助副号，不可用作主业务号。",
+    elements_check: {
+      "卦德": "行险用险",
+      "生克": "坎水受克，元神受阻"
+    }
+  }
+};
+
+phoneReviewsMock["u_13800138000"] = [ seedPh138, seedPh138_2 ];
 
 // Seed pre-seeded phone report for 13600136000 (unlock insufficient)
 const seedPh136 = {
@@ -577,6 +606,20 @@ const seedPh136 = {
   aspects: generate12Aspects(), // All locked except career
 };
 phoneReviewsMock["u_13600136000"] = [ seedPh136 ];
+
+// Seed pre-seeded phone report for 13700137000 (mixed partial)
+const seedPh137 = {
+  ...seedPh138,
+  id: "seed_ph_review_137",
+  report_id: "seed_rep_ph_137",
+  phone: "13700137000",
+  phone_number: "13700137000",
+  masked_phone: "137****0000",
+  aspects: generate12Aspects(),
+};
+seedPh137.aspects[1].is_unlocked = true; // wealth
+seedPh137.aspects[1].content = "财运尚可，但属偏财，宜保守理财。";
+phoneReviewsMock["u_13700137000"] = [ seedPh137 ];
 
 
 function generateCompleteBaziReview(userId: string, gender: string, birth_date: string, birth_time: string, reviewId: string, reportId: string, bY: number): any {
@@ -758,8 +801,9 @@ function generateCompleteBaziReview(userId: string, gender: string, birth_date: 
 
 // Bazi (Four Pillars) reports list
 const seedBazi138 = generateCompleteBaziReview("u_13800138000", "male", "1995-10-24", "10:30", "seed_bz_review", "seed_rep_bz_1", 1995);
+const seedBazi138_2 = generateCompleteBaziReview("u_13800138000", "male", "1990-05-15", "08:15", "seed_bz_review_2", "seed_rep_bz_2", 1990);
 
-baziReviewsMock["u_13800138000"] = [ seedBazi138 ];
+baziReviewsMock["u_13800138000"] = [ seedBazi138, seedBazi138_2 ];
 
 // Seed FourPillars for 13600136000 (unlock insufficient)
 const seedBazi136 = generateCompleteBaziReview("u_13600136000", "male", "1995-10-24", "10:30", "seed_bz_review_136", "seed_rep_bz_136", 1995);
@@ -786,10 +830,18 @@ seedBazi136.aspects[1].elements_check = {};
 
 baziReviewsMock["u_13600136000"] = [ seedBazi136 ];
 
+// Seed FourPillars for 13700137000 (mixed partial)
+const seedBazi137 = generateCompleteBaziReview("u_13700137000", "female", "1992-08-18", "14:20", "seed_bz_review_137", "seed_rep_bz_137", 1992);
+seedBazi137.aspects[1].is_unlocked = false; // career locked
+seedBazi137.aspects[1].content = null;
+seedBazi137.aspects[2].is_unlocked = true; // wealth unlocked
+seedBazi137.aspects[2].content = "此命身旺财通，大运配合得宜，中年后富贵自来。";
+seedBazi137.aspects[2].risk = "忌贪大求快，注意与同僚分利，方能长久。";
+seedBazi137.aspects[2].elements_check = { "求财方位": "正南、西南", "流年契合": "逢巳午年" };
 
-// Empty history for 13700137000 & 13900139000 & 13500135000
-phoneReviewsMock["u_13700137000"] = [];
-baziReviewsMock["u_13700137000"] = [];
+baziReviewsMock["u_13700137000"] = [ seedBazi137 ];
+
+// Empty history for 13900139000 & 13500135000
 phoneReviewsMock["u_13900139000"] = [];
 baziReviewsMock["u_13900139000"] = [];
 phoneReviewsMock["u_13500135000"] = [];
@@ -898,14 +950,78 @@ app.get("/api/v1/almanac/today", (req, res) => {
   res.json(almanacFallback);
 });
 
+app.get("/api/v1/mock/summary", (req, res) => {
+  res.json({
+    demo_accounts: [
+      {
+        phone: "13800138000",
+        password: "Easewise123!",
+        label: "全量回归 / 20000积分",
+        points: (pointsMock["u_13800138000"] || { balance: 0 }).balance,
+        phone_history_count: (phoneReviewsMock["u_13800138000"] || []).length,
+        four_pillars_history_count: (baziReviewsMock["u_13800138000"] || []).length,
+        points_ledger_count: (pointsLedgerMock["u_13800138000"] || []).length,
+        recommended_tests: ["phone history", "four pillars history", "aspect unlock", "luck cycles", "profile", "recharge"]
+      },
+      {
+        phone: "13600136000",
+        password: "Easewise123!",
+        label: "低积分测试 / 120积分",
+        points: (pointsMock["u_13600136000"] || { balance: 0 }).balance,
+        phone_history_count: (phoneReviewsMock["u_13600136000"] || []).length,
+        four_pillars_history_count: (baziReviewsMock["u_13600136000"] || []).length,
+        points_ledger_count: (pointsLedgerMock["u_13600136000"] || []).length,
+        recommended_tests: ["base review only", "insufficient points on aspect unlock", "insufficient points on luck cycle"]
+      },
+      {
+        phone: "13500135000",
+        password: "Easewise123!",
+        label: "极低积分测试 / 30积分",
+        points: (pointsMock["u_13500135000"] || { balance: 0 }).balance,
+        phone_history_count: (phoneReviewsMock["u_13500135000"] || []).length,
+        four_pillars_history_count: (baziReviewsMock["u_13500135000"] || []).length,
+        points_ledger_count: (pointsLedgerMock["u_13500135000"] || []).length,
+        recommended_tests: ["insufficient points before base reviews", "points ledger check"]
+      },
+      {
+        phone: "13900139000",
+        password: "Easewise123!",
+        label: "空历史高积分 / 3000积分",
+        points: (pointsMock["u_13900139000"] || { balance: 0 }).balance,
+        phone_history_count: (phoneReviewsMock["u_13900139000"] || []).length,
+        four_pillars_history_count: (baziReviewsMock["u_13900139000"] || []).length,
+        points_ledger_count: (pointsLedgerMock["u_13900139000"] || []).length,
+        recommended_tests: ["empty-state UI", "first-generation flow"]
+      },
+      {
+        phone: "13700137000",
+        password: "Easewise123!",
+        label: "高积分部分历史 / 20000积分",
+        points: (pointsMock["u_13700137000"] || { balance: 0 }).balance,
+        phone_history_count: (phoneReviewsMock["u_13700137000"] || []).length,
+        four_pillars_history_count: (baziReviewsMock["u_13700137000"] || []).length,
+        points_ledger_count: (pointsLedgerMock["u_13700137000"] || []).length,
+        recommended_tests: ["mixed partial history", "some aspects unlocked, some locked"]
+      }
+    ],
+    almanac_available: true,
+    runtime_config_available: true
+  });
+});
+
 // Auth phone status
 app.post("/api/v1/auth/phone/status", (req, res) => {
   const { phone } = req.body;
   if (!phone) {
     return res.status(400).json({ detail: "invalid_phone_number" });
   }
-  const isRegistered = Boolean(usersMock[phone]);
-  res.json({ status: isRegistered ? "registered" : "not_registered" });
+  const normalizedPhone = String(phone || '').trim();
+  const isRegistered = Boolean(usersMock[normalizedPhone]);
+  res.json({
+    registered: isRegistered,
+    normalized_phone: normalizedPhone,
+    next_action: isRegistered ? "login" : "register",
+  });
 });
 
 // Auth phone register
@@ -926,7 +1042,7 @@ app.post("/api/v1/auth/phone/register", (req, res) => {
 
   const userId = `u_${phone}`;
   const now = new Date().toISOString();
-  
+
   usersMock[phone] = {
     user_id: userId,
     uid: userId,
@@ -1224,7 +1340,7 @@ app.post("/api/v1/billing/recharge-orders/:orderId/payments", (req, res) => {
     if (userId) {
       if (!pointsMock[userId]) pointsMock[userId] = { balance: 0, frozen_balance: 0 };
       pointsMock[userId].balance += order.points_amount;
-      
+
       pointsLedgerMock[userId].unshift({
         ledger_id: `led_pay_${orderId}`,
         change_type: "add",
@@ -1482,6 +1598,14 @@ app.post("/api/v1/phone-qimen/reviews/:reviewId/aspect-unlocks", (req, res) => {
   res.json({
     points: userPoints,
     detail: "aspect_unlocked_successfully"
+  });
+});
+
+// --- Four Pillars Input Locations ---
+app.get("/api/v1/four-pillars/input/locations", (req, res) => {
+  res.json({
+    default_location_id: "cn-110101",
+    locations: MOCK_LOCATIONS
   });
 });
 
@@ -1849,7 +1973,7 @@ app.post("/api/v1/agent/chat", async (req, res) => {
       // Build chat conversation sequence matching new SDK parameters
       // Group history into correct parts format
       const contentsList: any[] = [];
-      
+
       if (history && Array.isArray(history)) {
         history.forEach((h: any) => {
           contentsList.push({
@@ -1858,7 +1982,7 @@ app.post("/api/v1/agent/chat", async (req, res) => {
           });
         });
       }
-      
+
       // Append latest message
       contentsList.push({
         role: 'user',

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, watch, nextTick } from 'vue';
-import { 
-  Send, Mic, Bot, User, Trash2, Smartphone, AlertCircle, Sparkle 
+import {
+  Send, Mic, Bot, User, Trash2, Smartphone, AlertCircle, Sparkle
 } from 'lucide-vue-next';
 import { EASEWISE_STORAGE_KEYS } from '../../constants/storage';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
@@ -147,7 +147,7 @@ const quickQueries = [
   <div class="flex flex-col h-[calc(100dvh-82px)] md:h-[calc(100vh-82px)] max-w-md mx-auto w-full bg-brand-paper overflow-hidden overscroll-none">
     <transition name="fade" mode="out-in">
       <!-- State 1: Login Gate UI -->
-      <div 
+      <div
         v-if="!isLoggedIn"
         key="login-gate"
         class="flex-1 px-margin-mobile flex flex-col items-center justify-center text-center space-y-6 pb-6"
@@ -171,7 +171,7 @@ const quickQueries = [
           </div>
         </div>
 
-        <button 
+        <button
           @click="handleLogin"
           class="w-full py-3.5 bg-brand-primary text-white rounded-xl font-sans text-[13px] font-bold shadow-sm hover:bg-brand-primary-strong active:scale-[0.98] transition-all cursor-pointer outline-none flex items-center justify-center gap-2"
         >
@@ -181,7 +181,7 @@ const quickQueries = [
       </div>
 
       <!-- State 2: Active chat view -->
-      <div 
+      <div
         v-else
         key="chat-active"
         class="flex-grow flex flex-col min-h-0 overflow-hidden"
@@ -197,8 +197,8 @@ const quickQueries = [
               智能体决策器：今日结合实时大黄历气运为您解读
             </p>
           </div>
-          
-          <button 
+
+          <button
             @click="handleClearChat"
             class="p-3 bg-white hover:bg-gray-50 text-brand-secondary hover:text-red-500 rounded-xl border border-gray-100 shadow-sm transition-all outline-none cursor-pointer"
             title="清空聊天记录"
@@ -209,9 +209,9 @@ const quickQueries = [
 
         <!-- Message logs area -->
         <div ref="chatScrollContainerRef" class="flex-1 min-h-0 overflow-y-auto overscroll-contain px-margin-mobile py-4 pb-4 flex flex-col gap-4.5 no-scrollbar">
-          <div 
+          <div
             v-for="msg in messages"
-            :key="msg.id" 
+            :key="msg.id"
             class="flex gap-2.5 max-w-[92%] items-start"
             :class="msg.role === 'assistant' ? 'self-start' : 'self-end flex-row-reverse'"
           >
@@ -258,7 +258,7 @@ const quickQueries = [
         <div class="bg-brand-paper/95 backdrop-blur-sm border-t border-gray-100/80 shrink-0">
           <!-- Quick horizontal scrolling Queries -->
           <div class="px-margin-mobile py-2.5 overflow-x-auto no-scrollbar flex gap-2 w-full">
-            <button 
+            <button
               v-for="q in quickQueries"
               :key="q"
               @click="handleSend(q)"
@@ -271,7 +271,7 @@ const quickQueries = [
           <!-- Input Field -->
           <div class="px-4 pb-0 flex items-center gap-3">
             <div class="flex-1 bg-white p-1 rounded-2xl flex items-center gap-1.5 border border-gray-100 shadow-sm pr-3">
-              <input 
+              <input
                 class="bg-transparent border-none focus:ring-0 w-full pl-3 pr-1 py-2 font-sans text-[13px] text-brand-ink-strong outline-none placeholder-gray-400 font-medium"
                 placeholder="请输入对起盘结论的追问..."
                 type="text"
@@ -280,7 +280,7 @@ const quickQueries = [
               />
               <Mic :size="18" class="text-brand-secondary/60 cursor-pointer hover:text-brand-primary shrink-0" />
             </div>
-            <button 
+            <button
               @click="handleSend()"
               class="w-11 h-11 rounded-full bg-brand-primary flex items-center justify-center text-white active:scale-95 transition-transform shrink-0 outline-none shadow-md"
             >

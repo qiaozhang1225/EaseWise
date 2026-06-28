@@ -5,7 +5,6 @@ import type { FourPillarsChartDisplay, FourPillarsDisplayPillar, FourPillarsPill
 
 const props = defineProps<{
   chartDisplay: FourPillarsChartDisplay | null;
-  score?: number | null;
   elementCounts?: Array<{ element: string; value: number }>;
   strengthLabel?: string;
   favorableElements?: string[];
@@ -506,7 +505,7 @@ function visibleShenShaRows(pillar: FourPillarsDisplayPillar): ShenShaCellItem[]
                       </div>
                     </div>
 
-                    <p class="font-sans text-[10px] text-[#64748B] leading-relaxed">称骨为传统资料展示，不参与综合评分和专项判断。</p>
+                    <p class="font-sans text-[10px] text-[#64748B] leading-relaxed">称骨为传统资料展示，不作为命盘好坏判断依据。</p>
                   </div>
                   <p v-else class="font-sans text-[11px] text-[#64748B] rounded-xl bg-[#F8FAFF] border border-[#D8E3F5] p-3">称骨资料暂未匹配。</p>
                 </section>

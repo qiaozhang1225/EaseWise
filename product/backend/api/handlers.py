@@ -4,12 +4,14 @@ import base64
 import binascii
 import html
 import json
+import logging
 import re
 import secrets
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from queue import Empty, Queue
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -19,16 +21,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from lunar_python import Lunar, Solar
 
-from product.backend.llm import DeepSeekAPIError, get_deepseek_governor_status, load_env_file
+from product.backend.llm import DeepSeekAPIError, DeepSeekHTTPError, get_deepseek_governor_status, load_env_file
 from features.almanac.engine import build_almanac_for_date, build_today_almanac
-from features.four_pillars.engine import FOUR_PILLARS_ASPECT_ORDER, FOUR_PILLARS_ASPECTS, build_chart_display, build_dayun_facts, build_four_pillars_review, build_liunian_facts, build_luck_cycles
+from features.four_pillars.engine import FOUR_PILLARS_ASPECT_ORDER, FOUR_PILLARS_ASPECTS, build_chart_display, build_dayun_facts, build_deterministic_facts, build_four_pillars_review, build_liunian_facts, build_luck_cycles, expand_four_pillars_aspect_keys, normalize_four_pillars_aspect_key
 from features.four_pillars.engine.solar_time import calculate_true_solar_time, list_birth_locations, load_birth_locations, resolve_birth_location
 from features.four_pillars.rendering import (
     build_four_pillars_product_view,
-    build_product_review_aspects_render as build_four_pillars_aspects_render,
     build_product_review_core_render as build_four_pillars_core_render,
+    is_fallback_aspect_payload as is_four_pillars_fallback_aspect_payload,
     render_dayun_from_package as render_four_pillars_dayun,
     render_liunian_from_package as render_four_pillars_liunian,
+    stream_aspect_from_package as stream_four_pillars_aspect_render,
+    stream_dayun_from_package as stream_four_pillars_dayun_render,
+    stream_liunian_from_package as stream_four_pillars_liunian_render,
+    stream_product_review_core_render as stream_four_pillars_core_render,
 )
 from features.phone_qimen.scoring.total_score.engine import load_rules, score_phone
 from features.phone_qimen.scoring.total_score.bundle import build_scoring_bundle
@@ -38,7 +44,9 @@ from .auth import build_session_expiry, exchange_wechat_code, hash_access_token,
 from .config import APP_TITLE, APP_VERSION, allow_mock_wechat_login, get_cors_origins, get_database_path, get_public_base_url, get_uploads_dir, get_wechat_oa_app_id
 from .database import InsufficientPointsError, adjust_points, adjust_rebate_points, claim_points_from_link, complete_recharge_order_manually, complete_review, complete_review_with_message, complete_usage_record, count_internal_phone_qimen_reviews, count_points_claim_links, count_points_claim_records, count_users, create_payment_transaction, create_phone_user, create_points_claim_link, create_recharge_order, create_refund_request, create_review_aspect_unlock, create_review_with_charge, create_session, create_usage_record, delete_llm_api_key, disable_points_claim_link, ensure_schema, fail_review, fail_usage_record, get_dashboard_summary, get_internal_phone_qimen_review, get_internal_phone_qimen_summary as get_internal_phone_qimen_summary_data, get_internal_user, get_latest_payment_transaction_for_order, get_llm_api_key, get_phone_identity_by_normalized_phone, get_points_account, get_points_claim_link, get_points_claim_link_by_code, get_primary_phone_identity_by_user_id, get_promotion_application, get_promotion_commission, get_promotion_rules, get_promotion_withdrawal, get_recharge_order, get_review, get_usage_record, get_user, get_user_current_week_points_claim, list_internal_phone_qimen_reviews, list_llm_api_keys, list_payment_transactions_for_order, list_points_claim_links, list_points_claim_records, list_points_ledger, list_promotion_applications, list_promotion_commissions, list_promotion_withdrawals, list_recharge_orders, list_recent_recharge_orders_for_user, list_refund_requests_for_order, list_review_aspect_unlocks, list_reviews, list_runtime_config_entries, list_usage_records, list_users, list_voice_usage_records_for_review, mark_phone_identity_login, mark_promotion_withdrawal_paid, record_points_claim_duplicate_link_visit, refund_points, revoke_session_by_token_hash, retry_promotion_withdrawal_payout, retry_refund_request, review_promotion_application, review_promotion_withdrawal, review_recharge_order, review_refund_request, settle_payment_transaction, update_initial_points_config, update_phone_identity_password, update_review_generation_payload, update_review_progress, update_review_score_template, update_usage_record_llm_metrics, update_user_identity, update_user_profile, update_user_promoter_parent, update_user_status, upsert_llm_api_key, upsert_runtime_config_entry, upsert_wechat_user
 from .database import (
+    begin_four_pillars_aspect_unlock_generation,
     begin_review_aspect_unlock_generation,
+    complete_four_pillars_aspect_unlock_generation,
     complete_four_pillars_review_with_message,
     complete_four_pillars_luck_render,
     complete_review_aspect_unlock_generation,
@@ -46,6 +54,7 @@ from .database import (
     create_four_pillars_aspect_unlock,
     create_four_pillars_luck_render_request,
     create_four_pillars_review_with_charge,
+    fail_four_pillars_aspect_unlock_generation,
     fail_review_aspect_unlock_generation,
     fail_four_pillars_luck_render,
     fail_four_pillars_review,
@@ -64,7 +73,7 @@ from .database import (
 )
 from .phone_review_view import PUBLIC_ASPECT_ORDER, build_phone_review_product_view
 from .payments import create_payment_request
-from .product_review import build_product_review_aspects_render, build_product_review_core_render, stream_product_review_aspect_render
+from .product_review import build_product_review_core_render, stream_product_review_aspect_render, stream_product_review_core_render as stream_phone_review_core_render
 from .runtime_config import get_runtime_agent_metaphysics_skill_enabled, get_runtime_available_recharge_packages, get_runtime_four_pillars_aspect_order, get_runtime_four_pillars_aspect_unlock_points_cost, get_runtime_four_pillars_base_points_cost, get_runtime_four_pillars_free_aspect_keys, get_runtime_four_pillars_luck_cycle_points_cost, get_runtime_four_pillars_luck_generation_enabled, get_runtime_four_pillars_luck_year_points_cost, get_runtime_four_pillars_unlock_enforcement_enabled, get_runtime_initial_points, get_runtime_phone_review_aspect_order, get_runtime_phone_review_aspect_unlock_points_cost, get_runtime_phone_review_base_points_cost, get_runtime_phone_review_free_aspect_keys, get_runtime_phone_review_unlock_enforcement_enabled, get_runtime_voice_cache_enabled, get_runtime_voice_default_voice_key, get_runtime_voice_max_chars_per_request, get_runtime_voice_provider, is_module_enabled, normalize_channel_key, normalize_config_key, normalize_scope_key, normalize_scope_type, resolve_public_runtime_config
 from .schemas import AdminReviewRequest, AgentReplyRequest, AgentReplyResponse, AlmanacResponse, AuthLoginResponse, AvatarUploadRequest, ComplianceConfigResponse, CurrentUserResponse, CustomerServiceConfigResponse, CustomerServiceQrCodeUploadRequest, DashboardResponse, DashboardMetricResponse, DashboardSectionResponse, InternalPhoneQimenAspectUnlockRecordResponse, InternalPhoneQimenReviewDetailResponse, InternalPhoneQimenReviewItemResponse, InternalPhoneQimenReviewListResponse, InternalPhoneQimenSummaryResponse, InternalUserAdminSummaryResponse, InternalUserListResponse, InternalUserResponse, LlmApiKeyListResponse, LlmApiKeyResponse, LlmApiKeyUpsertRequest, LlmConcurrencyStatusResponse, ManualPointsAdjustRequest, ManualPointsAdjustResponse, ModuleRuntimeConfigResponse, PasswordChangeRequest, PasswordChangeResponse, PaymentNotifyResponse, PaymentTransactionCreateRequest, PaymentTransactionResponse, PhonePasswordLoginRequest, PhonePasswordRegisterRequest, PhoneStatusRequest, PhoneStatusResponse, PointsAccountResponse, PointsClaimLinkCreateRequest, PointsClaimLinkDisableRequest, PointsClaimLinkListResponse, PointsClaimLinkResponse, PointsClaimRecordListResponse, PointsClaimRecordResponse, PointsClaimSubmitResponse, PointsLedgerEntryResponse, PointsLedgerListResponse, PublicPointsClaimLinkResponse, PublicRuntimeConfigResponse, PromotionApplicationListResponse, PromotionApplicationResponse, PromotionCommissionListResponse, PromotionCommissionResponse, PromotionRulesResponse, PromotionRulesUpdateRequest, PromotionWithdrawalListResponse, PromotionWithdrawalPayoutRequest, PromotionWithdrawalResponse, RebatePointsAdjustRequest, RebatePointsAdjustResponse, RebatePointsAccountResponse, RefundCreateRequest, RefundRequestResponse, RefundRetryRequest, RechargeOrderCreateRequest, RechargeOrderListResponse, RechargeOrderManualCompleteRequest, RechargeOrderManualCompleteResponse, RechargeOrderPaymentStatusResponse, RechargeOrderResponse, RechargeOrderReviewRequest, RechargeOrderReviewResponse, RechargeOrderSummaryResponse, RechargePackageListResponse, RechargePackageResponse, ReviewAspectResponse, ReviewAspectUnlockListResponse, ReviewAspectUnlockRequest, ReviewAspectUnlockResponse, ReviewBoardResponse, ReviewCreateRequest, ReviewListResponse, ReviewPhoneSummaryResponse, ReviewRecordResponse, ReviewStabilityDetailResponse, ReviewSummaryResponse, RuntimeConfigEntryResponse, RuntimeConfigListResponse, RuntimeConfigSchemaItemResponse, RuntimeConfigSchemaResponse, RuntimeConfigUpsertRequest, RuntimeInitialPointsUpdateRequest, RuntimeInitialPointsUpdateResponse, RuntimeModulesConfigResponse, RuntimePointsConfigResponse, RuntimeRechargeConfigResponse, UsageRecordDetailResponse, UsageRecordListResponse, UsageRecordResponse, UserIdentityUpdateRequest, UserPromoterParentUpdateRequest, UserProfileUpdateRequest, UserResponse, UserStatusUpdateRequest, VoiceNarrationRequest, VoiceNarrationResponse, VoiceRuntimeConfigResponse, WeChatLoginRequest
 from .schemas import (
@@ -87,6 +96,8 @@ from .schemas import (
 from .tts import VoiceProviderUnavailableError, VoiceSynthesisError, synthesize_voice_audio
 from .wechat_h5 import STATE_COOKIE_NAME, build_oauth_state, build_wechat_oauth_authorize_url, exchange_h5_oauth_code, h5_oauth_is_configured, is_wechat_browser
 
+LOGGER = logging.getLogger(__name__)
+
 PHONE_PATTERN = re.compile(r"^\d{11}$")
 MAINLAND_MOBILE_PATTERN = re.compile(r"^1[3-9]\d{9}$")
 TESTER_PAGE_PATH = Path(__file__).resolve().parent / "static" / "tester.html"
@@ -100,6 +111,7 @@ PHONE_REVIEW_ASPECT_UNLOCK_SCENE = "phone_review_aspect_unlock"
 FOUR_PILLARS_REVIEW_BASE_SCENE = "four_pillars_review_base"
 FOUR_PILLARS_REVIEW_BASE_REFUND_BIZ_TYPE = "four_pillars_review_base_refund"
 FOUR_PILLARS_ASPECT_UNLOCK_SCENE = "four_pillars_aspect_unlock"
+FOUR_PILLARS_ASPECT_UNLOCK_REFUND_BIZ_TYPE = "four_pillars_aspect_unlock_refund"
 FOUR_PILLARS_LUCK_CYCLE_RENDER_SCENE = "four_pillars_luck_cycle_render"
 FOUR_PILLARS_LUCK_YEAR_RENDER_SCENE = "four_pillars_luck_year_render"
 FOUR_PILLARS_LUCK_RENDER_REFUND_BIZ_TYPE = "four_pillars_luck_render_refund"
@@ -146,12 +158,12 @@ _RUNTIME_CONFIG_SCHEMA_ITEMS: list[dict[str, object]] = [
     {"config_key": "llm.deepseek.default_key_max_concurrency", "label": "默认单 Key 并发", "value_type": "int", "default_value": 450, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "DeepSeek 并发治理", "sort_order": 20, "high_risk": True, "description": "DeepSeek 默认 500 并发额度，建议保留余量使用 450"},
     {"config_key": "llm.deepseek.default_cooldown_seconds", "label": "429 冷却秒数", "value_type": "int", "default_value": 60, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "DeepSeek 并发治理", "sort_order": 30, "high_risk": False, "description": "某个 Key 被 429 后暂停使用的时间"},
     {"config_key": "llm.deepseek.foreground_priority_enabled", "label": "前台优先", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "DeepSeek 并发治理", "sort_order": 40, "high_risk": False, "description": "前台用户等待请求优先获取释放的令牌"},
-    {"config_key": "llm.deepseek.background_prefetch_enabled", "label": "后台预热", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "DeepSeek 并发治理", "sort_order": 50, "high_risk": False, "description": "允许手机号和四柱专项等后台预热请求"},
-    {"config_key": "llm.deepseek.background_max_concurrency_ratio", "label": "后台预热占比", "value_type": "float", "default_value": 0.3, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "DeepSeek 并发治理", "sort_order": 60, "high_risk": True, "description": "后台预热最多占用总并发的比例，最高 0.8"},
+    {"config_key": "llm.deepseek.background_prefetch_enabled", "label": "后台低优先级请求", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "DeepSeek 并发治理", "sort_order": 50, "high_risk": False, "description": "允许非用户等待链路的低优先级 DeepSeek 请求"},
+    {"config_key": "llm.deepseek.background_max_concurrency_ratio", "label": "后台低优先级占比", "value_type": "float", "default_value": 0.3, "scope_type": "global", "scope_key": "default", "group": "系统配置", "admin_group": "系统配置", "admin_section": "DeepSeek 并发治理", "sort_order": 60, "high_risk": True, "description": "后台低优先级请求最多占用总并发的比例，最高 0.8"},
     {"config_key": "phone_review.base_points_cost", "label": "基础评测消耗", "value_type": "int", "default_value": 100, "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "数字奇门手机号评测", "sort_order": 10, "high_risk": False, "description": "手机号评测基础积分消耗"},
     {"config_key": "phone_review.aspect_unlock_points_cost", "label": "专项解锁消耗", "value_type": "int", "default_value": 50, "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "数字奇门手机号评测", "sort_order": 20, "high_risk": False, "description": "单个专项解锁积分"},
-    {"config_key": "phone_review.free_aspect_keys", "label": "免费专项", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "数字奇门手机号评测", "sort_order": 30, "high_risk": False, "description": "不消耗积分的专项"},
-    {"config_key": "phone_review.aspect_order", "label": "专项顺序", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "数字奇门手机号评测", "sort_order": 40, "high_risk": False, "description": "手机号评测专项展示顺序"},
+    {"config_key": "phone_review.free_aspect_keys", "label": "免费专项", "value_type": "json", "default_value": [], "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "数字奇门手机号评测", "sort_order": 30, "high_risk": False, "description": "不消耗积分的专项", "input_options": [{"value": key, "label": PHONE_QIMEN_ASPECT_LABELS.get(key, key)} for key in PUBLIC_ASPECT_ORDER]},
+    {"config_key": "phone_review.aspect_order", "label": "专项顺序", "value_type": "json", "default_value": PUBLIC_ASPECT_ORDER, "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "数字奇门手机号评测", "sort_order": 40, "high_risk": False, "description": "手机号评测专项展示顺序", "input_options": [{"value": key, "label": PHONE_QIMEN_ASPECT_LABELS.get(key, key)} for key in PUBLIC_ASPECT_ORDER]},
     {"config_key": "phone_review.unlock_enforcement_enabled", "label": "未解锁内容隐藏", "value_type": "bool", "default_value": True, "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "数字奇门手机号评测", "sort_order": 50, "high_risk": True, "description": "是否强制未解锁专项隐藏内容", "admin_hidden": True},
     {"config_key": "four_pillars.base_points_cost", "label": "基础评测消耗", "value_type": "int", "default_value": 100, "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "四柱八字评测", "sort_order": 10, "high_risk": False, "description": "四柱八字基础评测积分消耗"},
     {"config_key": "four_pillars.aspect_unlock_points_cost", "label": "专项解锁消耗", "value_type": "int", "default_value": 50, "scope_type": "global", "scope_key": "default", "group": "功能管理", "admin_group": "功能管理", "admin_section": "四柱八字评测", "sort_order": 20, "high_risk": False, "description": "四柱八字单个专项解锁积分"},
@@ -1728,6 +1740,59 @@ def create_review_record(request: Request, background_tasks: BackgroundTasks, pa
     )
 
 
+def stream_create_review_record(request: Request, payload: ReviewCreateRequest, current_user: dict[str, object] = Depends(require_registered_user)) -> StreamingResponse:
+    _ensure_module_available(module_key="phone_review", request=request)
+    normalized_phone = _normalize_phone(payload.phone)
+    review_id = uuid4().hex
+    created_at = _utc_now()
+    user_id = str(current_user["user_id"])
+    channel_key = _resolve_request_channel(request)
+    points_cost = get_runtime_phone_review_base_points_cost(channel_key)
+    try:
+        create_review_with_charge(
+            review_id=review_id,
+            user_id=user_id,
+            phone=normalized_phone,
+            gender=payload.gender,
+            status="processing",
+            created_at=created_at,
+            progress_stage="queued",
+            progress_message="评测任务已创建，等待开始",
+            points_cost=points_cost,
+            usage_scene=PHONE_REVIEW_BASE_SCENE,
+            request_payload_summary={"phone": normalized_phone, "gender": payload.gender, "include_markdown": payload.include_markdown, "stream": True},
+            channel=channel_key,
+        )
+    except InsufficientPointsError as exc:
+        raise HTTPException(status_code=402, detail="insufficient_points") from exc
+    review = get_review(review_id)
+    if review is None:
+        raise HTTPException(status_code=500, detail="review_persistence_failed")
+
+    event_queue: Queue[dict[str, Any]] = Queue()
+    worker = threading.Thread(
+        target=_run_review_generation_stream,
+        kwargs={
+            "review_id": review_id,
+            "phone": normalized_phone,
+            "gender": payload.gender,
+            "include_markdown": payload.include_markdown,
+            "user_id": user_id,
+            "points_cost": points_cost,
+            "channel_key": channel_key,
+            "event_queue": event_queue,
+        },
+        daemon=True,
+    )
+    worker.start()
+
+    return _build_base_streaming_response(
+        event_queue,
+        created_event="created",
+        created_data=_build_review_base_stream_payload(review_id, current_user_id=user_id, channel_key=channel_key),
+    )
+
+
 def list_review_records(limit: int = Query(default=20, ge=1, le=100), current_user: dict[str, object] = Depends(require_authenticated_user)) -> ReviewListResponse:
     items = [_build_review_summary_response(item) for item in list_reviews(limit, user_id=str(current_user["user_id"]))]
     return ReviewListResponse(items=items)
@@ -1932,7 +1997,7 @@ def stream_review_aspect_unlock_record(
                     now_text=_utc_now(),
                 )
                 refunded = bool(failed and failed.get("refunded_at"))
-            yield _sse_event("error", {"detail": "aspect_generation_failed", "message": str(exc), "refunded": refunded})
+            yield _sse_event("error", _build_aspect_generation_error_payload(exc, refunded=refunded))
 
     return StreamingResponse(
         event_stream(),
@@ -2002,6 +2067,75 @@ def create_four_pillars_review_record(
         review,
         channel_key=channel_key,
         current_user_id=user_id,
+    )
+
+
+def stream_create_four_pillars_review_record(
+    request: Request,
+    payload: FourPillarsReviewCreateRequest,
+    current_user: dict[str, object] = Depends(require_registered_user),
+) -> StreamingResponse:
+    _ensure_module_available(module_key="four_pillars", request=request)
+    input_profile = _normalize_four_pillars_input_profile(payload)
+    review_id = uuid4().hex
+    created_at = _utc_now()
+    user_id = str(current_user["user_id"])
+    channel_key = _resolve_request_channel(request)
+    points_cost = get_runtime_four_pillars_base_points_cost(channel_key)
+    try:
+        create_four_pillars_review_with_charge(
+            review_id=review_id,
+            user_id=user_id,
+            gender=input_profile["gender"],
+            birth_date=input_profile["birth_date"],
+            birth_time=input_profile["birth_time"],
+            timezone_name=input_profile["timezone"],
+            birth_place=input_profile.get("birth_place"),
+            name=input_profile.get("name"),
+            status="processing",
+            created_at=created_at,
+            progress_stage="queued",
+            progress_message="四柱评测任务已创建，等待开始",
+            points_cost=points_cost,
+            usage_scene=FOUR_PILLARS_REVIEW_BASE_SCENE,
+            request_payload_summary={
+                "gender": input_profile["gender"],
+                "birth_date": input_profile["birth_date"],
+                "birth_time": input_profile["birth_time"],
+                "timezone": input_profile["timezone"],
+                "birth_place": input_profile.get("birth_place"),
+                "name": input_profile.get("name"),
+                "include_markdown": payload.include_markdown,
+                "stream": True,
+            },
+            channel=channel_key,
+        )
+    except InsufficientPointsError as exc:
+        raise HTTPException(status_code=402, detail="insufficient_points") from exc
+    review = get_four_pillars_review(review_id)
+    if review is None:
+        raise HTTPException(status_code=500, detail="review_persistence_failed")
+
+    event_queue: Queue[dict[str, Any]] = Queue()
+    worker = threading.Thread(
+        target=_run_four_pillars_review_generation_stream,
+        kwargs={
+            "review_id": review_id,
+            "input_profile": input_profile,
+            "include_markdown": payload.include_markdown,
+            "user_id": user_id,
+            "points_cost": points_cost,
+            "channel_key": channel_key,
+            "event_queue": event_queue,
+        },
+        daemon=True,
+    )
+    worker.start()
+
+    return _build_base_streaming_response(
+        event_queue,
+        created_event="created",
+        created_data=_build_four_pillars_base_stream_payload(review_id, current_user_id=user_id, channel_key=channel_key),
     )
 
 
@@ -2118,7 +2252,7 @@ def get_four_pillars_review_aspect_unlock_status(
         _build_four_pillars_aspect_unlock_response(item)
         for item in list_four_pillars_aspect_unlocks(review_id=review_id, user_id=str(current_user["user_id"]))
     ]
-    unlocked_key_set = {item.aspect_key for item in unlocked_items}
+    unlocked_key_set = set(expand_four_pillars_aspect_keys(item.aspect_key for item in unlocked_items))
     public_view = _resolve_four_pillars_public_view(review, current_user_id=str(current_user["user_id"]), channel_key=channel_key)
     return FourPillarsAspectUnlockListResponse(
         items=unlocked_items,
@@ -2142,7 +2276,7 @@ def create_four_pillars_review_aspect_unlock_record(
     review = _require_owned_four_pillars_review(review_id, current_user_id=current_user_id)
     channel_key = _resolve_request_channel(request)
     available_aspect_keys = _resolve_four_pillars_aspect_keys(review, channel_key=channel_key)
-    normalized_aspect_key = payload.aspect_key.strip().lower()
+    normalized_aspect_key = normalize_four_pillars_aspect_key(payload.aspect_key)
     if normalized_aspect_key not in available_aspect_keys:
         raise HTTPException(status_code=422, detail="invalid_aspect_key")
     if not _four_pillars_aspect_detail_ready(review, normalized_aspect_key):
@@ -2162,6 +2296,8 @@ def create_four_pillars_review_aspect_unlock_record(
         )
     except InsufficientPointsError as exc:
         raise HTTPException(status_code=402, detail="insufficient_points") from exc
+    if str(unlock.get("status") or "completed") != "completed":
+        raise HTTPException(status_code=409, detail="aspect_generation_in_progress")
     public_view = _resolve_four_pillars_public_view(review, current_user_id=current_user_id, channel_key=channel_key)
     aspect_map = {item.aspect_key: item for item in _build_four_pillars_aspect_models(public_view)}
     points_account = get_points_account(current_user_id)
@@ -2169,6 +2305,150 @@ def create_four_pillars_review_aspect_unlock_record(
         unlock,
         points=_build_points_account_response(points_account) if points_account is not None else None,
         aspect=aspect_map.get(normalized_aspect_key),
+    )
+
+
+def stream_four_pillars_review_aspect_unlock_record(
+    review_id: str,
+    aspect_key: str,
+    request: Request,
+    current_user: dict[str, object] = Depends(require_registered_user),
+) -> StreamingResponse:
+    _ensure_module_available(module_key="four_pillars", request=request)
+    current_user_id = str(current_user["user_id"])
+    review = _require_owned_four_pillars_review(review_id, current_user_id=current_user_id)
+    channel_key = _resolve_request_channel(request)
+    available_aspect_keys = _resolve_four_pillars_aspect_keys(review, channel_key=channel_key)
+    normalized_aspect_key = normalize_four_pillars_aspect_key(aspect_key)
+    if normalized_aspect_key not in available_aspect_keys:
+        raise HTTPException(status_code=422, detail="invalid_aspect_key")
+    if not isinstance(review.get("score_template"), dict):
+        raise HTTPException(status_code=409, detail="review_not_ready_for_unlock")
+    if _resolve_four_pillars_public_view(review, current_user_id=current_user_id, channel_key=channel_key) is None:
+        raise HTTPException(status_code=409, detail="review_not_ready_for_unlock")
+    if _build_four_pillars_package_from_review(review) is None:
+        raise HTTPException(status_code=409, detail="review_not_ready_for_unlock")
+
+    def event_stream():
+        unlock: dict[str, Any] | None = None
+        generation_claimed = False
+        try:
+            latest_review = get_four_pillars_review(review_id) or review
+            package = _build_four_pillars_package_from_review(latest_review)
+            if package is None:
+                latest_review = review
+                package = _build_four_pillars_package_from_review(latest_review)
+            if _four_pillars_aspect_detail_ready(latest_review, normalized_aspect_key):
+                unlock = _create_completed_four_pillars_aspect_unlock_for_stream(
+                    latest_review,
+                    current_user_id=current_user_id,
+                    aspect_key=normalized_aspect_key,
+                    available_aspect_keys=available_aspect_keys,
+                    channel_key=channel_key,
+                )
+                yield _sse_event("unlock", _build_four_pillars_aspect_stream_unlock_data(unlock, current_user_id=current_user_id))
+                yield _sse_event("complete", _build_four_pillars_aspect_stream_complete_data(review_id, current_user_id=current_user_id, channel_key=channel_key, aspect_key=normalized_aspect_key))
+                return
+
+            free_aspect_keys = _resolve_four_pillars_free_aspect_keys(available_aspect_keys, channel_key=channel_key)
+            points_cost = 0 if normalized_aspect_key in free_aspect_keys else get_runtime_four_pillars_aspect_unlock_points_cost(channel_key)
+            unlock = begin_four_pillars_aspect_unlock_generation(
+                review_id=review_id,
+                user_id=current_user_id,
+                aspect_key=normalized_aspect_key,
+                points_cost=points_cost,
+                usage_scene=FOUR_PILLARS_ASPECT_UNLOCK_SCENE,
+                request_payload_summary={
+                    "aspect_key": normalized_aspect_key,
+                    "birth_date": latest_review["birth_date"],
+                    "birth_time": latest_review["birth_time"],
+                    "stream": True,
+                },
+                now_text=_utc_now(),
+                channel=channel_key,
+                force_generation=True,
+            )
+            generation_claimed = bool(unlock.get("_generation_claimed"))
+            if not generation_claimed:
+                if str(unlock.get("status") or "") == "processing":
+                    yield _sse_event("error", {"detail": "aspect_generation_in_progress", "refunded": False})
+                    return
+                yield _sse_event("error", {"detail": "aspect_not_ready", "refunded": False})
+                return
+
+            yield _sse_event("unlock", _build_four_pillars_aspect_stream_unlock_data(unlock, current_user_id=current_user_id))
+            if package is None:
+                raise HTTPException(status_code=409, detail="review_not_ready_for_unlock")
+            for render_event in stream_four_pillars_aspect_render(
+                package,
+                aspect_key=normalized_aspect_key,
+                user_id=current_user_id,
+                request_id=str(unlock.get("usage_record_id") or unlock.get("unlock_id") or review_id),
+            ):
+                event_name = str(render_event.get("event") or "")
+                event_data = render_event.get("data") if isinstance(render_event.get("data"), dict) else {}
+                if event_name in {"status", "delta"}:
+                    yield _sse_event(event_name, event_data)
+                    continue
+                if event_name == "result":
+                    aspect = event_data.get("aspect") if isinstance(event_data, dict) else None
+                    if not isinstance(aspect, dict):
+                        raise DeepSeekAPIError("four_pillars_aspect_stream_missing_result")
+                    _persist_four_pillars_aspect_render(review_id=review_id, aspect_key=normalized_aspect_key, rendered_aspect=aspect)
+                    complete_four_pillars_aspect_unlock_generation(
+                        review_id=review_id,
+                        user_id=current_user_id,
+                        aspect_key=normalized_aspect_key,
+                        result_summary={"status": "completed", "aspect_key": normalized_aspect_key, "model_name": event_data.get("model_name")},
+                        now_text=_utc_now(),
+                    )
+                    generation_claimed = False
+                    yield _sse_event(
+                        "complete",
+                        _build_four_pillars_aspect_stream_complete_data(
+                            review_id,
+                            current_user_id=current_user_id,
+                            channel_key=channel_key,
+                            aspect_key=normalized_aspect_key,
+                            rendered_aspect=aspect,
+                        ),
+                    )
+                    return
+            raise DeepSeekAPIError("four_pillars_aspect_stream_missing_result")
+        except GeneratorExit:
+            if generation_claimed:
+                fail_four_pillars_aspect_unlock_generation(
+                    review_id=review_id,
+                    user_id=current_user_id,
+                    aspect_key=normalized_aspect_key,
+                    error_message="client_disconnected",
+                    now_text=_utc_now(),
+                    refund_biz_type=FOUR_PILLARS_ASPECT_UNLOCK_REFUND_BIZ_TYPE,
+                )
+            raise
+        except InsufficientPointsError:
+            yield _sse_event("error", {"detail": "insufficient_points", "refunded": False})
+        except Exception as exc:
+            refunded = False
+            if generation_claimed:
+                failed = fail_four_pillars_aspect_unlock_generation(
+                    review_id=review_id,
+                    user_id=current_user_id,
+                    aspect_key=normalized_aspect_key,
+                    error_message=str(exc),
+                    now_text=_utc_now(),
+                    refund_biz_type=FOUR_PILLARS_ASPECT_UNLOCK_REFUND_BIZ_TYPE,
+                )
+                refunded = bool(failed and failed.get("refunded_at"))
+            yield _sse_event("error", _build_aspect_generation_error_payload(exc, refunded=refunded))
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -2229,6 +2509,23 @@ def get_four_pillars_luck_cycle_summary(
     return _build_four_pillars_luck_render_response(render)
 
 
+def stream_four_pillars_luck_cycle_summary(
+    review_id: str,
+    cycle_key: str,
+    request: Request,
+    current_user: dict[str, object] = Depends(require_registered_user),
+) -> StreamingResponse:
+    _ensure_module_available(module_key="four_pillars", request=request)
+    return _stream_four_pillars_luck_render(
+        review_id=review_id,
+        render_type="dayun",
+        cycle_key=cycle_key,
+        year=None,
+        request=request,
+        current_user_id=str(current_user["user_id"]),
+    )
+
+
 def create_four_pillars_luck_year_summary(
     review_id: str,
     cycle_key: str,
@@ -2267,6 +2564,220 @@ def get_four_pillars_luck_year_summary(
     if render is None:
         raise HTTPException(status_code=404, detail="luck_render_not_found")
     return _build_four_pillars_luck_render_response(render)
+
+
+def stream_four_pillars_luck_year_summary(
+    review_id: str,
+    cycle_key: str,
+    year: int,
+    request: Request,
+    current_user: dict[str, object] = Depends(require_registered_user),
+) -> StreamingResponse:
+    _ensure_module_available(module_key="four_pillars", request=request)
+    return _stream_four_pillars_luck_render(
+        review_id=review_id,
+        render_type="liunian",
+        cycle_key=cycle_key,
+        year=year,
+        request=request,
+        current_user_id=str(current_user["user_id"]),
+    )
+
+
+def _stream_four_pillars_luck_render(
+    *,
+    review_id: str,
+    render_type: str,
+    cycle_key: str,
+    year: int | None,
+    request: Request,
+    current_user_id: str,
+) -> StreamingResponse:
+    channel_key = _resolve_request_channel(request)
+    if render_type not in {"dayun", "liunian"}:
+        raise HTTPException(status_code=422, detail="invalid_luck_render_type")
+    if not get_runtime_four_pillars_luck_generation_enabled(channel_key):
+        raise HTTPException(status_code=403, detail="luck_generation_disabled")
+
+    review = _require_owned_four_pillars_review(review_id, current_user_id=current_user_id, not_ready_detail="review_not_ready_for_luck")
+    package = _build_four_pillars_package_from_review(review)
+    if package is None:
+        raise HTTPException(status_code=409, detail="review_not_ready_for_luck")
+
+    try:
+        facts = build_dayun_facts(package, cycle_key) if render_type == "dayun" else build_liunian_facts(package, cycle_key, int(year or 0))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    existing_render = get_four_pillars_luck_render(
+        review_id=review_id,
+        user_id=current_user_id,
+        render_type=render_type,
+        cycle_key=cycle_key,
+        year=year,
+    )
+    if existing_render is not None and str(existing_render.get("status") or "") == "completed":
+        completed_render = existing_render
+
+        def cached_event_stream():
+            yield _sse_event("render", _build_four_pillars_luck_stream_render_data(completed_render, current_user_id=current_user_id))
+            yield _sse_event(
+                "complete",
+                _build_four_pillars_luck_stream_complete_data(
+                    review_id,
+                    current_user_id=current_user_id,
+                    channel_key=channel_key,
+                    render=completed_render,
+                ),
+            )
+
+        return StreamingResponse(
+            cached_event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+    if existing_render is not None and str(existing_render.get("status") or "") == "processing":
+        raise HTTPException(status_code=409, detail="luck_generation_in_progress")
+
+    points_cost = (
+        get_runtime_four_pillars_luck_cycle_points_cost(channel_key)
+        if render_type == "dayun"
+        else get_runtime_four_pillars_luck_year_points_cost(channel_key)
+    )
+    usage_scene = FOUR_PILLARS_LUCK_CYCLE_RENDER_SCENE if render_type == "dayun" else FOUR_PILLARS_LUCK_YEAR_RENDER_SCENE
+    try:
+        render = create_four_pillars_luck_render_request(
+            review_id=review_id,
+            user_id=current_user_id,
+            render_type=render_type,
+            cycle_key=cycle_key,
+            year=year,
+            points_cost=points_cost,
+            usage_scene=usage_scene,
+            request_payload_summary={
+                "review_id": review_id,
+                "render_type": render_type,
+                "cycle_key": cycle_key,
+                "year": year,
+                "stream": True,
+            },
+            facts=facts,
+            now_text=_utc_now(),
+            channel=channel_key,
+        )
+    except InsufficientPointsError as exc:
+        raise HTTPException(status_code=402, detail="insufficient_points") from exc
+
+    if str(render.get("status") or "") == "completed":
+        def completed_event_stream():
+            yield _sse_event("render", _build_four_pillars_luck_stream_render_data(render, current_user_id=current_user_id))
+            yield _sse_event(
+                "complete",
+                _build_four_pillars_luck_stream_complete_data(
+                    review_id,
+                    current_user_id=current_user_id,
+                    channel_key=channel_key,
+                    render=render,
+                ),
+            )
+
+        return StreamingResponse(
+            completed_event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+    if str(render.get("status") or "") != "processing":
+        raise HTTPException(status_code=409, detail="luck_render_not_ready")
+
+    def event_stream():
+        generation_active = True
+        try:
+            yield _sse_event("render", _build_four_pillars_luck_stream_render_data(render, current_user_id=current_user_id))
+            stream_iter = (
+                stream_four_pillars_dayun_render(
+                    package,
+                    cycle_key=cycle_key,
+                    user_id=current_user_id,
+                    request_id=str(render.get("usage_record_id") or render.get("id") or review_id),
+                )
+                if render_type == "dayun"
+                else stream_four_pillars_liunian_render(
+                    package,
+                    cycle_key=cycle_key,
+                    year=int(year or 0),
+                    user_id=current_user_id,
+                    request_id=str(render.get("usage_record_id") or render.get("id") or review_id),
+                )
+            )
+            for render_event in stream_iter:
+                event_name = str(render_event.get("event") or "")
+                event_data = render_event.get("data") if isinstance(render_event.get("data"), dict) else {}
+                if event_name in {"status", "delta"}:
+                    yield _sse_event(event_name, event_data)
+                    continue
+                if event_name == "result":
+                    result = event_data.get("render") if isinstance(event_data, dict) else None
+                    if not isinstance(result, dict):
+                        raise DeepSeekAPIError("four_pillars_luck_stream_missing_result")
+                    complete_four_pillars_luck_render(
+                        render_id=str(render["id"]),
+                        result=result,
+                        progress_message="生成完成",
+                        updated_at=_utc_now(),
+                    )
+                    if render.get("usage_record_id"):
+                        complete_usage_record(
+                            usage_record_id=str(render["usage_record_id"]),
+                            result_summary={
+                                "status": "completed",
+                                "render_type": render_type,
+                                "cycle_key": cycle_key,
+                                "year": year,
+                                "stream": True,
+                                "model_name": event_data.get("model_name"),
+                            },
+                            updated_at=_utc_now(),
+                        )
+                    completed_render = get_four_pillars_luck_render_by_id(str(render["id"])) or {**render, "status": "completed", "result": result}
+                    generation_active = False
+                    yield _sse_event(
+                        "complete",
+                        _build_four_pillars_luck_stream_complete_data(
+                            review_id,
+                            current_user_id=current_user_id,
+                            channel_key=channel_key,
+                            render=completed_render,
+                        ),
+                    )
+                    return
+            raise DeepSeekAPIError("four_pillars_luck_stream_missing_result")
+        except GeneratorExit:
+            if generation_active:
+                _fail_four_pillars_luck_render_with_refund(render, "client_disconnected")
+            raise
+        except Exception as exc:
+            LOGGER.exception(
+                "four_pillars_luck_stream_failed render_id=%s review_id=%s render_type=%s cycle_key=%s year=%s",
+                render.get("id"),
+                review_id,
+                render_type,
+                cycle_key,
+                year,
+            )
+            refunded = False
+            if generation_active:
+                _fail_four_pillars_luck_render_with_refund(render, str(exc))
+                refunded = int(render.get("points_cost") or 0) > 0
+            yield _sse_event("error", _build_luck_generation_error_payload(exc, refunded=refunded))
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 def create_voice_narration(
@@ -2416,7 +2927,6 @@ def _build_four_pillars_review_record_response(
         status=str(review["status"]),
         progress_stage=review.get("progress_stage"),
         progress_message=review.get("progress_message"),
-        score=_coerce_four_pillars_score(review, public_view),
         input_profile=input_profile,
         chart=chart,
         chart_display=chart_display,
@@ -2433,7 +2943,6 @@ def _build_four_pillars_review_record_response(
         aspect_unlock_points=int(public_view.get("aspect_unlock_points")) if public_view and public_view.get("aspect_unlock_points") is not None else None,
         free_aspect_keys=list(public_view.get("free_aspect_keys") or []) if public_view else [],
         unlock_enforcement_enabled=bool(public_view.get("unlock_enforcement_enabled")) if public_view and public_view.get("unlock_enforcement_enabled") is not None else None,
-        score_markdown=review.get("score_markdown"),
         error_message=review.get("error_message"),
         created_at=str(review["created_at"]),
         updated_at=str(review["updated_at"]),
@@ -2453,7 +2962,6 @@ def _build_four_pillars_review_summary_response(review: dict[str, object]) -> Fo
         status=str(review["status"]),
         progress_stage=review.get("progress_stage"),
         progress_message=review.get("progress_message"),
-        score=_coerce_four_pillars_score(review),
         error_message=review.get("error_message"),
         created_at=str(review["created_at"]),
         updated_at=str(review["updated_at"]),
@@ -2464,15 +2972,27 @@ def _build_four_pillars_summary_response(payload: Any) -> FourPillarsSummaryResp
     if not isinstance(payload, dict):
         return None
     title = str(payload.get("title") or "").strip()
+    comprehensive_text = str(payload.get("comprehensive_text") or "").strip()
+    overview = str(payload.get("overview") or "").strip()
     risk = str(payload.get("risk") or "").strip()
     usage_guidance = str(payload.get("usage_guidance") or "").strip()
+    key_judgements = _list_of_dicts(payload.get("key_judgements"))
+    life_risk_windows = _list_of_dicts(payload.get("life_risk_windows"))
+    time_highlights = _list_of_dicts(payload.get("time_highlights"))
+    favorable_strategy = payload.get("favorable_strategy") if isinstance(payload.get("favorable_strategy"), dict) else {}
     elements_check = _string_dict(payload.get("elements_check"))
-    if not title and not risk and not usage_guidance and not elements_check:
+    if not title and not comprehensive_text and not overview and not risk and not usage_guidance and not key_judgements and not life_risk_windows and not time_highlights and not favorable_strategy and not elements_check:
         return None
     return FourPillarsSummaryResponse(
         title=title,
+        comprehensive_text=comprehensive_text,
+        overview=overview,
         risk=risk,
         usage_guidance=usage_guidance,
+        key_judgements=key_judgements,
+        life_risk_windows=life_risk_windows,
+        time_highlights=time_highlights,
+        favorable_strategy=dict(favorable_strategy),
         elements_check=elements_check,
     )
 
@@ -2530,7 +3050,13 @@ def _build_four_pillars_aspect_unlock_response(
 
 
 def _build_four_pillars_luck_render_response(item: dict[str, Any]) -> FourPillarsLuckRenderRecordResponse:
-    return FourPillarsLuckRenderRecordResponse(**item)
+    payload = dict(item)
+    result = payload.get("result")
+    if isinstance(result, dict) and "trend_tendency" not in result and result.get("score_tendency") is not None:
+        result = dict(result)
+        result["trend_tendency"] = result.pop("score_tendency")
+        payload["result"] = result
+    return FourPillarsLuckRenderRecordResponse(**payload)
 
 
 def _build_four_pillars_luck_analysis_payload(
@@ -2933,6 +3459,100 @@ def _sse_event(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
 
+def _build_base_streaming_response(
+    event_queue: Queue[dict[str, Any]],
+    *,
+    created_event: str,
+    created_data: dict[str, Any],
+) -> StreamingResponse:
+    def event_stream():
+        yield _sse_event(created_event, created_data)
+        while True:
+            try:
+                queued_event = event_queue.get(timeout=15)
+            except Empty:
+                yield _sse_event("ping", {"status": "alive"})
+                continue
+            event_name = str(queued_event.get("event") or "")
+            if event_name == "_done":
+                return
+            event_data = queued_event.get("data") if isinstance(queued_event.get("data"), dict) else {}
+            yield _sse_event(event_name, event_data)
+            if event_name in {"complete", "error"}:
+                return
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def _build_review_base_stream_payload(review_id: str, *, current_user_id: str, channel_key: str | None) -> dict[str, Any]:
+    review = get_review(review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="review_not_found")
+    points_account = get_points_account(current_user_id)
+    return {
+        "review": _build_review_record_response(review, channel_key=channel_key, current_user_id=current_user_id).model_dump(),
+        "points": _build_points_account_response(points_account).model_dump() if points_account is not None else None,
+    }
+
+
+def _build_four_pillars_base_stream_payload(review_id: str, *, current_user_id: str, channel_key: str | None) -> dict[str, Any]:
+    review = get_four_pillars_review(review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="review_not_found")
+    points_account = get_points_account(current_user_id)
+    return {
+        "review": _build_four_pillars_review_record_response(review, channel_key=channel_key, current_user_id=current_user_id).model_dump(),
+        "points": _build_points_account_response(points_account).model_dump() if points_account is not None else None,
+    }
+
+
+def _build_aspect_generation_error_payload(exc: Exception, *, refunded: bool) -> dict[str, Any]:
+    if _is_deepseek_insufficient_balance_error(exc):
+        refund_text = "本次积分已退回" if refunded else "本次未扣除积分"
+        return {
+            "detail": "llm_insufficient_balance",
+            "message": f"AI 服务额度不足，{refund_text}，请联系管理员处理后再试。",
+            "refunded": refunded,
+        }
+    return {"detail": "aspect_generation_failed", "message": str(exc), "refunded": refunded}
+
+
+def _build_base_generation_error_payload(exc: Exception, *, refunded: bool) -> dict[str, Any]:
+    if _is_deepseek_insufficient_balance_error(exc):
+        refund_text = "本次积分已退回" if refunded else "本次未扣除积分"
+        return {
+            "detail": "llm_insufficient_balance",
+            "message": f"AI 服务额度不足，{refund_text}，请联系管理员处理后再试。",
+            "refunded": refunded,
+        }
+    return {"detail": "review_generation_failed", "message": str(exc), "refunded": refunded}
+
+
+def _build_luck_generation_error_payload(exc: Exception, *, refunded: bool) -> dict[str, Any]:
+    if _is_deepseek_insufficient_balance_error(exc):
+        refund_text = "本次积分已退回" if refunded else "本次未扣除积分"
+        return {
+            "detail": "llm_insufficient_balance",
+            "message": f"AI 服务额度不足，{refund_text}，请联系管理员处理后再试。",
+            "refunded": refunded,
+        }
+    return {"detail": "luck_generation_failed", "message": str(exc), "refunded": refunded}
+
+
+def _is_deepseek_insufficient_balance_error(exc: Exception) -> bool:
+    if isinstance(exc, DeepSeekHTTPError) and exc.status_code == 402:
+        return True
+    error_text = str(exc).lower()
+    return "deepseek http 402" in error_text or "insufficient balance" in error_text
+
+
 def _create_completed_review_aspect_unlock_for_stream(
     review: dict[str, object],
     *,
@@ -3025,6 +3645,144 @@ def _persist_review_aspect_render(*, review_id: str, aspect_key: str, rendered_a
     current_template["product_view"] = build_phone_review_product_view(current_score_result, current_template)
     current_template["product_view"]["rules_version"] = RULES.get("version")
     update_review_score_template(review_id=review_id, score_template=current_template, updated_at=_utc_now())
+
+
+def _create_completed_four_pillars_aspect_unlock_for_stream(
+    review: dict[str, object],
+    *,
+    current_user_id: str,
+    aspect_key: str,
+    available_aspect_keys: list[str],
+    channel_key: str | None,
+) -> dict[str, Any]:
+    free_aspect_keys = _resolve_four_pillars_free_aspect_keys(available_aspect_keys, channel_key=channel_key)
+    points_cost = 0 if aspect_key in free_aspect_keys else get_runtime_four_pillars_aspect_unlock_points_cost(channel_key)
+    unlock = create_four_pillars_aspect_unlock(
+        review_id=str(review["id"]),
+        user_id=current_user_id,
+        aspect_key=aspect_key,
+        points_cost=points_cost,
+        usage_scene=FOUR_PILLARS_ASPECT_UNLOCK_SCENE,
+        request_payload_summary={
+            "aspect_key": aspect_key,
+            "birth_date": review["birth_date"],
+            "birth_time": review["birth_time"],
+            "stream": True,
+            "cached": True,
+        },
+        now_text=_utc_now(),
+        channel=channel_key,
+    )
+    if str(unlock.get("status") or "completed") != "completed":
+        raise HTTPException(status_code=409, detail="aspect_generation_in_progress")
+    return unlock
+
+
+def _build_four_pillars_aspect_stream_unlock_data(unlock: dict[str, Any], *, current_user_id: str) -> dict[str, Any]:
+    points_account = get_points_account(current_user_id)
+    points = _build_points_account_response(points_account).model_dump() if points_account is not None else None
+    return {
+        "unlock_id": str(unlock.get("unlock_id") or ""),
+        "review_id": str(unlock.get("review_id") or ""),
+        "user_id": str(unlock.get("user_id") or ""),
+        "aspect_key": str(unlock.get("aspect_key") or ""),
+        "points_cost": int(unlock.get("points_cost") or 0),
+        "usage_record_id": str(unlock.get("usage_record_id") or ""),
+        "unlocked_at": str(unlock.get("unlocked_at") or ""),
+        "status": str(unlock.get("status") or "processing"),
+        "points": points,
+    }
+
+
+def _build_four_pillars_aspect_stream_complete_data(
+    review_id: str,
+    *,
+    current_user_id: str,
+    channel_key: str | None,
+    aspect_key: str,
+    rendered_aspect: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    review = get_four_pillars_review(review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="review_not_found")
+    response = _build_four_pillars_review_record_response(review, channel_key=channel_key, current_user_id=current_user_id)
+    aspect_map = {item.aspect_key: item for item in response.aspects}
+    points_account = get_points_account(current_user_id)
+    aspect = aspect_map.get(aspect_key)
+    aspect_payload = aspect.model_dump() if aspect is not None else None
+    if isinstance(rendered_aspect, dict):
+        aspect_payload = {
+            **(aspect_payload or {}),
+            **rendered_aspect,
+            "aspect_key": aspect_key,
+            "is_unlocked": True,
+        }
+    review_payload = response.model_dump()
+    if aspect_payload and isinstance(review_payload.get("aspects"), list):
+        review_payload["aspects"] = [
+            {**item, **aspect_payload} if isinstance(item, dict) and item.get("aspect_key") == aspect_key else item
+            for item in review_payload["aspects"]
+        ]
+    return {
+        "aspect": aspect_payload,
+        "review": review_payload,
+        "points": _build_points_account_response(points_account).model_dump() if points_account is not None else None,
+    }
+
+
+def _build_four_pillars_luck_stream_render_data(render: dict[str, Any], *, current_user_id: str) -> dict[str, Any]:
+    points_account = get_points_account(current_user_id)
+    return {
+        "render": _build_four_pillars_luck_render_response(render).model_dump(),
+        "points": _build_points_account_response(points_account).model_dump() if points_account is not None else None,
+    }
+
+
+def _build_four_pillars_luck_stream_complete_data(
+    review_id: str,
+    *,
+    current_user_id: str,
+    channel_key: str | None,
+    render: dict[str, Any],
+) -> dict[str, Any]:
+    review = get_four_pillars_review(review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="review_not_found")
+    public_view = _resolve_four_pillars_public_view(review, current_user_id=current_user_id, channel_key=channel_key)
+    luck_analysis = _build_four_pillars_luck_analysis_payload(
+        review,
+        public_view=public_view,
+        current_user_id=current_user_id,
+        channel_key=channel_key,
+    )
+    points_account = get_points_account(current_user_id)
+    return {
+        "render": _build_four_pillars_luck_render_response(render).model_dump(),
+        "luck_analysis": luck_analysis,
+        "points": _build_points_account_response(points_account).model_dump() if points_account is not None else None,
+    }
+
+
+def _persist_four_pillars_aspect_render(*, review_id: str, aspect_key: str, rendered_aspect: dict[str, Any]) -> None:
+    current_review = get_four_pillars_review(review_id)
+    if current_review is None or not isinstance(current_review.get("score_template"), dict):
+        raise HTTPException(status_code=404, detail="review_not_found")
+    current_score_result = current_review.get("score_result")
+    if not isinstance(current_score_result, dict):
+        current_score_result = {}
+    current_template = dict(current_review["score_template"])
+    current_render = current_template.get("product_aspects_render") if isinstance(current_template.get("product_aspects_render"), dict) else {}
+    next_render = dict(current_render)
+    next_render[aspect_key] = rendered_aspect
+    current_template["product_aspects_render"] = next_render
+    package = _build_four_pillars_package_from_review(
+        {**current_review, "score_result": current_score_result},
+        score_template=current_template,
+    )
+    if package is None:
+        raise HTTPException(status_code=409, detail="review_not_ready_for_unlock")
+    current_template["product_view"] = build_four_pillars_product_view(package)
+    update_four_pillars_review_score_template(review_id=review_id, score_template=current_template, updated_at=_utc_now())
 
 
 
@@ -3138,6 +3896,12 @@ def _join_voice_parts(parts: list[str | None]) -> str:
     return f"{narration_text}。"
 
 
+def _review_should_return_partial_public_view(review: dict[str, object]) -> bool:
+    status = str(review.get("status") or "")
+    progress_stage = str(review.get("progress_stage") or "")
+    return status == "processing" or progress_stage in {"queued", "scoring", "rendering", "finalizing"}
+
+
 def _resolve_four_pillars_public_view(
     review: dict[str, object],
     *,
@@ -3149,6 +3913,8 @@ def _resolve_four_pillars_public_view(
         return None
 
     base_view = score_template.get("product_view")
+    if isinstance(base_view, dict) and _review_should_return_partial_public_view(review):
+        return _apply_four_pillars_public_view_access(base_view, review, current_user_id=current_user_id, channel_key=channel_key)
     if (
         not isinstance(base_view, dict)
         or _four_pillars_product_view_needs_refresh(base_view)
@@ -3159,31 +3925,26 @@ def _resolve_four_pillars_public_view(
             return None
         product_render = score_template.get("product_render") if isinstance(score_template.get("product_render"), dict) else {}
         summary = product_render.get("summary") if isinstance(product_render.get("summary"), dict) else {}
-        if not (
-            str(summary.get("title") or "").strip()
-            and str(summary.get("risk") or "").strip()
-            and str(summary.get("usage_guidance") or "").strip()
-        ):
+        if _four_pillars_summary_needs_refresh(summary):
             score_template["product_render"] = build_four_pillars_core_render(package)
             package["score_template"] = score_template
         base_view = build_four_pillars_product_view(package)
         score_template["product_view"] = base_view
         now_text = _utc_now()
-        score_result = package["score_result"]
         if str(review.get("status")) == "completed":
             update_four_pillars_review_score_template(review_id=str(review["id"]), score_template=score_template, updated_at=now_text)
         else:
             complete_four_pillars_review_with_message(
                 review_id=str(review["id"]),
-                score_result=score_result,
+                score_result={},
                 score_template=score_template,
-                score_markdown=review.get("score_markdown") if isinstance(review.get("score_markdown"), str) else None,
-                progress_message="四柱总评已完成，专项内容正在后台生成",
+                score_markdown=None,
+                progress_message="四柱总评已完成，可按需解锁专项",
                 updated_at=now_text,
             )
             review["status"] = "completed"
             review["progress_stage"] = "completed"
-            review["progress_message"] = "四柱总评已完成，专项内容正在后台生成"
+            review["progress_message"] = "四柱总评已完成，可按需解锁专项"
         review["score_template"] = score_template
         review["updated_at"] = now_text
 
@@ -3219,7 +3980,7 @@ def _apply_four_pillars_public_view_access(
 
     if current_user_id and review_user_id and current_user_id == review_user_id:
         unlocked_items = list_four_pillars_aspect_unlocks(review_id=str(review["id"]), user_id=current_user_id)
-        unlocked_key_set.update(str(item["aspect_key"]) for item in unlocked_items)
+        unlocked_key_set.update(expand_four_pillars_aspect_keys(str(item["aspect_key"]) for item in unlocked_items))
 
     ordered_aspects: list[dict[str, Any]] = []
     unlock_points_cost = get_runtime_four_pillars_aspect_unlock_points_cost(channel_key)
@@ -3253,6 +4014,8 @@ def _four_pillars_product_view_needs_refresh(payload: dict[str, Any]) -> bool:
         return True
     if not isinstance(payload.get("summary"), dict):
         return True
+    if _four_pillars_summary_needs_refresh(payload.get("summary")):
+        return True
     aspects = payload.get("aspects")
     if not isinstance(aspects, list):
         return True
@@ -3264,11 +4027,49 @@ def _four_pillars_product_view_needs_refresh(payload: dict[str, Any]) -> bool:
         if not aspect_key:
             return True
         seen_keys.add(aspect_key)
-        if item.get("score") is None:
-            return True
         if not isinstance(item.get("elements_check"), dict):
             return True
     return not set(FOUR_PILLARS_ASPECT_ORDER).issubset(seen_keys)
+
+
+def _four_pillars_summary_needs_refresh(summary: Any) -> bool:
+    if not isinstance(summary, dict):
+        return True
+    title = str(summary.get("title") or "").strip()
+    comprehensive_text = str(summary.get("comprehensive_text") or "").strip()
+    overview = str(summary.get("overview") or "").strip()
+    risk = str(summary.get("risk") or "").strip()
+    usage_guidance = str(summary.get("usage_guidance") or "").strip()
+    if not title:
+        return True
+    has_v2_shape = bool(
+        overview
+        or isinstance(summary.get("key_judgements"), list)
+        or isinstance(summary.get("life_risk_windows"), list)
+        or isinstance(summary.get("time_highlights"), list)
+        or isinstance(summary.get("favorable_strategy"), dict)
+    )
+    if has_v2_shape and not comprehensive_text:
+        return True
+    if has_v2_shape and (not risk or not usage_guidance):
+        return True
+    copied_example_markers = (
+        "这张命盘机会不弱，但关系、健康和阶段风险要提前管理",
+        "这张盘的主轴不是单纯好坏，而是机会、表达和压力同时出现",
+        "重大关系容易被距离、家庭事务或沟通方式牵动",
+        "身体风险更像长期消耗，不是单点疾病结论",
+    )
+    summary_text = "\n".join(
+        [
+            title,
+            comprehensive_text,
+            overview,
+            str(summary.get("risk") or ""),
+            str(summary.get("usage_guidance") or ""),
+            json.dumps(summary.get("key_judgements") or [], ensure_ascii=False),
+        ]
+    )
+    return any(marker in summary_text for marker in copied_example_markers)
 
 
 def _four_pillars_product_view_missing_cached_aspects(payload: dict[str, Any], score_template: dict[str, Any]) -> bool:
@@ -3285,7 +4086,7 @@ def _four_pillars_product_view_missing_cached_aspects(payload: dict[str, Any], s
         if isinstance(item, dict)
     }
     for aspect_key in FOUR_PILLARS_ASPECT_ORDER:
-        cached_aspect = product_aspects_render.get(aspect_key)
+        cached_aspect = _resolve_four_pillars_cached_aspect(product_aspects_render, aspect_key)
         if not isinstance(cached_aspect, dict):
             continue
         public_aspect = public_aspect_map.get(aspect_key)
@@ -3297,8 +4098,6 @@ def _four_pillars_product_view_missing_cached_aspects(payload: dict[str, Any], s
             return True
         if _rendered_aspect_field_changed(cached_aspect, public_aspect, "risk"):
             return True
-        if cached_aspect.get("score") is not None and public_aspect.get("score") != cached_aspect.get("score"):
-            return True
     return False
 
 
@@ -3308,14 +4107,24 @@ def _build_four_pillars_package_from_review(
     score_template: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     resolved_template = score_template if isinstance(score_template, dict) else review.get("score_template")
-    score_result = review.get("score_result")
-    if not isinstance(resolved_template, dict) or not isinstance(score_result, dict):
+    if not isinstance(resolved_template, dict):
         return None
+    score_result = review.get("score_result")
+    if not isinstance(score_result, dict):
+        score_result = {}
     chart = resolved_template.get("chart")
     deterministic_facts = resolved_template.get("deterministic_facts")
     input_profile = resolved_template.get("input_profile")
     if not isinstance(chart, dict) or not isinstance(deterministic_facts, dict) or not isinstance(input_profile, dict):
         return None
+    aspect_signals = deterministic_facts.get("aspect_signals")
+    if not isinstance(aspect_signals, dict) or not set(FOUR_PILLARS_ASPECT_ORDER).issubset(set(aspect_signals.keys())):
+        try:
+            deterministic_facts = build_deterministic_facts(chart, input_profile)
+            resolved_template["deterministic_facts"] = deterministic_facts
+            resolved_template.pop("score_summary", None)
+        except Exception:
+            return None
     return {
         "input_profile": input_profile,
         "chart": chart,
@@ -3359,6 +4168,8 @@ def _resolve_review_public_view(
         return None
 
     base_view = score_template.get("product_view")
+    if isinstance(base_view, dict) and _review_should_return_partial_public_view(review):
+        return _apply_review_public_view_access(base_view, review, current_user_id=current_user_id, channel_key=channel_key)
     if (
         not isinstance(base_view, dict)
         or _review_product_view_needs_refresh(base_view)
@@ -3497,6 +4308,12 @@ def _string_dict(payload: Any) -> dict[str, str]:
         for key, value in payload.items()
         if str(key).strip() and str(value).strip()
     }
+
+
+def _list_of_dicts(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, list):
+        return []
+    return [dict(item) for item in payload if isinstance(item, dict)]
 
 
 def _build_review_board_response(payload: Any) -> ReviewBoardResponse | None:
@@ -3837,8 +4654,13 @@ def _review_aspect_detail_ready(review: dict[str, object], aspect_key: str) -> b
         return False
     product_aspects_render = score_template.get("product_aspects_render")
     if isinstance(product_aspects_render, dict):
-        aspect = product_aspects_render.get(aspect_key)
-        if isinstance(aspect, dict) and str(aspect.get("content") or "").strip() and str(aspect.get("risk") or "").strip():
+        aspect = _resolve_four_pillars_cached_aspect(product_aspects_render, aspect_key)
+        if (
+            isinstance(aspect, dict)
+            and not is_four_pillars_fallback_aspect_payload(aspect, aspect_key)
+            and str(aspect.get("content") or "").strip()
+            and str(aspect.get("risk") or "").strip()
+        ):
             return True
 
     product_view = score_template.get("product_view")
@@ -3848,9 +4670,31 @@ def _review_aspect_detail_ready(review: dict[str, object], aspect_key: str) -> b
             if not isinstance(item, dict):
                 continue
             item_key = str(item.get("aspect_key") or item.get("aspect_id") or "").strip()
-            if item_key == aspect_key and str(item.get("content") or "").strip() and str(item.get("risk") or "").strip():
+            if (
+                item_key == aspect_key
+                and not is_four_pillars_fallback_aspect_payload(item, aspect_key)
+                and str(item.get("content") or "").strip()
+                and str(item.get("risk") or "").strip()
+            ):
                 return True
     return False
+
+
+def _resolve_four_pillars_cached_aspect(payload: dict[str, Any], aspect_key: str) -> dict[str, Any] | None:
+    aspect = payload.get(aspect_key)
+    if isinstance(aspect, dict):
+        return aspect
+    fallback_keys = {
+        "marriage": ("love",),
+        "fortune": ("annual_trend",),
+        "family": ("family_environment",),
+        "fengshui": ("family_environment",),
+    }.get(aspect_key, ())
+    for fallback_key in fallback_keys:
+        fallback = payload.get(fallback_key)
+        if isinstance(fallback, dict):
+            return fallback
+    return None
 
 
 def _four_pillars_aspect_detail_ready(review: dict[str, object], aspect_key: str) -> bool:
@@ -3859,32 +4703,173 @@ def _four_pillars_aspect_detail_ready(review: dict[str, object], aspect_key: str
         return False
     product_aspects_render = score_template.get("product_aspects_render")
     if isinstance(product_aspects_render, dict):
-        aspect = product_aspects_render.get(aspect_key)
-        if isinstance(aspect, dict) and str(aspect.get("content") or "").strip() and str(aspect.get("risk") or "").strip():
+        aspect = _resolve_four_pillars_cached_aspect(product_aspects_render, aspect_key)
+        if (
+            isinstance(aspect, dict)
+            and not is_four_pillars_fallback_aspect_payload(aspect, aspect_key)
+            and str(aspect.get("content") or "").strip()
+            and str(aspect.get("risk") or "").strip()
+        ):
             return True
-
-    product_view = score_template.get("product_view")
-    aspects = product_view.get("aspects") if isinstance(product_view, dict) else None
-    if isinstance(aspects, list):
-        for item in aspects:
-            if not isinstance(item, dict):
-                continue
-            item_key = str(item.get("aspect_key") or "").strip()
-            if item_key == aspect_key and str(item.get("content") or "").strip() and str(item.get("risk") or "").strip():
-                return True
     return False
 
 
-def _coerce_four_pillars_score(review: dict[str, object], public_view: dict[str, Any] | None = None) -> int | None:
-    if isinstance(public_view, dict) and public_view.get("score") is not None:
-        return int(public_view["score"])
-    score_template = review.get("score_template")
-    if not isinstance(score_template, dict):
-        return None
-    score_summary = score_template.get("score_summary")
-    if not isinstance(score_summary, dict) or score_summary.get("final_score") is None:
-        return None
-    return int(score_summary["final_score"])
+def _run_review_generation_stream(
+    *,
+    review_id: str,
+    phone: str,
+    gender: str,
+    include_markdown: bool,
+    user_id: str,
+    points_cost: int,
+    channel_key: str | None,
+    event_queue: Queue[dict[str, Any]],
+) -> None:
+    try:
+        update_review_progress(review_id=review_id, progress_stage="scoring", progress_message="正在计算基础盘面", updated_at=_utc_now())
+        result = score_phone(phone, gender, RULES)
+
+        bundle = build_scoring_bundle(result, include_markdown=include_markdown)
+        bundle["score_template"]["product_view"] = build_phone_review_product_view(bundle["score_result"], bundle["score_template"])
+        bundle["score_template"]["product_view"]["rules_version"] = RULES.get("version")
+        update_review_generation_payload(
+            review_id=review_id,
+            score_result=bundle["score_result"],
+            score_template=bundle["score_template"],
+            score_markdown=bundle.get("score_markdown"),
+            progress_stage="rendering",
+            progress_message="基础盘面已完成，智能体正在生成总评和长期建议",
+            updated_at=_utc_now(),
+        )
+        event_queue.put({"event": "facts_ready", "data": _build_review_base_stream_payload(review_id, current_user_id=user_id, channel_key=channel_key)})
+
+        update_review_progress(review_id=review_id, progress_stage="rendering", progress_message="基础评分已完成，正在生成总评和长期建议", updated_at=_utc_now())
+        product_render: dict[str, Any] | None = None
+        for render_event in stream_phone_review_core_render(bundle, user_id=user_id, request_id=review_id):
+            event_name = str(render_event.get("event") or "")
+            event_data = render_event.get("data") if isinstance(render_event.get("data"), dict) else {}
+            if event_name == "result":
+                resolved_render = event_data.get("product_render")
+                if not isinstance(resolved_render, dict):
+                    raise DeepSeekAPIError("phone_qimen_core_stream_missing_result")
+                product_render = resolved_render
+                continue
+            if event_name in {"core_status", "core_delta", "section_complete"}:
+                event_queue.put({"event": event_name, "data": event_data})
+
+        if product_render is None:
+            raise DeepSeekAPIError("phone_qimen_core_stream_missing_result")
+        bundle["score_template"]["product_render"] = product_render
+        if isinstance(product_render.get("phone_summary"), dict):
+            bundle["score_template"]["phone_summary"] = product_render["phone_summary"]
+        bundle["score_template"]["product_view"] = build_phone_review_product_view(bundle["score_result"], bundle["score_template"])
+        bundle["score_template"]["product_view"]["rules_version"] = RULES.get("version")
+
+        complete_review_with_message(
+            review_id=review_id,
+            score_result=bundle["score_result"],
+            score_template=bundle["score_template"],
+            score_markdown=bundle.get("score_markdown"),
+            progress_message="总评和长期使用建议已完成，可按需解锁专项",
+            updated_at=_utc_now(),
+        )
+        if points_cost > 0:
+            complete_usage_record(usage_record_id=review_id, result_summary={"status": "completed", "stream": True}, updated_at=_utc_now())
+        _start_review_voice_preheat(review_id=review_id, channel_key=channel_key)
+        event_queue.put({"event": "complete", "data": _build_review_base_stream_payload(review_id, current_user_id=user_id, channel_key=channel_key)})
+    except Exception as exc:
+        fail_review(review_id=review_id, error_message=str(exc), updated_at=_utc_now())
+        refunded = False
+        if points_cost > 0:
+            ledger = refund_points(
+                user_id=user_id,
+                points_amount=points_cost,
+                biz_type=PHONE_REVIEW_BASE_REFUND_BIZ_TYPE,
+                biz_id=review_id,
+                idempotency_key=f"review:refund:{review_id}",
+                remark="phone_review_base_refund",
+                now_text=_utc_now(),
+            )
+            refunded = ledger is not None
+            fail_usage_record(usage_record_id=review_id, result_summary={"status": "failed", "error_message": str(exc), "stream": True}, updated_at=_utc_now())
+        event_queue.put({"event": "error", "data": _build_base_generation_error_payload(exc, refunded=refunded)})
+    finally:
+        event_queue.put({"event": "_done"})
+
+
+def _run_four_pillars_review_generation_stream(
+    *,
+    review_id: str,
+    input_profile: dict[str, Any],
+    include_markdown: bool,
+    user_id: str,
+    points_cost: int,
+    channel_key: str | None,
+    event_queue: Queue[dict[str, Any]],
+) -> None:
+    try:
+        update_four_pillars_review_progress(review_id=review_id, progress_stage="scoring", progress_message="正在排出四柱命盘和确定性事实", updated_at=_utc_now())
+        bundle = build_four_pillars_review(input_profile, include_markdown=include_markdown)
+        bundle["score_template"]["product_view"] = build_four_pillars_product_view(bundle)
+        update_four_pillars_review_generation_payload(
+            review_id=review_id,
+            score_result=bundle["score_result"],
+            score_template=bundle["score_template"],
+            score_markdown=None,
+            progress_stage="rendering",
+            progress_message="四柱事实包已完成，智能体正在生成总评",
+            updated_at=_utc_now(),
+        )
+        event_queue.put({"event": "facts_ready", "data": _build_four_pillars_base_stream_payload(review_id, current_user_id=user_id, channel_key=channel_key)})
+
+        update_four_pillars_review_progress(review_id=review_id, progress_stage="rendering", progress_message="基础排盘已完成，正在生成四柱总评", updated_at=_utc_now())
+        product_render: dict[str, Any] | None = None
+        for render_event in stream_four_pillars_core_render(bundle, user_id=user_id, request_id=review_id):
+            event_name = str(render_event.get("event") or "")
+            event_data = render_event.get("data") if isinstance(render_event.get("data"), dict) else {}
+            if event_name == "result":
+                resolved_render = event_data.get("product_render")
+                if not isinstance(resolved_render, dict):
+                    raise DeepSeekAPIError("four_pillars_core_stream_missing_result")
+                product_render = resolved_render
+                continue
+            if event_name in {"core_status", "core_delta", "section_complete"}:
+                event_queue.put({"event": event_name, "data": event_data})
+
+        if product_render is None:
+            raise DeepSeekAPIError("four_pillars_core_stream_missing_result")
+        bundle["score_template"]["product_render"] = product_render
+        bundle["score_template"]["product_view"] = build_four_pillars_product_view(bundle)
+
+        complete_four_pillars_review_with_message(
+            review_id=review_id,
+            score_result=bundle["score_result"],
+            score_template=bundle["score_template"],
+            score_markdown=None,
+            progress_message="四柱总评已完成，可按需解锁专项",
+            updated_at=_utc_now(),
+        )
+        if points_cost > 0:
+            complete_usage_record(usage_record_id=review_id, result_summary={"status": "completed", "stream": True}, updated_at=_utc_now())
+        event_queue.put({"event": "complete", "data": _build_four_pillars_base_stream_payload(review_id, current_user_id=user_id, channel_key=channel_key)})
+    except Exception as exc:
+        fail_four_pillars_review(review_id=review_id, error_message=str(exc), updated_at=_utc_now())
+        refunded = False
+        if points_cost > 0:
+            ledger = refund_points(
+                user_id=user_id,
+                points_amount=points_cost,
+                biz_type=FOUR_PILLARS_REVIEW_BASE_REFUND_BIZ_TYPE,
+                biz_id=review_id,
+                idempotency_key=f"four_pillars:refund:{review_id}",
+                remark="four_pillars_review_base_refund",
+                now_text=_utc_now(),
+            )
+            refunded = ledger is not None
+            fail_usage_record(usage_record_id=review_id, result_summary={"status": "failed", "error_message": str(exc), "stream": True}, updated_at=_utc_now())
+        event_queue.put({"event": "error", "data": _build_base_generation_error_payload(exc, refunded=refunded)})
+    finally:
+        event_queue.put({"event": "_done"})
 
 
 
@@ -3941,11 +4926,6 @@ def _run_review_generation(*, review_id: str, phone: str, gender: str, include_m
         complete_usage_record(usage_record_id=review_id, result_summary={"status": "completed"}, updated_at=_utc_now())
 
 
-def _start_review_aspect_prefetch(*, review_id: str) -> None:
-    thread = threading.Thread(target=_run_review_aspect_prefetch, kwargs={"review_id": review_id}, daemon=True)
-    thread.start()
-
-
 def _start_review_voice_preheat(*, review_id: str, channel_key: str | None) -> None:
     thread = threading.Thread(target=_run_review_voice_preheat, kwargs={"review_id": review_id, "channel_key": channel_key}, daemon=True)
     thread.start()
@@ -3985,56 +4965,6 @@ def _run_review_voice_preheat(*, review_id: str, channel_key: str | None) -> Non
             continue
 
 
-def _run_review_aspect_prefetch(*, review_id: str) -> None:
-    review = get_review(review_id)
-    if review is None or not isinstance(review.get("score_result"), dict) or not isinstance(review.get("score_template"), dict):
-        return
-    try:
-        score_template = dict(review["score_template"])
-        if not isinstance(score_template.get("product_aspects_render"), dict):
-            score_template["product_aspects_render"] = {}
-
-        def persist_aspect(aspect_key: str, rendered_aspect: dict[str, Any]) -> None:
-            current_review = get_review(review_id)
-            if current_review is None or not isinstance(current_review.get("score_template"), dict):
-                return
-            current_score_result = current_review.get("score_result")
-            if not isinstance(current_score_result, dict):
-                current_score_result = review["score_result"]
-            current_template = dict(current_review["score_template"])
-            current_render = current_template.get("product_aspects_render") if isinstance(current_template.get("product_aspects_render"), dict) else {}
-            next_render = dict(current_render)
-            next_render[aspect_key] = rendered_aspect
-            current_template["product_aspects_render"] = next_render
-            current_template["product_view"] = build_phone_review_product_view(current_score_result, current_template)
-            current_template["product_view"]["rules_version"] = RULES.get("version")
-            update_review_score_template(review_id=review_id, score_template=current_template, updated_at=_utc_now())
-
-        rendered_aspects = build_product_review_aspects_render(
-            {
-                "score_result": review["score_result"],
-                "score_template": score_template,
-            },
-            on_result=persist_aspect,
-        )
-        current_review = get_review(review_id)
-        if current_review is None or not isinstance(current_review.get("score_template"), dict):
-            return
-        current_score_result = current_review.get("score_result")
-        if not isinstance(current_score_result, dict):
-            current_score_result = review["score_result"]
-        current_template = dict(current_review["score_template"])
-        current_render = current_template.get("product_aspects_render") if isinstance(current_template.get("product_aspects_render"), dict) else {}
-        next_render = dict(current_render)
-        next_render.update(rendered_aspects)
-        current_template["product_aspects_render"] = next_render
-        current_template["product_view"] = build_phone_review_product_view(current_score_result, current_template)
-        current_template["product_view"]["rules_version"] = RULES.get("version")
-        update_review_score_template(review_id=review_id, score_template=current_template, updated_at=_utc_now())
-    except Exception:
-        return
-
-
 def _run_four_pillars_review_generation(
     *,
     review_id: str,
@@ -4044,7 +4974,6 @@ def _run_four_pillars_review_generation(
     points_cost: int = 0,
     channel_key: str | None = None,
 ) -> None:
-    aspect_prefetch_started = False
     try:
         update_four_pillars_review_progress(review_id=review_id, progress_stage="scoring", progress_message="正在排出四柱命盘和确定性事实", updated_at=_utc_now())
         bundle = build_four_pillars_review(input_profile, include_markdown=include_markdown)
@@ -4053,30 +4982,22 @@ def _run_four_pillars_review_generation(
             review_id=review_id,
             score_result=bundle["score_result"],
             score_template=bundle["score_template"],
-            score_markdown=bundle.get("score_markdown"),
+            score_markdown=None,
             progress_stage="scoring",
-            progress_message="四柱事实包已完成，智能体正在同步生成总评和专项内容",
+            progress_message="四柱事实包已完成，智能体正在生成总评",
             updated_at=_utc_now(),
         )
-        _start_four_pillars_aspect_prefetch(review_id=review_id)
-        aspect_prefetch_started = True
 
         update_four_pillars_review_progress(review_id=review_id, progress_stage="rendering", progress_message="基础排盘已完成，正在生成四柱总评", updated_at=_utc_now())
         bundle["score_template"]["product_render"] = build_four_pillars_core_render(bundle)
-        current_review = get_four_pillars_review(review_id)
-        if current_review is not None and isinstance(current_review.get("score_template"), dict):
-            current_template = current_review["score_template"]
-            current_aspects = current_template.get("product_aspects_render") if isinstance(current_template.get("product_aspects_render"), dict) else {}
-            if current_aspects:
-                bundle["score_template"]["product_aspects_render"] = dict(current_aspects)
         bundle["score_template"]["product_view"] = build_four_pillars_product_view(bundle)
 
         complete_four_pillars_review_with_message(
             review_id=review_id,
             score_result=bundle["score_result"],
             score_template=bundle["score_template"],
-            score_markdown=bundle.get("score_markdown"),
-            progress_message="四柱总评已完成，专项内容正在后台生成",
+            score_markdown=None,
+            progress_message="四柱总评已完成，可按需解锁专项",
             updated_at=_utc_now(),
         )
     except Exception as exc:
@@ -4096,71 +5017,6 @@ def _run_four_pillars_review_generation(
 
     if user_id and points_cost > 0:
         complete_usage_record(usage_record_id=review_id, result_summary={"status": "completed"}, updated_at=_utc_now())
-
-    if not aspect_prefetch_started:
-        _start_four_pillars_aspect_prefetch(review_id=review_id)
-
-
-def _start_four_pillars_aspect_prefetch(*, review_id: str) -> None:
-    thread = threading.Thread(target=_run_four_pillars_aspect_prefetch, kwargs={"review_id": review_id}, daemon=True)
-    thread.start()
-
-
-def _run_four_pillars_aspect_prefetch(*, review_id: str) -> None:
-    review = get_four_pillars_review(review_id)
-    if review is None or not isinstance(review.get("score_result"), dict) or not isinstance(review.get("score_template"), dict):
-        return
-    try:
-        score_template = dict(review["score_template"])
-        if not isinstance(score_template.get("product_aspects_render"), dict):
-            score_template["product_aspects_render"] = {}
-
-        def persist_aspect(aspect_key: str, rendered_aspect: dict[str, Any]) -> None:
-            current_review = get_four_pillars_review(review_id)
-            if current_review is None or not isinstance(current_review.get("score_template"), dict):
-                return
-            current_score_result = current_review.get("score_result")
-            if not isinstance(current_score_result, dict):
-                current_score_result = review["score_result"]
-            current_template = dict(current_review["score_template"])
-            current_render = current_template.get("product_aspects_render") if isinstance(current_template.get("product_aspects_render"), dict) else {}
-            next_render = dict(current_render)
-            next_render[aspect_key] = rendered_aspect
-            current_template["product_aspects_render"] = next_render
-            package = _build_four_pillars_package_from_review(
-                {**current_review, "score_result": current_score_result},
-                score_template=current_template,
-            )
-            if package is None:
-                return
-            current_template["product_view"] = build_four_pillars_product_view(package)
-            update_four_pillars_review_score_template(review_id=review_id, score_template=current_template, updated_at=_utc_now())
-
-        package = _build_four_pillars_package_from_review(review, score_template=score_template)
-        if package is None:
-            return
-        rendered_aspects = build_four_pillars_aspects_render(package, on_result=persist_aspect)
-        current_review = get_four_pillars_review(review_id)
-        if current_review is None or not isinstance(current_review.get("score_template"), dict):
-            return
-        current_score_result = current_review.get("score_result")
-        if not isinstance(current_score_result, dict):
-            current_score_result = review["score_result"]
-        current_template = dict(current_review["score_template"])
-        current_render = current_template.get("product_aspects_render") if isinstance(current_template.get("product_aspects_render"), dict) else {}
-        next_render = dict(current_render)
-        next_render.update(rendered_aspects)
-        current_template["product_aspects_render"] = next_render
-        package = _build_four_pillars_package_from_review(
-            {**current_review, "score_result": current_score_result},
-            score_template=current_template,
-        )
-        if package is None:
-            return
-        current_template["product_view"] = build_four_pillars_product_view(package)
-        update_four_pillars_review_score_template(review_id=review_id, score_template=current_template, updated_at=_utc_now())
-    except Exception:
-        return
 
 
 def _run_four_pillars_luck_render_generation(*, render_id: str) -> None:
@@ -4201,6 +5057,14 @@ def _run_four_pillars_luck_render_generation(*, render_id: str) -> None:
                 updated_at=_utc_now(),
             )
     except Exception as exc:
+        LOGGER.exception(
+            "four_pillars_luck_render_failed render_id=%s review_id=%s render_type=%s cycle_key=%s year=%s",
+            render.get("id"),
+            render.get("review_id"),
+            render.get("render_type"),
+            render.get("cycle_key"),
+            render.get("year"),
+        )
         _fail_four_pillars_luck_render_with_refund(render, str(exc))
 
 

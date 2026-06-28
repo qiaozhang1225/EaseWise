@@ -1,0 +1,160 @@
+{
+  "source_zip": "/Users/qiaoz-macmini/Downloads/easewise (2).zip",
+  "sha256": "a77f765a31b9baf9ab0b6fed4a4032ab52b482bb7c8a03c2e83e8726775d0928",
+  "extracted_temp_dir": "/tmp/easewise-export-2-clean",
+  "file_count": 38,
+  "files": [
+    {
+      "path": ".env.example",
+      "bytes": 116
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 73
+    },
+    {
+      "path": "README.md",
+      "bytes": 542
+    },
+    {
+      "path": "assets/.aistudio/.gitignore",
+      "bytes": 2
+    },
+    {
+      "path": "index.html",
+      "bytes": 298
+    },
+    {
+      "path": "metadata.json",
+      "bytes": 242
+    },
+    {
+      "path": "package.json",
+      "bytes": 770
+    },
+    {
+      "path": "server.ts",
+      "bytes": 71351
+    },
+    {
+      "path": "src/App.vue",
+      "bytes": 8618
+    },
+    {
+      "path": "src/components/admin/AdminWorkspace.vue",
+      "bytes": 1210
+    },
+    {
+      "path": "src/components/ai-agent/AIAgent.vue",
+      "bytes": 17023
+    },
+    {
+      "path": "src/components/analysis/Analysis.vue",
+      "bytes": 24933
+    },
+    {
+      "path": "src/components/auth/AuthModal.vue",
+      "bytes": 19479
+    },
+    {
+      "path": "src/components/bazi/BaziAnalysis.vue",
+      "bytes": 23710
+    },
+    {
+      "path": "src/components/four-pillars/FourPillarsAnalysis.vue",
+      "bytes": 35700
+    },
+    {
+      "path": "src/components/four-pillars/FourPillarsNatalTable.vue",
+      "bytes": 29503
+    },
+    {
+      "path": "src/components/four-pillars/mockLocations.ts",
+      "bytes": 1055
+    },
+    {
+      "path": "src/components/home/Home.vue",
+      "bytes": 19656
+    },
+    {
+      "path": "src/components/layout/BottomNav.vue",
+      "bytes": 1422
+    },
+    {
+      "path": "src/components/layout/Header.vue",
+      "bytes": 1288
+    },
+    {
+      "path": "src/components/meihua/MeihuaAnalysis.vue",
+      "bytes": 8528
+    },
+    {
+      "path": "src/components/points-claim/PointsClaimPage.vue",
+      "bytes": 4934
+    },
+    {
+      "path": "src/components/profile/AmbassadorDetail.vue",
+      "bytes": 6583
+    },
+    {
+      "path": "src/components/profile/Profile.vue",
+      "bytes": 9501
+    },
+    {
+      "path": "src/components/profile/SystemIntro.vue",
+      "bytes": 4254
+    },
+    {
+      "path": "src/components/recharge/RechargePage.vue",
+      "bytes": 4790
+    },
+    {
+      "path": "src/components/support/ContactServiceModal.vue",
+      "bytes": 7297
+    },
+    {
+      "path": "src/composables/useEaseWiseApp.ts",
+      "bytes": 37045
+    },
+    {
+      "path": "src/composables/useVoicePlayback.ts",
+      "bytes": 17125
+    },
+    {
+      "path": "src/config/pricing.ts",
+      "bytes": 176
+    },
+    {
+      "path": "src/constants/storage.ts",
+      "bytes": 669
+    },
+    {
+      "path": "src/index.css",
+      "bytes": 2785
+    },
+    {
+      "path": "src/lib/api.ts",
+      "bytes": 24408
+    },
+    {
+      "path": "src/main.ts",
+      "bytes": 116
+    },
+    {
+      "path": "src/types/api.ts",
+      "bytes": 37247
+    },
+    {
+      "path": "src/vite-env.d.ts",
+      "bytes": 186
+    },
+    {
+      "path": "tsconfig.json",
+      "bytes": 484
+    },
+    {
+      "path": "vite.config.ts",
+      "bytes": 1117
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import BottomNav from './components/layout/BottomNav.vue';
 import Home from './components/home/Home.vue';
 import Analysis from './components/analysis/Analysis.vue';
 import FourPillarsAnalysis from './components/four-pillars/FourPillarsAnalysis.vue';
+import MeihuaAnalysis from './components/meihua/MeihuaAnalysis.vue';
 import AIAgent from './components/ai-agent/AIAgent.vue';
 import Profile from './components/profile/Profile.vue';
 import RechargePage from './components/recharge/RechargePage.vue';
@@ -13,7 +14,7 @@ import ContactServiceModal from './components/support/ContactServiceModal.vue';
 import AdminWorkspace from './components/admin/AdminWorkspace.vue';
 import { useEaseWiseApp } from './composables/useEaseWiseApp';
 
-type AppTab = 'home' | 'phone' | 'bazi' | 'agent' | 'profile' | 'recharge' | 'points-claim';
+type AppTab = 'home' | 'phone' | 'bazi' | 'meihua' | 'agent' | 'profile' | 'recharge' | 'points-claim';
 
 const activeTab = ref<AppTab>('home');
 const routeQuery = ref<Record<string, string>>({});
@@ -28,6 +29,7 @@ const title = computed(() => {
     case 'home': return '易如反掌';
     case 'phone': return '手机号评测';
     case 'bazi': return '四柱八字评测';
+    case 'meihua': return '梅花易数评测';
     case 'agent': return '智能体';
     case 'profile': return '我的';
     case 'recharge': return '积分充值';
@@ -64,6 +66,9 @@ function readCurrentRoute(): { tab: AppTab; query: Record<string, string> } {
   }
   if (page === 'bazi' || page === 'four-pillars') {
     return { tab: 'bazi', query };
+  }
+  if (page === 'meihua' || page === 'plum-blossom') {
+    return { tab: 'meihua', query };
   }
   if (page === 'agent') {
     return { tab: 'agent', query };
@@ -153,6 +158,13 @@ async function handleBaziClick(): Promise<void> {
   }
 }
 
+async function handleMeihuaClick(): Promise<void> {
+  const authenticated = await requestRegisteredUser('梅花易数评测');
+  if (authenticated) {
+    navigateToTab('meihua');
+  }
+}
+
 onMounted(() => {
   if (!isAdminRoute) {
     const initialRoute = readCurrentRoute();
@@ -188,6 +200,7 @@ watch(title, (value) => {
           <Home
             @phone-click="handlePhoneClick"
             @bazi-click="handleBaziClick"
+            @meihua-click="handleMeihuaClick"
           />
         </div>
         <div v-else-if="activeTab === 'phone'">
@@ -198,6 +211,13 @@ watch(title, (value) => {
         </div>
         <div v-else-if="activeTab === 'bazi'">
           <FourPillarsAnalysis
+            :route-query="routeQuery"
+            @back-to-home="navigateToTab('home')"
+            @navigate-to-tab="navigateToTab"
+          />
+        </div>
+        <div v-else-if="activeTab === 'meihua'">
+          <MeihuaAnalysis
             @back-to-home="navigateToTab('home')"
             @navigate-to-tab="navigateToTab"
           />
@@ -227,7 +247,7 @@ watch(title, (value) => {
       <!-- Tab navigations -->
       <BottomNav
         v-if="activeTab !== 'recharge' && activeTab !== 'points-claim'"
-        :active-tab="activeTab === 'phone' || activeTab === 'bazi' ? 'home' : activeTab"
+        :active-tab="activeTab === 'phone' || activeTab === 'bazi' || activeTab === 'meihua' ? 'home' : activeTab"
         @update:active-tab="navigateToTab"
       />
     </div>

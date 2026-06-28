@@ -12,6 +12,23 @@ from features.phone_qimen.scoring.total_score.engine import load_rules, score_ph
 
 PHONE = "13800138000"
 GENDER = "male"
+FORBIDDEN_PUBLIC_EXAMPLE_TERMS = (
+    "结构承接",
+    "可用空间",
+    "可用之处",
+    "现实承接感",
+    "底层结构",
+    "后段承接",
+    "结构封顶",
+)
+
+
+def _flatten_text(value: object) -> str:
+    if isinstance(value, dict):
+        return "\n".join(_flatten_text(item) for item in value.values())
+    if isinstance(value, list):
+        return "\n".join(_flatten_text(item) for item in value)
+    return str(value or "")
 
 
 class PhoneQimenPromptReadabilityTest(unittest.TestCase):
@@ -32,7 +49,11 @@ class PhoneQimenPromptReadabilityTest(unittest.TestCase):
         self.assertIn("不要连续堆叠宫、门、神、星、干支、四害", combined)
         self.assertIn("把专业层翻译成现实表现", combined)
         self.assertIn("推进、合作、回款、关系、情绪或收尾", combined)
-        self.assertIn("现实承接感", json_example["elements_check"]["宫"])
+        self.assertIn("专业词不是禁用词", combined)
+        self.assertIn("双关", combined)
+        self.assertIn("必须先点名、再翻译、再落到现实场景", combined)
+        for term in FORBIDDEN_PUBLIC_EXAMPLE_TERMS:
+            self.assertNotIn(term, _flatten_text(json_example))
 
     def test_stability_prompt_contains_long_term_usage_scenarios(self) -> None:
         system_prompt, user_prompt, json_example, locked = build_stability_prompts(
@@ -47,8 +68,12 @@ class PhoneQimenPromptReadabilityTest(unittest.TestCase):
         self.assertIn("长期联系、事业主号、合作收口、资金沉淀", combined)
         self.assertIn("用户能对照的长期使用场景", combined)
         self.assertIn("把专业层翻译成现实表现", combined)
+        self.assertIn("专业词不是禁用词", combined)
+        self.assertIn("空亡", combined)
         self.assertEqual(json_example["verdict"], locked["verdict"])
-        self.assertIn("主用或辅助使用感", json_example["elements_check"]["整体承接"])
+        self.assertIn("主用、辅助使用或谨慎使用", json_example["elements_check"]["整体承接"])
+        for term in FORBIDDEN_PUBLIC_EXAMPLE_TERMS:
+            self.assertNotIn(term, _flatten_text(json_example))
 
     def test_aspect_prompt_contains_readability_rules_and_correct_field_name(self) -> None:
         package = {"score_result": self.dimension_result, "score_template": {}}
@@ -69,8 +94,12 @@ class PhoneQimenPromptReadabilityTest(unittest.TestCase):
         self.assertIn("风险会落到哪些现实场景", combined)
         self.assertIn("把专业层翻译成现实表现", combined)
         self.assertIn("elements_check 是中间层判断", combined)
+        self.assertIn("专业词不是禁用词", combined)
+        self.assertIn("双关", combined)
+        self.assertIn("必须先点名、再翻译、再落到现实场景", combined)
         self.assertNotIn("element_checks", combined)
-        self.assertIn("现实承接感", json_example["elements_check"]["宫"])
+        for term in FORBIDDEN_PUBLIC_EXAMPLE_TERMS:
+            self.assertNotIn(term, _flatten_text(json_example))
         self.assertEqual(package["score_result"], self.dimension_result)
 
 

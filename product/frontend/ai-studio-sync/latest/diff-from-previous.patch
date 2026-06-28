@@ -1,550 +1,249 @@
---- previous/server.ts
-+++ latest/server.ts
-@@ -684,10 +684,15 @@
-           xun_kong: "午未",
-           di_shi: "绝",
-           self_sitting: "绝地自坐",
--          shen_sha: ["天乙贵人", "驿马"],
-+          shen_sha: ["天乙贵人", "驿马", "太极贵人", "华盖", "将星", "孤辰", "劫煞"],
-           shen_sha_details: [
-             { name: "天乙贵人", category: "support", basis: "日干甲见支申", basis_value: "申", target: "日柱", target_value: "申", rule: "甲戊庚见丑未", meaning: "至高吉星，逢凶化吉，一生常得天恩贵人扶助。" },
--            { name: "驿马", category: "movement", basis: "支见申", basis_value: "申", target: "日柱", target_value: "申", rule: "申子辰见申", meaning: "奔波迁徙，多出外创业或频繁差旅，不耐久静。" }
-+            { name: "驿马", category: "movement", basis: "支见申", basis_value: "申", target: "日柱", target_value: "申", rule: "申子辰见申", meaning: "奔波迁徙，多出外创业或频繁差旅，不耐久静。" },
-+            { name: "太极贵人", category: "talent", basis: "日干甲见支申", basis_value: "申", target: "日柱", target_value: "申", rule: "甲见申", meaning: "太极星临，聪颖好学，一生易得仙缘道气及长辈荫庇。" },
-+            { name: "华盖", category: "spiritual", basis: "支见申", basis_value: "申", target: "日柱", target_value: "申", rule: "华盖入命", meaning: "艺术直觉敏锐，清高孤傲，喜玄学遁甲修行。" },
-+            { name: "将星", category: "support", basis: "支见申", basis_value: "申", target: "日柱", target_value: "申", rule: "将星临绝", meaning: "有组织领导之才，在官场或职场中易得人望。" },
-+            { name: "孤辰", category: "relationship", basis: "支见申", basis_value: "申", target: "日柱", target_value: "申", rule: "孤辰临日", meaning: "性格略显孤介，内心世界丰富，喜欢独立思考。" },
-+            { name: "劫煞", category: "risk", basis: "支见申", basis_value: "申", target: "日柱", target_value: "申", rule: "劫煞主事", meaning: "行事宜多加严谨，防患未然，增强抗压韧性。" }
-           ]
-         },
-         hour: {
-@@ -705,10 +710,14 @@
-           xun_kong: "戌亥",
-           di_shi: "病",
-           self_sitting: "临官",
--          shen_sha: ["天医", "禄神"],
-+          shen_sha: ["天医", "禄神", "文昌", "福星贵人", "亡神", "五鬼"],
-           shen_sha_details: [
-             { name: "天医", category: "health", basis: "生月戌见支巳", basis_value: "巳", target: "时柱", target_value: "巳", rule: "月后一辰", meaning: "天医高照，健体强身，在医药、玄学或康养上极具天赋智觉。" },
--            { name: "禄神", category: "wealth", basis: "日干甲见支寅", basis_value: "寅", target: "时柱", target_value: "巳", rule: "甲禄在寅", meaning: "财禄丰厚，岁运逢之必得衣食富足，自立门户之气。" }
-+            { name: "禄神", category: "wealth", basis: "日干甲见支寅", basis_value: "寅", target: "时柱", target_value: "巳", rule: "甲禄在寅", meaning: "财禄丰厚，岁运逢之必得衣食富足，自立门户之气。" },
-+            { name: "文昌", category: "talent", basis: "日干甲见支巳", basis_value: "巳", target: "时柱", target_value: "巳", rule: "文昌临官", meaning: "文采斐然，逢考必过，常带清健文雅之气。" },
-+            { name: "福星贵人", category: "support", basis: "日干甲见支巳", basis_value: "巳", target: "时柱", target_value: "巳", rule: "福星临门", meaning: "一生福禄无缺，安康少忧，常有贵人暗中庇护。" },
-+            { name: "亡神", category: "risk", basis: "支见巳", basis_value: "巳", target: "时柱", target_value: "巳", rule: "亡神临柱", meaning: "做事需深思熟虑，避免急躁，保持从容淡定之姿。" },
-+            { name: "五鬼", category: "risk", basis: "支见巳", basis_value: "巳", target: "时柱", target_value: "巳", rule: "五鬼惊扰", meaning: "言行宜谨慎，凡事退一步海阔天空，少惹口舌之争。" }
-           ]
-         }
-       },
---- previous/src/components/four-pillars/FourPillarsAnalysis.vue
-+++ latest/src/components/four-pillars/FourPillarsAnalysis.vue
-@@ -669,27 +669,70 @@
+diff -ruN /tmp/easewise-export-5-clean/src/composables/useEaseWiseApp.ts /tmp/easewise-export-6-clean/src/composables/useEaseWiseApp.ts
+--- /tmp/easewise-export-5-clean/src/composables/useEaseWiseApp.ts	2026-06-28 17:49:54
++++ /tmp/easewise-export-6-clean/src/composables/useEaseWiseApp.ts	2026-06-28 18:37:02
+@@ -32,6 +32,7 @@
+   uploadMyAvatar,
+   updateMyProfile,
+   getCurrentUser,
++  callAgentChat,
+ } from '../lib/api';
+ import type {
+   AlmanacResponse,
+@@ -57,6 +58,8 @@
+   ReviewRecord,
+   ReviewSummary,
+   UserResponse,
++  AgentMessage,
++  ChatSessionDetail,
+ } from '../types/api';
+
+ type AppState = {
+@@ -78,6 +81,7 @@
+   contactServiceModalVisible: boolean;
+   contactServiceScene: CustomerServiceScene;
+   contactServiceContext: string | null;
++  chatSessions: ChatSessionDetail[];
+ };
+
+ type CustomerServiceScene =
+@@ -97,6 +101,7 @@
+   'account_security',
+   'promotion_consulting',
+   'review_support',
++  'review_support',
+ ]);
+
+ const state = reactive<AppState>({
+@@ -118,6 +123,7 @@
+   contactServiceModalVisible: false,
+   contactServiceScene: 'default',
+   contactServiceContext: null,
++  chatSessions: [],
+ });
+
+ let bootstrapPromise: Promise<void> | null = null;
+@@ -997,6 +1003,154 @@
+   });
  }
- 
- function sortShenShaRows(rows: ShenShaCellItem[]): ShenShaCellItem[] {
--  return rows
-+  return [...rows]
-     .map((item, index) => ({ ...item, index }))
-     .sort((left, right) => {
-+      const toneLeft = getShenShaToneScore(left);
-+      const toneRight = getShenShaToneScore(right);
-+      if (toneLeft !== toneRight) return toneLeft - toneRight;
-+
-       const nameDelta = (SHEN_SHA_NAME_ORDER[left.name] ?? 500) - (SHEN_SHA_NAME_ORDER[right.name] ?? 500);
-       if (nameDelta !== 0) return nameDelta;
-+
-       const categoryDelta = (SHEN_SHA_CATEGORY_ORDER[left.category] ?? 99) - (SHEN_SHA_CATEGORY_ORDER[right.category] ?? 99);
-       if (categoryDelta !== 0) return categoryDelta;
-+
-       return left.index - right.index;
-     })
-     .map(({ index: _index, ...item }) => item);
- }
- 
- function visibleLuckShenShaRows(column: LuckTableColumn): ShenShaCellItem[] {
--  return luckShenShaExpanded.value ? column.shenShaRows : column.shenShaRows.slice(0, MAX_SHEN_SHA_ROWS);
-+  const rows = column.shenShaRows;
-+  if (luckShenShaExpanded.value) {
-+    return rows;
+
++function loadLocalChatSessions(): ChatSessionDetail[] {
++  const data = readStorage(EASEWISE_STORAGE_KEYS.agentConversation);
++  if (!data) {
++    state.chatSessions = [];
++    return [];
 +  }
-+  if (rows.length > MAX_SHEN_SHA_ROWS) {
-+    return rows.slice(0, 2);
++  try {
++    const parsed = JSON.parse(data);
++    if (Array.isArray(parsed)) {
++      state.chatSessions = parsed;
++      return parsed;
++    }
++  } catch (e) {
++    console.error('Failed to parse agent conversation storage', e);
 +  }
-+  return rows;
- }
- 
- function shenShaToneClass(item: ShenShaCellItem): string {
--  const text = `${item.category}${item.name}${item.meaning}`;
-+  const name = item.name.trim();
-+  const category = item.category || '';
-+  
-+  const positiveShenSha = [
-+    '天乙贵人', '太极贵人', '福星贵人', '天德贵人', '月德贵人', 
-+    '天德合', '月德合', '文昌', '国印贵人', '金舆', '禄神', '天喜', 
-+    '红鸾', '天医', '天赦', '将星', '华盖'
-+  ];
-+  
-+  const cautionShenSha = [
-+    '孤辰', '寡宿', '羊刃', '飞刃', '亡神', '劫煞', 
-+    '灾煞', '元辰', '勾煞', '绞煞', '五鬼', '阴阳差错', 
-+    '空亡', '童子', '魁罡'
-+  ];
-+
-+  if (positiveShenSha.some(p => name.includes(p))) {
-+    return 'shen-sha-positive';
-+  }
-+  if (cautionShenSha.some(c => name.includes(c))) {
-+    return 'shen-sha-caution';
-+  }
-+  
-+  const text = `${category}${name}${item.meaning}`;
-   if (/[贵人德福喜禄昌合]/u.test(text)) return 'shen-sha-positive';
-   if (/[煞亡劫灾孤寡空刃]/u.test(text)) return 'shen-sha-caution';
-+  
-   return 'shen-sha-neutral';
++  state.chatSessions = [];
++  return [];
 +}
 +
-+function getShenShaToneScore(item: ShenShaCellItem): number {
-+  const tone = shenShaToneClass(item);
-+  if (tone === 'shen-sha-positive') return 1;
-+  if (tone === 'shen-sha-neutral') return 2;
-+  return 3;
- }
- 
- function calculateTenGod(dayStem: string, targetStem: string): string {
-@@ -714,6 +757,38 @@
- function elementOfBranch(branch: string): string {
-   const hidden = hiddenStemMap[branch]?.[0];
-   return hidden?.element || '';
++function saveLocalChatSessions(sessions: ChatSessionDetail[]): void {
++  writeStorage(EASEWISE_STORAGE_KEYS.agentConversation, JSON.stringify(sessions));
++  state.chatSessions = sessions;
 +}
 +
-+function getStemOfGanzhi(ganzhi: string | null | undefined): string {
-+  const text = String(ganzhi || '').trim();
-+  return text.charAt(0) || '-';
++async function listAgentChatSessions(): Promise<ChatSessionDetail[]> {
++  return loadLocalChatSessions();
 +}
 +
-+function getBranchOfGanzhi(ganzhi: string | null | undefined): string {
-+  const text = String(ganzhi || '').trim();
-+  return text.charAt(1) || '-';
++async function createAgentChatSession(title: string): Promise<ChatSessionDetail> {
++  const sessions = loadLocalChatSessions();
++  const newSession: ChatSessionDetail = {
++    id: `sess-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
++    title: title || '新会话',
++    created_at: new Date().toISOString(),
++    messages: []
++  };
++  sessions.unshift(newSession);
++  saveLocalChatSessions(sessions);
++  return newSession;
 +}
 +
-+function getStemColorClass(ganzhi: string | null | undefined): string {
-+  const stem = getStemOfGanzhi(ganzhi);
-+  const element = elementOfStem(stem);
-+  if (element === '木') return 'text-[#059669]';
-+  if (element === '火') return 'text-[#E11D48]';
-+  if (element === '土') return 'text-[#78350F]';
-+  if (element === '金') return 'text-[#CA8A04]';
-+  if (element === '水') return 'text-[#2563EB]';
-+  return 'text-slate-700';
-+}
-+
-+function getBranchColorClass(ganzhi: string | null | undefined): string {
-+  const branch = getBranchOfGanzhi(ganzhi);
-+  const element = elementOfBranch(branch);
-+  if (element === '木') return 'text-[#059669]';
-+  if (element === '火') return 'text-[#E11D48]';
-+  if (element === '土') return 'text-[#78350F]';
-+  if (element === '金') return 'text-[#CA8A04]';
-+  if (element === '水') return 'text-[#2563EB]';
-+  return 'text-slate-700';
- }
- 
- function calculateDiShi(dayStem: string, branch: string): string {
-@@ -743,8 +818,8 @@
- function elementBadgeClass(element: string): string {
-   if (element === '木') return 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]';
-   if (element === '火') return 'bg-[#FFF1F2] text-[#E11D48] border-[#FECDD3]';
--  if (element === '土') return 'bg-[#FFFBEB] text-[#B45309] border-[#FCD34D]';
--  if (element === '金') return 'bg-[#FFF7DA] text-[#B7791F] border-[#F4D27A]';
-+  if (element === '土') return 'bg-[#FFFBEB] text-[#78350F] border-[#FCD34D]';
-+  if (element === '金') return 'bg-[#FFF7DA] text-[#CA8A04] border-[#F4D27A]';
-   if (element === '水') return 'bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]';
-   return 'bg-white text-slate-500 border-slate-100';
- }
-@@ -1609,30 +1684,37 @@
-                     </td>
-                   </tr>
-                   <tr class="bg-white">
--                    <td class="luck-row-label">
--                      <span class="block">神煞</span>
-+                    <td class="luck-row-label text-center">
-+                      <span class="block text-inherit">神煞</span>
-                       <button
-                         v-if="luckHasOverflowingShenSha"
-                         type="button"
--                        class="luck-shen-sha-toggle border-none bg-transparent"
--                        :aria-label="luckShenShaExpanded ? '收起神煞' : '展开神煞'"
--                        :title="luckShenShaExpanded ? '收起神煞' : '展开神煞'"
-                         @click="luckShenShaExpanded = !luckShenShaExpanded"
-+                        class="luck-shen-sha-toggle cursor-pointer outline-none hover:bg-indigo-50/20"
-+                        :title="luckShenShaExpanded ? '收起神煞详情' : '展开神煞详情'"
-                       >
--                        <ChevronUp v-if="luckShenShaExpanded" :size="11" />
--                        <ChevronDown v-else :size="11" />
-+                        <ChevronUp v-if="luckShenShaExpanded" :size="10" />
-+                        <ChevronDown v-else :size="10" />
-                       </button>
-                     </td>
-                     <td v-for="column in luckTableColumns" :key="`${column.label}-shen-sha`" class="luck-cell luck-shen-sha" :class="column.isLuck ? 'bg-[#DBEAFE]/20 text-[#1E3A8A]' : ''">
--                      <div v-if="column.shenShaRows.length" class="luck-shen-sha-stack">
-+                      <div v-if="column.shenShaRows.length" class="flex flex-col items-center justify-center gap-1 w-full">
-+                        <div class="luck-shen-sha-stack">
-+                          <span
-+                            v-for="item in visibleLuckShenShaRows(column)"
-+                            :key="`${column.label}-${item.name}`"
-+                            class="luck-text block text-[10.5px]"
-+                            :title="item.meaning || item.name"
-+                          >
-+                            {{ item.name }}
-+                          </span>
-+                        </div>
-+                        <!-- Indicator for remaining hidden Luck Shen Sha -->
-                         <span
--                          v-for="item in visibleLuckShenShaRows(column)"
--                          :key="`${column.label}-${item.name}`"
--                          class="luck-shen-sha-item"
--                          :class="shenShaToneClass(item)"
--                          :title="item.meaning || item.name"
-+                          v-if="!luckShenShaExpanded && column.shenShaRows.length > MAX_SHEN_SHA_ROWS"
-+                          class="text-[9.5px] font-bold text-slate-400 mt-0.5 block whitespace-nowrap"
-                         >
--                          {{ item.name }}
-+                          +{{ column.shenShaRows.length - 2 }} 更多
-                         </span>
-                       </div>
-                       <span v-else class="text-[10px] text-[#94A3B8]">-</span>
-@@ -1656,7 +1738,10 @@
-                     >
-                       <span v-if="cycle.is_current" class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
-                       <span class="font-mono text-[8px] leading-none">{{ cycle.start_age ?? '-' }}岁</span>
--                      <span class="luck-strip-ganzhi vertical-ganzhi font-serif font-bold text-center" :class="ganzhiElementClasses(cycle.display_ganzhi || cycle.ganzhi || '')">{{ cycle.display_ganzhi || cycle.ganzhi || '-' }}</span>
-+                      <span class="flex flex-col items-center justify-center font-serif font-black text-center text-[15px] leading-none mt-1 select-none">
-+                        <span :class="getStemColorClass(cycle.display_ganzhi || cycle.ganzhi)">{{ getStemOfGanzhi(cycle.display_ganzhi || cycle.ganzhi) }}</span>
-+                        <span :class="getBranchColorClass(cycle.display_ganzhi || cycle.ganzhi)" class="mt-0.5">{{ getBranchOfGanzhi(cycle.display_ganzhi || cycle.ganzhi) }}</span>
-+                      </span>
-                       <span class="font-mono text-[7px] leading-none mt-1 text-[#64748B]">{{ cycle.start_year }}</span>
-                     </button>
-                   </div>
-@@ -1676,7 +1761,10 @@
-                     >
-                       <span v-if="item.is_current" class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
-                       <span class="font-mono text-[8px] leading-none">{{ item.age ?? '-' }}岁</span>
--                      <span class="luck-year-ganzhi font-serif font-bold text-center" :class="ganzhiElementClasses(item.ganzhi)">{{ item.ganzhi }}</span>
-+                      <span class="flex flex-row items-center justify-center gap-0.5 font-serif font-black text-center text-[13px] leading-none mt-1 select-none">
-+                        <span :class="getStemColorClass(item.ganzhi)">{{ getStemOfGanzhi(item.ganzhi) }}</span>
-+                        <span :class="getBranchColorClass(item.ganzhi)">{{ getBranchOfGanzhi(item.ganzhi) }}</span>
-+                      </span>
-                       <span class="font-mono text-[7px] leading-none mt-1 text-[#64748B]">{{ item.year }}</span>
-                     </button>
-                   </div>
-@@ -1897,9 +1985,11 @@
- }
- 
- .luck-text {
-+  font-family: inherit;
-+  font-size: 10.5px;
-+  font-weight: 800;
-+  line-height: 1.25;
-   color: #334155;
--  font-family: serif;
--  font-weight: 800;
- }
- 
- .luck-shen-sha {
-@@ -1927,40 +2017,45 @@
- 
- .luck-shen-sha-stack {
-   display: flex;
--  flex-wrap: wrap;
-+  flex-direction: column;
-   align-items: center;
-   justify-content: center;
--  gap: 2px;
-+  gap: 4px;
-+  width: 100%;
- }
- 
- .luck-shen-sha-item {
-   display: inline-flex;
-   align-items: center;
-   justify-content: center;
--  border: 1px solid;
--  border-radius: 999px;
--  padding: 2px 5px;
--  font-size: 8.5px;
-+  width: 90%;
-+  max-width: 68px;
-+  border: 1.5px solid;
-+  border-radius: 4px;
-+  padding: 2px 3px;
-+  font-size: 9.5px;
-   font-weight: 800;
--  line-height: 1.15;
-+  line-height: 1.1;
-+  word-break: keep-all;
-   white-space: nowrap;
-+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
- }
- 
- .luck-shen-sha-item.shen-sha-positive {
--  background: #F8FAFF;
-+  background: #ECFDF5;
-+  border-color: #A7F3D0;
-+  color: #047857;
-+}
-+
-+.luck-shen-sha-item.shen-sha-neutral {
-+  background: #EFF6FF;
-   border-color: #BFDBFE;
-   color: #1D4ED8;
- }
- 
- .luck-shen-sha-item.shen-sha-caution {
--  background: #FFF7ED;
--  border-color: #FED7AA;
--  color: #C2410C;
--}
--
--.luck-shen-sha-item.shen-sha-neutral {
-   background: #F8FAFC;
-   border-color: #E2E8F0;
--  color: #475569;
-+  color: #64748B;
- }
- </style>
---- previous/src/components/four-pillars/FourPillarsNatalTable.vue
-+++ latest/src/components/four-pillars/FourPillarsNatalTable.vue
-@@ -93,8 +93,8 @@
-   const value = String(element || '');
-   if (value === '木') return 'text-[#059669]';
-   if (value === '火') return 'text-[#E11D48]';
--  if (value === '土') return 'text-[#B45309]';
--  if (value === '金') return 'text-[#B7791F]';
-+  if (value === '土') return 'text-[#78350F]';
-+  if (value === '金') return 'text-[#CA8A04]';
-   if (value === '水') return 'text-[#2563EB]';
-   return 'text-brand-ink-strong';
- }
-@@ -130,10 +130,40 @@
- }
- 
- function shenShaToneClass(item: ShenShaCellItem): string {
--  const text = `${item.category}${item.name}${item.meaning}`;
-+  const name = item.name.trim();
-+  const category = item.category || '';
-+  
-+  const positiveShenSha = [
-+    '天乙贵人', '太极贵人', '福星贵人', '天德贵人', '月德贵人', 
-+    '天德合', '月德合', '文昌', '国印贵人', '金舆', '禄神', '天喜', 
-+    '红鸾', '天医', '天赦', '将星', '华盖'
-+  ];
-+  
-+  const cautionShenSha = [
-+    '孤辰', '寡宿', '羊刃', '飞刃', '亡神', '劫煞', 
-+    '灾煞', '元辰', '勾煞', '绞煞', '五鬼', '阴阳差错', 
-+    '空亡', '童子', '魁罡'
-+  ];
-+
-+  if (positiveShenSha.some(p => name.includes(p))) {
-+    return 'shen-sha-positive';
++async function loadAgentChatSession(id: string): Promise<ChatSessionDetail> {
++  const sessions = loadLocalChatSessions();
++  const session = sessions.find(s => s.id === id);
++  if (!session) {
++    throw new Error('session_not_found');
 +  }
-+  if (cautionShenSha.some(c => name.includes(c))) {
-+    return 'shen-sha-caution';
-+  }
-+  
-+  const text = `${category}${name}${item.meaning}`;
-   if (/[贵人德福喜禄昌合]/u.test(text)) return 'shen-sha-positive';
-   if (/[煞亡劫灾孤寡空刃]/u.test(text)) return 'shen-sha-caution';
-+  
-   return 'shen-sha-neutral';
++  return session;
 +}
 +
-+function getShenShaToneScore(item: ShenShaCellItem): number {
-+  const tone = shenShaToneClass(item);
-+  if (tone === 'shen-sha-positive') return 1;
-+  if (tone === 'shen-sha-neutral') return 2;
-+  return 3;
- }
- 
- function shenShaRows(pillar: FourPillarsDisplayPillar): ShenShaCellItem[] {
-@@ -167,13 +197,19 @@
- }
- 
- function sortShenShaRows(rows: ShenShaCellItem[]): ShenShaCellItem[] {
--  return rows
-+  return [...rows]
-     .map((item, index) => ({ ...item, index }))
-     .sort((left, right) => {
-+      const toneLeft = getShenShaToneScore(left);
-+      const toneRight = getShenShaToneScore(right);
-+      if (toneLeft !== toneRight) return toneLeft - toneRight;
-+
-       const nameDelta = (SHEN_SHA_NAME_ORDER[left.name] ?? 500) - (SHEN_SHA_NAME_ORDER[right.name] ?? 500);
-       if (nameDelta !== 0) return nameDelta;
-+
-       const categoryDelta = (SHEN_SHA_CATEGORY_ORDER[left.category] ?? 99) - (SHEN_SHA_CATEGORY_ORDER[right.category] ?? 99);
-       if (categoryDelta !== 0) return categoryDelta;
-+
-       return left.index - right.index;
-     })
-     .map(({ index: _index, ...item }) => item);
-@@ -181,7 +217,13 @@
- 
- function visibleShenShaRows(pillar: FourPillarsDisplayPillar): ShenShaCellItem[] {
-   const rows = shenShaRows(pillar);
--  return shenShaExpanded.value ? rows : rows.slice(0, MAX_SHEN_SHA_ROWS);
-+  if (shenShaExpanded.value) {
-+    return rows;
-+  }
-+  if (rows.length > MAX_SHEN_SHA_ROWS) {
-+    return rows.slice(0, 2);
-+  }
-+  return rows;
- }
- </script>
- 
-@@ -260,6 +302,18 @@
-                 </td>
-               </tr>
-               <tr class="bg-white">
-+                <td class="natal-row-label">地势</td>
-+                <td v-for="pillar in pillars" :key="`${pillar.key}-dishi`" class="natal-cell natal-text">{{ cellText(pillar.di_shi) }}</td>
-+              </tr>
-+              <tr class="bg-[#F8FAFF]">
-+                <td class="natal-row-label">自坐</td>
-+                <td v-for="pillar in pillars" :key="`${pillar.key}-sitting`" class="natal-cell natal-text">{{ cellText(pillar.self_sitting) }}</td>
-+              </tr>
-+              <tr class="bg-white">
-+                <td class="natal-row-label">旬空</td>
-+                <td v-for="pillar in pillars" :key="`${pillar.key}-xunkong`" class="natal-cell natal-text">{{ cellText(pillar.xun_kong) }}</td>
-+              </tr>
-+              <tr class="bg-[#F8FAFF]">
-                 <td class="natal-row-label">纳音</td>
-                 <td v-for="pillar in pillars" :key="`${pillar.key}-nayin`" class="natal-cell natal-text">
-                   <span class="natal-nayin" :class="[elementTextClass(elementFromNaYin(pillar.na_yin)), elementBgClass(elementFromNaYin(pillar.na_yin))]">
-@@ -268,42 +322,37 @@
-                 </td>
-               </tr>
-               <tr class="bg-white">
--                <td class="natal-row-label">地势</td>
--                <td v-for="pillar in pillars" :key="`${pillar.key}-dishi`" class="natal-cell natal-text">{{ cellText(pillar.di_shi) }}</td>
--              </tr>
--              <tr class="bg-[#F8FAFF]">
--                <td class="natal-row-label">旬空</td>
--                <td v-for="pillar in pillars" :key="`${pillar.key}-xunkong`" class="natal-cell natal-text">{{ cellText(pillar.xun_kong) }}</td>
--              </tr>
--              <tr class="bg-white">
--                <td class="natal-row-label">自坐</td>
--                <td v-for="pillar in pillars" :key="`${pillar.key}-sitting`" class="natal-cell natal-text">{{ cellText(pillar.self_sitting) }}</td>
--              </tr>
--              <tr class="bg-[#F8FAFF]">
--                <td class="natal-row-label">
--                  <span class="block">神煞</span>
-+                <td class="natal-row-label text-center">
-+                  <span class="block text-inherit">神煞</span>
-                   <button
-                     v-if="hasOverflowingShenSha"
-                     type="button"
--                    class="natal-shen-sha-toggle border-none bg-transparent"
--                    :aria-label="shenShaExpanded ? '收起神煞' : '展开神煞'"
--                    :title="shenShaExpanded ? '收起神煞' : '展开神煞'"
-                     @click="shenShaExpanded = !shenShaExpanded"
-+                    class="natal-shen-sha-toggle cursor-pointer outline-none hover:bg-indigo-50/20"
-+                    :title="shenShaExpanded ? '收起神煞详情' : '展开神煞详情'"
-                   >
--                    <ChevronUp v-if="shenShaExpanded" :size="11" />
--                    <ChevronDown v-else :size="11" />
-+                    <ChevronUp v-if="shenShaExpanded" :size="10" />
-+                    <ChevronDown v-else :size="10" />
-                   </button>
-                 </td>
-                 <td v-for="pillar in pillars" :key="`${pillar.key}-shen-sha`" class="natal-cell natal-shen-sha-cell">
--                  <div v-if="shenShaRows(pillar).length" class="natal-shen-sha-stack">
-+                  <div v-if="shenShaRows(pillar).length" class="flex flex-col items-center justify-center gap-1 w-full">
-+                    <div class="natal-shen-sha-stack">
-+                      <span
-+                        v-for="item in visibleShenShaRows(pillar)"
-+                        :key="`${pillar.key}-${item.name}`"
-+                        class="natal-text block"
-+                        :title="item.meaning || item.name"
-+                      >
-+                        {{ item.name }}
-+                      </span>
-+                    </div>
-+                    <!-- Indicator for remaining hidden Shen Sha -->
-                     <span
--                      v-for="item in visibleShenShaRows(pillar)"
--                      :key="`${pillar.key}-${item.name}`"
--                      class="natal-shen-sha-item"
--                      :class="shenShaToneClass(item)"
--                      :title="item.meaning || item.name"
-+                      v-if="!shenShaExpanded && shenShaRows(pillar).length > MAX_SHEN_SHA_ROWS"
-+                      class="text-[9.5px] font-bold text-slate-400 mt-0.5 block whitespace-nowrap"
-                     >
--                      {{ item.name }}
-+                      +{{ shenShaRows(pillar).length - 2 }} 更多
-                     </span>
-                   </div>
-                   <span v-else class="text-[10px] text-[#94A3B8]">-</span>
-@@ -459,42 +508,46 @@
- 
- .natal-shen-sha-stack {
-   display: flex;
--  flex-wrap: wrap;
-+  flex-direction: column;
-   align-items: center;
-   justify-content: center;
--  gap: 2px;
-+  gap: 4px;
-+  width: 100%;
- }
- 
- .natal-shen-sha-item {
-   display: inline-flex;
-   align-items: center;
-   justify-content: center;
--  border: 1px solid;
--  border-radius: 999px;
--  padding: 2px 5px;
--  font-size: 8.5px;
-+  width: 90%;
-+  max-width: 68px;
-+  border: 1.5px solid;
-+  border-radius: 4px;
-+  padding: 2px 3px;
-+  font-size: 9.5px;
-   font-weight: 800;
--  line-height: 1.15;
-+  line-height: 1.1;
-   word-break: keep-all;
-   white-space: nowrap;
-+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
- }
- 
- .natal-shen-sha-item.shen-sha-positive {
--  background: #F8FAFF;
-+  background: #ECFDF5;
-+  border-color: #A7F3D0;
-+  color: #047857;
++async function clearAgentChatSessions(): Promise<void> {
++  saveLocalChatSessions([]);
 +}
 +
-+.natal-shen-sha-item.shen-sha-neutral {
-+  background: #EFF6FF;
-   border-color: #BFDBFE;
-   color: #1D4ED8;
++interface SendAgentChatMessageOptions {
++  onChunk?: (text: string) => void;
++  onComplete?: (session: ChatSessionDetail) => void;
++  onError?: (err: any) => void;
++}
++
++async function sendAgentChatMessage(
++  sessionId: string,
++  message: string,
++  options: SendAgentChatMessageOptions = {}
++): Promise<void> {
++  try {
++    const sessions = loadLocalChatSessions();
++    const sessionIndex = sessions.findIndex(s => s.id === sessionId);
++    if (sessionIndex === -1) {
++      throw new Error('session_not_found');
++    }
++    const session = sessions[sessionIndex];
++    if (!session.messages) {
++      session.messages = [];
++    }
++
++    // Append user message
++    const userMessage: AgentMessage = {
++      id: `msg-${Date.now()}-user`,
++      role: 'user',
++      content: message,
++      created_at: new Date().toISOString()
++    };
++    session.messages.push(userMessage);
++    saveLocalChatSessions(sessions);
++
++    // Call backend
++    const history = session.messages
++      .slice(0, -1)
++      .map(m => ({ role: m.role, content: m.content }));
++
++    const res = await callAgentChat(message, history);
++    const reply = res.reply;
++
++    // Simulate streaming typing effect
++    let currentText = '';
++    let charIndex = 0;
++    const interval = setInterval(() => {
++      if (charIndex < reply.length) {
++        const char = reply[charIndex];
++        currentText += char;
++        if (options.onChunk) {
++          options.onChunk(char);
++        }
++        charIndex++;
++      } else {
++        clearInterval(interval);
++
++        // Append completed assistant message
++        const assistantMessage: AgentMessage = {
++          id: `msg-${Date.now()}-assistant`,
++          role: 'assistant',
++          content: reply,
++          created_at: new Date().toISOString()
++        };
++
++        // Reload sessions
++        const freshSessions = loadLocalChatSessions();
++        const freshSession = freshSessions.find(s => s.id === sessionId);
++        if (freshSession) {
++          if (!freshSession.messages) {
++            freshSession.messages = [];
++          }
++          freshSession.messages.push(assistantMessage);
++          saveLocalChatSessions(freshSessions);
++
++          // Deduct points locally
++          if (state.points) {
++            state.points.balance = Math.max(0, state.points.balance - 1);
++            writeStorage(EASEWISE_STORAGE_KEYS.points, String(state.points.balance));
++          }
++
++          if (options.onComplete) {
++            options.onComplete(freshSession);
++          }
++        }
++      }
++    }, 15);
++
++  } catch (err: any) {
++    if (options.onError) {
++      options.onError(err);
++    } else {
++      throw err;
++    }
++  }
++}
++
+ function openCustomerServiceModal(sceneOrReason?: unknown, context?: unknown): void {
+   const normalizedScene = normalizeCustomerServiceScene(sceneOrReason);
+   const trimmedText = typeof sceneOrReason === 'string' ? sceneOrReason.trim() : '';
+@@ -1115,5 +1269,10 @@
+     openCustomerServiceModal,
+     closeCustomerServiceModal,
+     humanizeError,
++    listAgentChatSessions,
++    createAgentChatSession,
++    loadAgentChatSession,
++    clearAgentChatSessions,
++    sendAgentChatMessage,
+   };
  }
- 
- .natal-shen-sha-item.shen-sha-caution {
--  background: #FFF7ED;
--  border-color: #FED7AA;
--  color: #C2410C;
--}
--
--.natal-shen-sha-item.shen-sha-neutral {
-   background: #F8FAFC;
-   border-color: #E2E8F0;
--  color: #475569;
-+  color: #64748B;
+diff -ruN /tmp/easewise-export-5-clean/src/lib/api.ts /tmp/easewise-export-6-clean/src/lib/api.ts
+--- /tmp/easewise-export-5-clean/src/lib/api.ts	2026-06-28 17:49:54
++++ /tmp/easewise-export-6-clean/src/lib/api.ts	2026-06-28 18:37:02
+@@ -579,6 +579,13 @@
+   });
  }
- 
- .natal-element-summary {
+
++export function callAgentChat(message: string, history?: { role: string; content: string }[]): Promise<{ reply: string }> {
++  return requestJson<{ reply: string }>('/api/v1/agent/chat', {
++    method: 'POST',
++    body: { message, history },
++  });
++}
++
+ export async function submitPhoneReviewStream(
+   accessToken: string | null,
+   payload: { phone: string; gender: Gender; include_markdown?: boolean },
+diff -ruN /tmp/easewise-export-5-clean/src/types/api.ts /tmp/easewise-export-6-clean/src/types/api.ts
+--- /tmp/easewise-export-5-clean/src/types/api.ts	2026-06-28 17:49:54
++++ /tmp/easewise-export-6-clean/src/types/api.ts	2026-06-28 18:37:02
+@@ -1452,3 +1452,18 @@
+   order_completion_days: number;
+ }
+
++export interface AgentMessage {
++  id: string;
++  role: 'user' | 'assistant';
++  content: string;
++  created_at: string;
++}
++
++export interface ChatSessionDetail {
++  id: string;
++  title: string;
++  created_at: string;
++  messages?: AgentMessage[];
++}
++
++

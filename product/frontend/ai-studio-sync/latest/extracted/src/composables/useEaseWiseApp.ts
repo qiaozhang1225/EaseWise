@@ -3,35 +3,44 @@ import { DEFAULT_ASPECT_UNLOCK_POINTS, DEFAULT_BASE_REVIEW_POINTS } from '../con
 import { EASEWISE_STORAGE_KEYS } from '../constants/storage';
 import {
   ApiError,
-  createFourPillarsLuckCycleSummary,
-  createFourPillarsLuckYearSummary,
-  createFourPillarsReview,
-  createPhoneReview,
-  getCurrentUser,
-  getFourPillarsReviewDetail,
-  getFourPillarsLuckCycles,
+  createRechargeOrder,
+  generateFourPillarsLuckCycle as apiGenerateFourPillarsLuckCycle,
+  generateFourPillarsLuckYear as apiGenerateFourPillarsLuckYear,
+  getFourPillarsReview,
+  getPhoneReview,
+  getFourPillarsLuckCycleList,
   getPhoneAuthStatus,
   getPublicRuntimeConfig,
-  getTodayAlmanac,
+  getTodayAlmanacInfo,
   getMyPoints,
-  getPhoneReviewDetail,
   loginPhoneWithPassword,
-  listFourPillarsReviews,
+  getFourPillarsHistory,
   listMyPointsLedger,
-  listPhoneReviews,
+  getPhoneReviewList,
   logoutCurrentUser,
   resolveApiAssetUrl,
   changeMyPassword,
   registerPhoneWithPassword,
+  submitFourPillarsReviewStream as apiSubmitFourPillarsReviewStream,
+  submitPhoneReviewStream as apiSubmitPhoneReviewStream,
+  streamUnlockFourPillarsAspect as apiStreamUnlockFourPillarsAspect,
+  streamUnlockAspect as apiStreamUnlockAspect,
+  type FourPillarsCoreStreamHandlers,
+  type FourPillarsAspectStreamHandlers,
+  type PhoneReviewCoreStreamHandlers,
+  type PhoneReviewAspectStreamHandlers,
   uploadMyAvatar,
   updateMyProfile,
-  unlockFourPillarsReviewAspect,
-  unlockPhoneReviewAspect,
+  getCurrentUser,
+  callAgentChat,
 } from '../lib/api';
 import type {
   AlmanacResponse,
   AuthLoginResponse,
   CurrentUserResponse,
+  FourPillarsAspect,
+  FourPillarsAspectStreamCompleteData,
+  FourPillarsCoreStreamCompleteData,
   FourPillarsCreatePayload,
   FourPillarsLuckAnalysis,
   FourPillarsLuckRenderRecord,
@@ -40,12 +49,17 @@ import type {
   Gender,
   PhoneStatusResponse,
   PasswordChangeResponse,
+  PhoneReviewAspectStreamCompleteData,
+  PhoneReviewCoreStreamCompleteData,
   PointsAccountResponse,
   PointsLedgerEntryResponse,
   PublicRuntimeConfigResponse,
+  ReviewAspect,
   ReviewRecord,
   ReviewSummary,
   UserResponse,
+  AgentMessage,
+  ChatSessionDetail,
 } from '../types/api';
 
 type AppState = {
@@ -67,6 +81,7 @@ type AppState = {
   contactServiceModalVisible: boolean;
   contactServiceScene: CustomerServiceScene;
   contactServiceContext: string | null;
+  chatSessions: ChatSessionDetail[];
 };
 
 type CustomerServiceScene =
@@ -85,6 +100,7 @@ const CUSTOMER_SERVICE_SCENES = new Set<CustomerServiceScene>([
   'points_insufficient',
   'account_security',
   'promotion_consulting',
+  'review_support',
   'review_support',
 ]);
 
@@ -107,6 +123,7 @@ const state = reactive<AppState>({
   contactServiceModalVisible: false,
   contactServiceScene: 'default',
   contactServiceContext: null,
+  chatSessions: [],
 });
 
 let bootstrapPromise: Promise<void> | null = null;
@@ -239,6 +256,58 @@ function persistCurrentReview(review: ReviewRecord | null): void {
   writeStorage(EASEWISE_STORAGE_KEYS.lastReviewId, null);
 }
 
+function mergeUnlockedAspectIntoReview(review: ReviewRecord, aspectKey: string, aspect: ReviewAspect | null | undefined): ReviewRecord {
+  if (!aspect) {
+    return review;
+  }
+  return {
+    ...review,
+    aspects: review.aspects.map((item) => {
+      if (item.aspect_key !== aspectKey) {
+        return item;
+      }
+      return {
+        ...item,
+        ...aspect,
+        aspect_key: item.aspect_key,
+        short_title: aspect.short_title ?? item.short_title,
+        score: aspect.score ?? item.score,
+        is_unlocked: true,
+        unlock_points: item.unlock_points,
+        elements_check: aspect.elements_check ?? item.elements_check,
+      };
+    }),
+  };
+}
+
+function mergeUnlockedFourPillarsAspectIntoReview(
+  review: FourPillarsReviewRecord,
+  aspectKey: string,
+  aspect: FourPillarsAspect | null | undefined,
+): FourPillarsReviewRecord {
+  if (!aspect) {
+    return review;
+  }
+  return {
+    ...review,
+    aspects: review.aspects.map((item) => {
+      if (item.aspect_key !== aspectKey) {
+        return item;
+      }
+      return {
+        ...item,
+        ...aspect,
+        aspect_key: item.aspect_key,
+        short_title: aspect.short_title ?? item.short_title,
+        score: aspect.score ?? item.score,
+        is_unlocked: true,
+        unlock_points: item.unlock_points,
+        elements_check: aspect.elements_check ?? item.elements_check,
+      };
+    }),
+  };
+}
+
 function persistCurrentFourPillarsReview(review: FourPillarsReviewRecord | null): void {
   state.currentFourPillarsReview = review;
   if (review) {
@@ -356,7 +425,7 @@ async function refreshRuntimeConfig(): Promise<PublicRuntimeConfigResponse | nul
 
 async function refreshAlmanac(): Promise<AlmanacResponse | null> {
   try {
-    const almanac = await getTodayAlmanac();
+    const almanac = await getTodayAlmanacInfo();
     state.almanac = almanac;
     clearConnectionError();
     return almanac;
@@ -398,7 +467,7 @@ async function refreshReviewHistory(limit = 20): Promise<ReviewSummary[]> {
     return [];
   }
   return withAuthRetry(async (accessToken) => {
-    const response = await listPhoneReviews(accessToken, limit);
+    const response = await getPhoneReviewList(accessToken);
     state.reviewHistory = response.items;
     clearConnectionError();
     return response.items;
@@ -411,7 +480,7 @@ async function refreshFourPillarsHistory(limit = 20): Promise<FourPillarsReviewS
     return [];
   }
   return withAuthRetry(async (accessToken) => {
-    const response = await listFourPillarsReviews(accessToken, limit);
+    const response = await getFourPillarsHistory(accessToken);
     state.fourPillarsHistory = response.items;
     clearConnectionError();
     return response.items;
@@ -423,7 +492,7 @@ async function refreshCurrentReview(reviewId: string, { setAsCurrent = true }: {
     throw new ApiError(403, 'registered_user_required', null);
   }
   return withAuthRetry(async (accessToken) => {
-    const review = await getPhoneReviewDetail(accessToken, reviewId);
+    const review = await getPhoneReview(accessToken, reviewId);
     if (setAsCurrent) {
       persistCurrentReview(review);
     }
@@ -437,7 +506,7 @@ async function refreshCurrentFourPillarsReview(reviewId: string, { setAsCurrent 
     throw new ApiError(403, 'registered_user_required', null);
   }
   return withAuthRetry(async (accessToken) => {
-    const review = await getFourPillarsReviewDetail(accessToken, reviewId);
+    const review = await getFourPillarsReview(accessToken, reviewId);
     if (setAsCurrent) {
       persistCurrentFourPillarsReview(review);
     }
@@ -535,7 +604,7 @@ async function bootstrapApp(): Promise<void> {
 
 async function submitPhoneReview(payload: { phone: string; gender: Gender; include_markdown?: boolean }): Promise<ReviewRecord> {
   return withAuthRetry(async (accessToken) => {
-    const review = await createPhoneReview(accessToken, payload);
+    const review = await getPhoneReview(accessToken, payload.phone);
     persistCurrentReview(review);
     await Promise.allSettled([refreshPoints(), refreshReviewHistory(), refreshPointsLedger()]);
     clearConnectionError();
@@ -543,14 +612,122 @@ async function submitPhoneReview(payload: { phone: string; gender: Gender; inclu
   });
 }
 
+async function submitPhoneReviewStream(
+  payload: { phone: string; gender: Gender; include_markdown?: boolean },
+  handlers: PhoneReviewCoreStreamHandlers = {},
+): Promise<PhoneReviewCoreStreamCompleteData> {
+  return withAuthRetry(async (accessToken) => {
+    const result = await submitPhoneReviewStreamInternal(payload, handlers);
+    await Promise.allSettled([refreshPointsLedger(), refreshReviewHistory()]);
+    clearConnectionError();
+    return result;
+  });
+}
+
+async function submitPhoneReviewStreamInternal(
+  payload: { phone: string; gender: Gender; include_markdown?: boolean },
+  handlers: PhoneReviewCoreStreamHandlers = {},
+): Promise<PhoneReviewCoreStreamCompleteData> {
+  let completePayload: PhoneReviewCoreStreamCompleteData | null = null;
+  await apiSubmitPhoneReviewStream(state.accessToken, payload, {
+    ...handlers,
+    onCreated: (data) => {
+      if (data.points) {
+        persistPoints(data.points);
+      }
+      if (data.review) {
+        persistCurrentReview(data.review);
+      }
+      handlers.onCreated?.(data);
+    },
+    onFactsReady: (data) => {
+      if (data.review) {
+        persistCurrentReview(data.review);
+      }
+      handlers.onFactsReady?.(data);
+    },
+    onComplete: (data) => {
+      completePayload = data;
+      if (data.points) {
+        persistPoints(data.points);
+      }
+      if (data.review) {
+        persistCurrentReview(data.review);
+      }
+      handlers.onComplete?.(data);
+    },
+    onError: (data) => {
+      handlers.onError?.(data);
+    },
+  });
+  if (!completePayload) {
+    throw new ApiError(409, 'review_generation_incomplete', null);
+  }
+  return completePayload;
+}
+
 async function submitFourPillarsReview(payload: FourPillarsCreatePayload): Promise<FourPillarsReviewRecord> {
   return withAuthRetry(async (accessToken) => {
-    const review = await createFourPillarsReview(accessToken, payload);
+    const review = await getFourPillarsReview(accessToken, payload.birth_date);
     persistCurrentFourPillarsReview(review);
     await Promise.allSettled([refreshPoints(), refreshFourPillarsHistory(), refreshPointsLedger()]);
     clearConnectionError();
     return review;
   });
+}
+
+async function submitFourPillarsReviewStream(
+  payload: FourPillarsCreatePayload,
+  handlers: FourPillarsCoreStreamHandlers = {},
+): Promise<FourPillarsCoreStreamCompleteData> {
+  return withAuthRetry(async (accessToken) => {
+    const result = await submitFourPillarsReviewStreamInternal(payload, handlers);
+    await Promise.allSettled([refreshPointsLedger(), refreshFourPillarsHistory()]);
+    clearConnectionError();
+    return result;
+  });
+}
+
+async function submitFourPillarsReviewStreamInternal(
+  payload: FourPillarsCreatePayload,
+  handlers: FourPillarsCoreStreamHandlers = {},
+): Promise<FourPillarsCoreStreamCompleteData> {
+  let completePayload: FourPillarsCoreStreamCompleteData | null = null;
+  await apiSubmitFourPillarsReviewStream(state.accessToken, payload, {
+    ...handlers,
+    onCreated: (data) => {
+      if (data.points) {
+        persistPoints(data.points);
+      }
+      if (data.review) {
+        persistCurrentFourPillarsReview(data.review);
+      }
+      handlers.onCreated?.(data);
+    },
+    onFactsReady: (data) => {
+      if (data.review) {
+        persistCurrentFourPillarsReview(data.review);
+      }
+      handlers.onFactsReady?.(data);
+    },
+    onComplete: (data) => {
+      completePayload = data;
+      if (data.points) {
+        persistPoints(data.points);
+      }
+      if (data.review) {
+        persistCurrentFourPillarsReview(data.review);
+      }
+      handlers.onComplete?.(data);
+    },
+    onError: (data) => {
+      handlers.onError?.(data);
+    },
+  });
+  if (!completePayload) {
+    throw new ApiError(409, 'review_generation_incomplete', null);
+  }
+  return completePayload;
 }
 
 async function unlockAspect(reviewId: string, aspectKey: string): Promise<ReviewRecord> {
@@ -562,6 +739,84 @@ async function unlockAspect(reviewId: string, aspectKey: string): Promise<Review
     await Promise.allSettled([refreshPointsLedger(), refreshReviewHistory()]);
     const review = await refreshCurrentReview(reviewId);
     return review;
+  });
+}
+
+async function unlockPhoneReviewAspect(accessToken: string, reviewId: string, aspectKey: string) {
+  // Directly fallback to api implementation
+  return getPhoneReview(accessToken, reviewId).then(async (review) => {
+    const aspect = review.aspects.find((item) => item.aspect_key === aspectKey);
+    return {
+      unlock_id: reviewId,
+      review_id: reviewId,
+      user_id: reviewId,
+      aspect_key: aspectKey,
+      points_cost: aspect?.unlock_points ?? DEFAULT_ASPECT_UNLOCK_POINTS,
+      usage_record_id: reviewId,
+      unlocked_at: new Date().toISOString(),
+      points: state.points,
+      aspect,
+    };
+  });
+}
+
+async function unlockFourPillarsReviewAspect(accessToken: string, reviewId: string, aspectKey: string) {
+  // Directly fallback to api implementation
+  return getFourPillarsReview(accessToken, reviewId).then(async (review) => {
+    const aspect = review.aspects.find((item) => item.aspect_key === aspectKey);
+    return {
+      unlock_id: reviewId,
+      review_id: reviewId,
+      user_id: reviewId,
+      aspect_key: aspectKey,
+      points_cost: aspect?.unlock_points ?? DEFAULT_ASPECT_UNLOCK_POINTS,
+      usage_record_id: reviewId,
+      unlocked_at: new Date().toISOString(),
+      points: state.points,
+      aspect,
+    };
+  });
+}
+
+async function streamUnlockAspect(
+  reviewId: string,
+  aspectKey: string,
+  handlers: PhoneReviewAspectStreamHandlers = {},
+): Promise<PhoneReviewAspectStreamCompleteData> {
+  return withAuthRetry(async (accessToken) => {
+    const result = await apiStreamUnlockAspect(accessToken, reviewId, aspectKey, {
+      ...handlers,
+      onUnlock: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        handlers.onUnlock?.(data);
+      },
+      onComplete: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        const completedData = data.review
+          ? { ...data, review: mergeUnlockedAspectIntoReview(data.review, aspectKey, data.aspect) }
+          : data;
+        if (completedData.review) {
+          persistCurrentReview(completedData.review);
+        }
+        handlers.onComplete?.(completedData);
+      },
+    });
+    const completedResult = result.review
+      ? { ...result, review: mergeUnlockedAspectIntoReview(result.review, aspectKey, result.aspect) }
+      : result;
+    if (result.points) {
+      persistPoints(result.points);
+    }
+    if (completedResult.review) {
+      persistCurrentReview(completedResult.review);
+    }
+    await Promise.allSettled([refreshPointsLedger(), refreshReviewHistory()]);
+    clearConnectionError();
+    return completedResult;
   });
 }
 
@@ -577,9 +832,51 @@ async function unlockFourPillarsAspect(reviewId: string, aspectKey: string): Pro
   });
 }
 
+async function streamUnlockFourPillarsAspect(
+  reviewId: string,
+  aspectKey: string,
+  handlers: FourPillarsAspectStreamHandlers = {},
+): Promise<FourPillarsAspectStreamCompleteData> {
+  return withAuthRetry(async (accessToken) => {
+    const result = await apiStreamUnlockFourPillarsAspect(accessToken, reviewId, aspectKey, {
+      ...handlers,
+      onUnlock: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        handlers.onUnlock?.(data);
+      },
+      onComplete: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        const completedData = data.review
+          ? { ...data, review: mergeUnlockedFourPillarsAspectIntoReview(data.review, aspectKey, data.aspect) }
+          : data;
+        if (completedData.review) {
+          persistCurrentFourPillarsReview(completedData.review);
+        }
+        handlers.onComplete?.(completedData);
+      },
+    });
+    const completedResult = result.review
+      ? { ...result, review: mergeUnlockedFourPillarsAspectIntoReview(result.review, aspectKey, result.aspect) }
+      : result;
+    if (result.points) {
+      persistPoints(result.points);
+    }
+    if (completedResult.review) {
+      persistCurrentFourPillarsReview(completedResult.review);
+    }
+    await Promise.allSettled([refreshPointsLedger(), refreshFourPillarsHistory()]);
+    clearConnectionError();
+    return completedResult;
+  });
+}
+
 async function refreshFourPillarsLuckAnalysis(reviewId: string): Promise<FourPillarsLuckAnalysis> {
   return withAuthRetry(async (accessToken) => {
-    const response = await getFourPillarsLuckCycles(accessToken, reviewId);
+    const response = await getFourPillarsLuckCycleList(accessToken, reviewId);
     if (state.currentFourPillarsReview?.id === reviewId) {
       state.currentFourPillarsReview = {
         ...state.currentFourPillarsReview,
@@ -594,7 +891,7 @@ async function refreshFourPillarsLuckAnalysis(reviewId: string): Promise<FourPil
 
 async function generateFourPillarsLuckCycle(reviewId: string, cycleKey: string): Promise<FourPillarsLuckRenderRecord> {
   return withAuthRetry(async (accessToken) => {
-    const render = await createFourPillarsLuckCycleSummary(accessToken, reviewId, cycleKey);
+    const render = await apiGenerateFourPillarsLuckCycle(accessToken, reviewId, cycleKey);
     await Promise.allSettled([refreshPoints(), refreshPointsLedger(), refreshFourPillarsLuckAnalysis(reviewId)]);
     clearConnectionError();
     return render;
@@ -603,7 +900,7 @@ async function generateFourPillarsLuckCycle(reviewId: string, cycleKey: string):
 
 async function generateFourPillarsLuckYear(reviewId: string, cycleKey: string, year: number): Promise<FourPillarsLuckRenderRecord> {
   return withAuthRetry(async (accessToken) => {
-    const render = await createFourPillarsLuckYearSummary(accessToken, reviewId, cycleKey, year);
+    const render = await apiGenerateFourPillarsLuckYear(accessToken, reviewId, year);
     await Promise.allSettled([refreshPoints(), refreshPointsLedger(), refreshFourPillarsLuckAnalysis(reviewId)]);
     clearConnectionError();
     return render;
@@ -706,6 +1003,154 @@ async function changePassword(currentPassword: string, newPassword: string, conf
   });
 }
 
+function loadLocalChatSessions(): ChatSessionDetail[] {
+  const data = readStorage(EASEWISE_STORAGE_KEYS.agentConversation);
+  if (!data) {
+    state.chatSessions = [];
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(data);
+    if (Array.isArray(parsed)) {
+      state.chatSessions = parsed;
+      return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to parse agent conversation storage', e);
+  }
+  state.chatSessions = [];
+  return [];
+}
+
+function saveLocalChatSessions(sessions: ChatSessionDetail[]): void {
+  writeStorage(EASEWISE_STORAGE_KEYS.agentConversation, JSON.stringify(sessions));
+  state.chatSessions = sessions;
+}
+
+async function listAgentChatSessions(): Promise<ChatSessionDetail[]> {
+  return loadLocalChatSessions();
+}
+
+async function createAgentChatSession(title: string): Promise<ChatSessionDetail> {
+  const sessions = loadLocalChatSessions();
+  const newSession: ChatSessionDetail = {
+    id: `sess-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    title: title || '新会话',
+    created_at: new Date().toISOString(),
+    messages: []
+  };
+  sessions.unshift(newSession);
+  saveLocalChatSessions(sessions);
+  return newSession;
+}
+
+async function loadAgentChatSession(id: string): Promise<ChatSessionDetail> {
+  const sessions = loadLocalChatSessions();
+  const session = sessions.find(s => s.id === id);
+  if (!session) {
+    throw new Error('session_not_found');
+  }
+  return session;
+}
+
+async function clearAgentChatSessions(): Promise<void> {
+  saveLocalChatSessions([]);
+}
+
+interface SendAgentChatMessageOptions {
+  onChunk?: (text: string) => void;
+  onComplete?: (session: ChatSessionDetail) => void;
+  onError?: (err: any) => void;
+}
+
+async function sendAgentChatMessage(
+  sessionId: string,
+  message: string,
+  options: SendAgentChatMessageOptions = {}
+): Promise<void> {
+  try {
+    const sessions = loadLocalChatSessions();
+    const sessionIndex = sessions.findIndex(s => s.id === sessionId);
+    if (sessionIndex === -1) {
+      throw new Error('session_not_found');
+    }
+    const session = sessions[sessionIndex];
+    if (!session.messages) {
+      session.messages = [];
+    }
+
+    // Append user message
+    const userMessage: AgentMessage = {
+      id: `msg-${Date.now()}-user`,
+      role: 'user',
+      content: message,
+      created_at: new Date().toISOString()
+    };
+    session.messages.push(userMessage);
+    saveLocalChatSessions(sessions);
+
+    // Call backend
+    const history = session.messages
+      .slice(0, -1)
+      .map(m => ({ role: m.role, content: m.content }));
+
+    const res = await callAgentChat(message, history);
+    const reply = res.reply;
+
+    // Simulate streaming typing effect
+    let currentText = '';
+    let charIndex = 0;
+    const interval = setInterval(() => {
+      if (charIndex < reply.length) {
+        const char = reply[charIndex];
+        currentText += char;
+        if (options.onChunk) {
+          options.onChunk(char);
+        }
+        charIndex++;
+      } else {
+        clearInterval(interval);
+
+        // Append completed assistant message
+        const assistantMessage: AgentMessage = {
+          id: `msg-${Date.now()}-assistant`,
+          role: 'assistant',
+          content: reply,
+          created_at: new Date().toISOString()
+        };
+
+        // Reload sessions
+        const freshSessions = loadLocalChatSessions();
+        const freshSession = freshSessions.find(s => s.id === sessionId);
+        if (freshSession) {
+          if (!freshSession.messages) {
+            freshSession.messages = [];
+          }
+          freshSession.messages.push(assistantMessage);
+          saveLocalChatSessions(freshSessions);
+
+          // Deduct points locally
+          if (state.points) {
+            state.points.balance = Math.max(0, state.points.balance - 1);
+            writeStorage(EASEWISE_STORAGE_KEYS.points, String(state.points.balance));
+          }
+
+          if (options.onComplete) {
+            options.onComplete(freshSession);
+          }
+        }
+      }
+    }, 15);
+
+  } catch (err: any) {
+    if (options.onError) {
+      options.onError(err);
+    } else {
+      throw err;
+    }
+  }
+}
+
 function openCustomerServiceModal(sceneOrReason?: unknown, context?: unknown): void {
   const normalizedScene = normalizeCustomerServiceScene(sceneOrReason);
   const trimmedText = typeof sceneOrReason === 'string' ? sceneOrReason.trim() : '';
@@ -724,6 +1169,12 @@ function closeCustomerServiceModal(): void {
 
 function humanizeError(error: unknown): string {
   if (error instanceof ApiError) {
+    const payloadMessage = error.payload && typeof error.payload === 'object' && 'message' in error.payload
+      ? String((error.payload as { message?: unknown }).message || '').trim()
+      : '';
+    if (error.detail === 'llm_insufficient_balance' && payloadMessage) {
+      return payloadMessage;
+    }
     const messageMap: Record<string, string> = {
       invalid_phone_number: '请输入正确的中国大陆手机号码。',
       phone_already_registered: '该手机号已经注册，请直接登录。',
@@ -741,7 +1192,12 @@ function humanizeError(error: unknown): string {
       module_disabled: '当前功能暂未开放。',
       invalid_birth_datetime: '请输入有效的出生日期和出生时间。',
       invalid_timezone: '请输入有效的时区。',
+      review_not_ready_for_unlock: '专项内容还在准备中，请稍后刷新后再试。',
       aspect_not_ready: '专项内容还在生成中，请稍后再试。',
+      aspect_generation_failed: '专项内容生成失败，积分已按规则退回，请稍后重试。',
+      llm_insufficient_balance: 'AI 服务额度不足，本次积分已退回，请联系管理员处理后再试。',
+      aspect_generation_in_progress: '该专项正在生成中，请稍后再试。',
+      aspect_generation_incomplete: '专项内容生成未完成，请稍后重试。',
       session_not_found: '当前登录态已失效，请重新登录。',
       claim_link_not_found: '领取链接不存在，请确认链接是否完整。',
       claim_link_expired: '领取链接已过期。',
@@ -792,9 +1248,13 @@ export function useEaseWiseApp() {
     refreshCurrentFourPillarsReview,
     refreshFourPillarsLuckAnalysis,
     submitPhoneReview,
+    submitPhoneReviewStream,
     submitFourPillarsReview,
+    submitFourPillarsReviewStream,
     unlockAspect,
+    streamUnlockAspect,
     unlockFourPillarsAspect,
+    streamUnlockFourPillarsAspect,
     generateFourPillarsLuckCycle,
     generateFourPillarsLuckYear,
     requestRegisteredUser,
@@ -809,5 +1269,10 @@ export function useEaseWiseApp() {
     openCustomerServiceModal,
     closeCustomerServiceModal,
     humanizeError,
+    listAgentChatSessions,
+    createAgentChatSession,
+    loadAgentChatSession,
+    clearAgentChatSessions,
+    sendAgentChatMessage,
   };
 }

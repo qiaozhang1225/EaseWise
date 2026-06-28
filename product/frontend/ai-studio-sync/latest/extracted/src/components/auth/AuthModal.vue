@@ -1,14 +1,29 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import { 
-  X, Phone, Key, HelpCircle, Loader2, ArrowRight, ShieldCheck, 
-  Lock, Eye, EyeOff, MessageSquare, AlertCircle, ShieldAlert
+import { computed, nextTick, ref, watch } from 'vue';
+import {
+  AlertCircle,
+  ArrowRight,
+  CheckCircle2,
+  ChevronLeft,
+  Eye,
+  EyeOff,
+  Loader2,
+  LockKeyhole,
+  ShieldCheck,
+  Smartphone,
+  X,
 } from 'lucide-vue-next';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 
-const { 
-  state, checkPhoneAuthStatus, registerWithPhonePassword, loginWithPhonePassword, 
-  cancelAuthRequest, humanizeError 
+const {
+  state,
+  cancelAuthRequest,
+  checkPhoneAuthStatus,
+  loginWithPhonePassword,
+  customerServiceCopyForScene,
+  openCustomerServiceModal,
+  registerWithPhonePassword,
+  humanizeError,
 } = useEaseWiseApp();
 
 type AuthMode = 'options' | 'phone' | 'login' | 'register' | 'forgot_password' | 'wechat_loading';
@@ -17,39 +32,95 @@ const mode = ref<AuthMode>('options');
 const phone = ref('');
 const password = ref('');
 const confirmPassword = ref('');
-const errorText = ref<string | null>(null);
-
-const maxPhoneLength = 11;
-const isCheckingPhone = ref(false);
-const isSubmitting = ref(false);
+const phoneHint = ref('');
+const actionError = ref('');
+const submitting = ref(false);
 const passwordVisible = ref(false);
+const phoneInputRef = ref<HTMLInputElement | null>(null);
+const passwordInputRef = ref<HTMLInputElement | null>(null);
 
+const visible = computed(() => state.authPromptVisible);
+const promptReason = computed(() => state.authPromptReason || '继续当前操作');
 const loginActionText = computed(() => {
-  const reason = state.authPromptReason || 'default';
-  if (/智能体|对话/u.test(reason)) return '开启智能体对话';
-  if (/个人中心|个人主页|积分记录|评测记录|修改用户名|修改密码/u.test(reason)) return '开启个人中心';
-  if (/充值|支付|套餐/u.test(reason)) return '开启积分充值';
-  return '开始同修评测';
+  const reason = promptReason.value;
+  if (/智能体|对话/u.test(reason)) {
+    return '开启对话';
+  }
+  if (/个人中心|个人主页|积分记录|评测记录|修改用户名|修改密码/u.test(reason)) {
+    return '开启个人中心';
+  }
+  if (/充值|支付|套餐/u.test(reason)) {
+    return '开启充值';
+  }
+  return '开始评测';
+});
+const loginDialogTitle = computed(() => `立刻登录 · ${loginActionText.value}`);
+const dialogTitle = computed(() => {
+  if (mode.value === 'forgot_password') {
+    return '找回密码';
+  }
+  if (mode.value === 'register') {
+    return '开辟易理账号';
+  }
+  if (mode.value === 'login') {
+    return loginDialogTitle.value;
+  }
+  if (mode.value === 'phone') {
+    return loginDialogTitle.value;
+  }
+  if (mode.value === 'wechat_loading') {
+    return '微信授权待接入';
+  }
+  return loginDialogTitle.value;
+});
+const dialogSubtitle = computed(() => {
+  if (mode.value === 'forgot_password') {
+    return '当前版本尚未接入短信或微信验证，先保留安全指引入口。';
+  }
+  if (mode.value === 'register') {
+    return '建立您在 EaseWise「易如反掌」的数字命盘归位';
+  }
+  return '登录后方可使用评测及智能体对话功能';
+});
+const primaryActionLabel = computed(() => {
+  if (mode.value === 'forgot_password') {
+    return '返回登录';
+  }
+  if (mode.value === 'register') {
+    return '注册';
+  }
+  if (mode.value === 'login') {
+    return '登录';
+  }
+  return '下一步';
 });
 
-function handleReset() {
+watch(visible, (value) => {
+  if (value) {
+    resetForm();
+  }
+});
+
+function resetForm(): void {
+  mode.value = 'options';
   phone.value = '';
   password.value = '';
   confirmPassword.value = '';
-  errorText.value = null;
-  mode.value = 'options';
+  phoneHint.value = '';
+  actionError.value = '';
+  submitting.value = false;
   passwordVisible.value = false;
 }
 
-function handleClose() {
-  handleReset();
+function closeModal(): void {
   cancelAuthRequest();
+  resetForm();
 }
 
 function validatePhoneInput(): string | null {
   const normalizedPhone = phone.value.replace(/\D/g, '');
   if (!/^1[3-9]\d{9}$/.test(normalizedPhone)) {
-    errorText.value = '请输入正确的中国大陆 11 位手机号码。';
+    actionError.value = '请输入正确的中国大陆手机号码。';
     return null;
   }
   phone.value = normalizedPhone;
@@ -57,9 +128,15 @@ function validatePhoneInput(): string | null {
 }
 
 function validatePasswordStrength(value: string): boolean {
-  if (value.trim() !== value) return false;
-  if (value.length < 8 || value.length > 32) return false;
-  if (new Set(value).size <= 1) return false;
+  if (value.trim() !== value) {
+    return false;
+  }
+  if (value.length < 8 || value.length > 32) {
+    return false;
+  }
+  if (new Set(value).size <= 1) {
+    return false;
+  }
   const categoryCount = [
     /\d/.test(value),
     /[a-zA-Z]/.test(value),
@@ -68,345 +145,408 @@ function validatePasswordStrength(value: string): boolean {
   return categoryCount >= 2;
 }
 
-async function handleNextStep() {
-  errorText.value = null;
-  const normalized = validatePhoneInput();
-  if (!normalized) return;
+async function handleWechatEntry(): Promise<void> {
+  mode.value = 'wechat_loading';
+  actionError.value = '微信一键登录入口已预留，请先使用手机号登录/注册完成测试闭环。';
+}
 
-  isCheckingPhone.value = true;
+function openForgotPasswordHelp(): void {
+  mode.value = 'forgot_password';
+  actionError.value = '';
+  phoneHint.value = '';
+}
+
+function openForgotPasswordCustomerService(): void {
+  openCustomerServiceModal('account_security');
+}
+
+async function handlePhoneNext(): Promise<void> {
+  if (submitting.value) {
+    return;
+  }
+  const normalizedPhone = validatePhoneInput();
+  if (!normalizedPhone) {
+    return;
+  }
+  submitting.value = true;
+  actionError.value = '';
+  phoneHint.value = '';
   try {
-    const res = await checkPhoneAuthStatus(normalized);
-    if (res.status === 'registered') {
+    const status = await checkPhoneAuthStatus(normalizedPhone);
+    if (status.registered) {
       mode.value = 'login';
+      phoneHint.value = '该手机号已注册，请直接输入密码登录。';
+      await focusPasswordInput();
     } else {
       mode.value = 'register';
+      phoneHint.value = '该手机号尚未注册，请先设置密码完成注册。';
+      await focusPasswordInput();
     }
-  } catch (err) {
-    // Falls back to new registration in preview mode for a seamless experience
-    mode.value = 'register';
+  } catch (error) {
+    actionError.value = humanizeError(error);
   } finally {
-    isCheckingPhone.value = false;
+    submitting.value = false;
   }
 }
 
-async function handleLogin() {
-  errorText.value = null;
-  const normalized = phone.value.replace(/\D/g, '');
-  if (!password.value) {
-    errorText.value = '请填写登录密钥密码。';
+async function handleAuthSubmit(): Promise<void> {
+  if (submitting.value) {
+    return;
+  }
+  const normalizedPhone = validatePhoneInput();
+  if (!normalizedPhone) {
+    return;
+  }
+  if (mode.value === 'register') {
+    if (!validatePasswordStrength(password.value)) {
+      actionError.value = '密码强度不足，请使用 8-32 位且至少包含两类字符。';
+      return;
+    }
+    if (password.value !== confirmPassword.value) {
+      actionError.value = '两次输入的密码不一致。';
+      return;
+    }
+  }
+  if (mode.value === 'login' && !password.value.trim()) {
+    actionError.value = '请输入密码。';
     return;
   }
 
-  isSubmitting.value = true;
+  submitting.value = true;
+  actionError.value = '';
   try {
-    await loginWithPhonePassword(normalized, password.value);
-    handleReset();
-  } catch (err: any) {
-    errorText.value = humanizeError(err) || '账户或安全码校验未通过';
+    if (mode.value === 'register') {
+      await registerWithPhonePassword(normalizedPhone, password.value, confirmPassword.value);
+    } else {
+      await loginWithPhonePassword(normalizedPhone, password.value);
+    }
+  } catch (error) {
+    actionError.value = humanizeError(error);
   } finally {
-    isSubmitting.value = false;
+    submitting.value = false;
   }
 }
 
-async function handleRegister() {
-  errorText.value = null;
-  const normalized = phone.value.replace(/\D/g, '');
-  
-  if (!password.value) {
-    errorText.value = '请设定灵阁登录安全密码。';
+async function handleEnterSubmit(): Promise<void> {
+  if (mode.value === 'phone') {
+    await handlePhoneNext();
     return;
   }
-
-  if (!validatePasswordStrength(password.value)) {
-    errorText.value = '密码强度未达准：须包含字母、数字、特殊符号任意两类组合，长度 8-32 位，不可含空格。';
-    return;
-  }
-
-  if (password.value !== confirmPassword.value) {
-    errorText.value = '两次设定密码前后不一致，请重新校对。';
-    return;
-  }
-
-  isSubmitting.value = true;
-  try {
-    await registerWithPhonePassword(normalized, password.value, confirmPassword.value);
-    handleReset();
-  } catch (err: any) {
-    errorText.value = humanizeError(err) || '安全注册同修账号失败';
-  } finally {
-    isSubmitting.value = false;
+  if (mode.value === 'login' || mode.value === 'register') {
+    await handleAuthSubmit();
   }
 }
 
-function handleWeChatEntry() {
-  mode.value = 'wechat_loading';
-  setTimeout(() => {
-    errorText.value = '通知：微信快捷同修接口被官方系统保留中，请选用「手机验证/密码」快捷注册登录。';
+function switchToPhoneFlow(): void {
+  mode.value = 'phone';
+  actionError.value = '';
+  phoneHint.value = '';
+  void focusPhoneInput();
+}
+
+function isRegisterMode(): boolean {
+  return mode.value === 'register';
+}
+
+function handleBack(): void {
+  if (mode.value === 'forgot_password') {
+    mode.value = 'login';
+    actionError.value = '';
+    phoneHint.value = '';
+    return;
+  }
+  if (mode.value === 'register' || mode.value === 'login') {
+    mode.value = 'phone';
+    actionError.value = '';
+    phoneHint.value = '';
+    return;
+  }
+  if (mode.value === 'phone' || mode.value === 'wechat_loading') {
     mode.value = 'options';
-  }, 1800);
+    actionError.value = '';
+    phoneHint.value = '';
+    return;
+  }
+  mode.value = 'options';
 }
 
-function showSupportScene() {
-  state.contactServiceModalVisible = true;
-  state.contactServiceScene = 'default';
-  state.contactServiceContext = `忘记密码：绑定的手机号为 ${phone.value || '未输入'}`;
+async function focusPhoneInput(): Promise<void> {
+  await nextTick();
+  phoneInputRef.value?.focus();
+}
+
+async function focusPasswordInput(): Promise<void> {
+  await nextTick();
+  passwordInputRef.value?.focus();
+}
+
+const demoAccounts = [
+  { phone: '13800138000', label: '全量回归', tag: '20000分 / 丰满历史' },
+  { phone: '13600136000', label: '低积分', tag: '120分 / 部分历史' },
+  { phone: '13500135000', label: '极低积分', tag: '30分 / 仅查不解' },
+  { phone: '13900139000', label: '高分全新', tag: '3000分 / 空白历史' },
+  { phone: '13700137000', label: '混合状态', tag: '20000分 / 混合历史' }
+];
+
+async function handleQuickLogin(demoPhone: string): Promise<void> {
+  if (submitting.value) {
+    return;
+  }
+  phone.value = demoPhone;
+  password.value = 'Easewise123!';
+  mode.value = 'login';
+  submitting.value = true;
+  actionError.value = '';
+  try {
+    await loginWithPhonePassword(demoPhone, 'Easewise123!');
+  } catch (error: any) {
+    if (error && (error.status === 408 || error.detail === 'request_timeout' || error.message?.includes('timeout'))) {
+      actionError.value = 'Mock API 请求超时，请检查 VITE_API_BASE_URL 是否为 / 或空值';
+    } else {
+      actionError.value = humanizeError(error);
+    }
+  } finally {
+    submitting.value = false;
+  }
 }
 </script>
 
 <template>
   <transition name="fade">
-    <div 
-      v-if="state.authPromptVisible" 
-      class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+    <div
+      v-if="visible"
+      class="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4"
+      @click.self="closeModal"
     >
-      <div class="bg-white rounded-3xl w-full max-w-sm p-6 border border-brand-paper shadow-2xl relative text-left">
-        <!-- Close button helper -->
-        <button 
-          @click="handleClose"
-          class="absolute top-4 right-4 text-brand-secondary/50 hover:text-brand-ink-strong cursor-pointer p-1.5 rounded-full hover:bg-gray-100 border-none bg-transparent outline-none transition-colors"
+      <div class="w-full max-w-sm bg-white border border-brand-primary/15 rounded-3xl overflow-hidden shadow-2xl relative text-left">
+        <div class="absolute -top-12 -right-12 text-brand-primary/[0.015] font-serif font-black text-[160px] pointer-events-none select-none">
+          ☯
+        </div>
+
+        <button
+          type="button"
+          class="absolute top-4 right-4 w-7 h-7 rounded-full bg-gray-50 border border-gray-100 hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex items-center justify-center hover:scale-105 active:scale-95 transition-all outline-none cursor-pointer z-10"
+          @click="closeModal"
         >
-          <X :size="16" />
+          <X :size="14" />
         </button>
 
-        <!-- Dynamic Context Alert -->
-        <div class="mb-4 pr-6 select-none" v-if="state.authPromptReason">
-          <div class="bg-brand-primary/10 border border-brand-primary/20 rounded-xl px-3 py-2 flex items-center gap-2">
-            <ShieldCheck :size="14" class="text-brand-primary shrink-0" />
-            <span class="font-sans text-[11px] font-extrabold text-brand-primary-strong">
-              前置鉴章 · {{ loginActionText }}
-            </span>
+        <div class="px-6 pt-7 pb-4 text-center relative">
+          <div class="inline-flex items-center justify-center w-11 h-11 rounded-full bg-brand-primary/10 border border-brand-primary/20 mb-3 select-none text-brand-primary text-[20px] font-serif animate-pulse">
+            ☯
           </div>
-        </div>
 
-        <!-- Typography Heading -->
-        <div class="mb-5 select-none">
-          <h2 class="font-serif text-[18px] font-black text-brand-ink-strong flex items-center gap-1.5 leading-tight">
-            <span>绑定同修灵元</span>
-          </h2>
-          <p class="font-sans text-[11px] text-brand-secondary mt-1 leading-relaxed">
-            易如反掌同修阁通过统一的安全验证，保障您在本平台的全部奇门卦象与积分财产云端安全同步。
-          </p>
-        </div>
+          <div class="space-y-1.5 px-7">
+            <h3 class="font-serif text-[17px] font-black text-brand-ink-strong leading-tight">{{ dialogTitle }}</h3>
+            <p class="text-[10px] text-brand-secondary leading-relaxed">{{ dialogSubtitle }}</p>
+          </div>
 
-        <!-- System Error display -->
-        <transition name="shrink">
-          <div 
-            v-if="errorText" 
-            class="mb-4 bg-amber-50 border border-amber-200/55 text-zinc-700/90 rounded-xl px-3.5 py-2.5 text-[11px] font-sans leading-normal flex items-start gap-2 animate-fadeIn"
+          <div
+            v-if="promptReason && mode !== 'forgot_password'"
+            class="mt-4 pt-3.5 border-t border-gray-100 flex flex-col gap-1.5 text-left text-[11px] text-brand-secondary leading-relaxed"
           >
-            <AlertCircle :size="14" class="text-brand-gold-fixed shrink-0 mt-0.5" />
-            <span>{{ errorText }}</span>
-          </div>
-        </transition>
-
-        <!-- STATE 1: OPTIONS CHOICE -->
-        <div v-if="mode === 'options'" class="space-y-3.5 pt-1">
-          <button
-            @click="handleWeChatEntry()"
-            class="w-full bg-[#07C160] hover:bg-[#06B054] text-white py-3 px-4 rounded-xl font-sans text-[13px] font-bold flex items-center justify-center gap-2 cursor-pointer border-none shadow-sm active:scale-[0.99] transition-all outline-none"
-          >
-            <!-- Custom WeChat SVG Icon -->
-            <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
-              <path d="M8.3 2C4 2 1 4.7 1 8c0 1.9 1.1 3.5 2.8 4.6l-.7 2c-.1.3 0 .5.3.4l2.4-1.2c.8.2 1.6.3 2.5.3 4.3 0 7.7-2.7 7.7-6s-3.4-6-7.7-6zm8.8 6.5c-.3 0-.5.1-.7.2.7.7 1.1 1.7 1.1 2.8 0 2.2-2.1 4-4.6 4-.5 0-.9-.1-1.3-.2l1.6.8c.2.1.3.4.2.6l-.4 1.3 1.5-.8c.5.1 1 .2 1.5.2 3.6 0 6.5-2.2 6.5-5s-2.9-4.9-6.5-4.9zm-4.3-1.3c0-.4-.4-.8-.8-.8s-.8.4-.8.8.4.8.8.8.8-.4.8-.8zm4.5 0c0-.4-.4-.8-.8-.8s-.8.4-.8.8.4.8.8.8.8-.4.8-.8zm-8 4c0-.3-.3-.6-.6-.6s-.6.3-.6.6.3.6.6.6.6-.3.6-.6zm3.5 0c0-.3-.3-.6-.6-.6s-.6.3-.6.6.3.6.6.6.6-.3.6-.6z"/>
-            </svg>
-            <span>微信扫码极速快捷注册</span>
-          </button>
-
-          <div class="relative py-2 select-none text-center">
-            <span class="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[1px] bg-zinc-100"></span>
-            <span class="relative bg-white font-sans text-[10px] text-zinc-400 font-bold px-3">或使用手机安全登录</span>
-          </div>
-
-          <button
-            @click="mode = 'phone'"
-            class="w-full bg-brand-paper/50 hover:bg-brand-paper border border-gray-150 py-3.5 px-4 rounded-xl font-sans text-[12.5px] font-extrabold text-brand-ink-strong flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-[0.99] transition-all outline-none"
-          >
-            <Phone :size="15" class="text-brand-primary" />
-            <span>大陆手机账户安全绑定 / 注册</span>
-          </button>
-        </div>
-
-        <!-- STATE 2: PHONE INPUT -->
-        <div v-else-if="mode === 'phone'" class="space-y-4">
-          <div class="space-y-1.5">
-            <span class="font-sans text-[11px] font-bold text-brand-secondary block">手机号（11位中国大陆号）</span>
-            <div class="relative flex items-center">
-              <input 
-                v-model="phone" 
-                type="tel" 
-                :maxlength="maxPhoneLength"
-                placeholder="请输入您的手机号..."
-                class="w-full bg-brand-paper/40 px-4 py-3 rounded-2xl border border-gray-150 outline-none font-sans text-[13px] text-brand-ink pl-10"
-                @keyup.enter="handleNextStep()"
-              />
-              <Phone :size="14" class="absolute left-3.5 text-brand-secondary/60" />
-            </div>
-          </div>
-
-          <div class="flex gap-2">
-            <button
-              @click="mode = 'options'"
-              class="flex-1 bg-brand-paper hover:bg-zinc-100 text-brand-secondary border border-gray-150 py-3 rounded-2xl cursor-pointer font-sans text-[12.5px] font-bold outline-none"
-            >
-              返回
-            </button>
-            <button
-              @click="handleNextStep()"
-              :disabled="isCheckingPhone"
-              class="flex-2 bg-brand-primary hover:bg-brand-primary/95 text-white border-none py-3 rounded-2xl cursor-pointer font-sans text-[12.5px] font-bold shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 outline-none"
-            >
-              <Loader2 v-if="isCheckingPhone" class="animate-spin text-white" :size="14" />
-              <span>验证并下一步</span>
-              <ArrowRight v-if="!isCheckingPhone" :size="14" />
-            </button>
+            <p>登录成功后，即可：</p>
+            <p>1. 完成手机号评测与四柱命盘</p>
+            <p>2. 与决策助手智能体开始深度对话</p>
           </div>
         </div>
 
-        <!-- STATE 3: INTERACTIVE LOGIN -->
-        <div v-else-if="mode === 'login'" class="space-y-4">
-          <p class="font-sans text-[10.5px] text-brand-secondary/80 select-none">
-            该手机号 <strong>{{ phone }}</strong> 在本灵阁已完成注册，请输入密令登录。
-          </p>
-
-          <div class="space-y-1.5">
-            <span class="font-sans text-[11px] font-bold text-brand-secondary block">同修登录密钥</span>
-            <div class="relative flex items-center">
-              <input 
-                v-model="password" 
-                :type="passwordVisible ? 'text' : 'password'" 
-                placeholder="请输入登录密钥密码..."
-                class="w-full bg-brand-paper/40 px-4 py-3 rounded-2xl border border-gray-150 outline-none font-sans text-[13px] text-brand-ink pl-10 pr-10"
-                @keyup.enter="handleLogin()"
-              />
-              <Lock :size="14" class="absolute left-3.5 text-brand-secondary/60" />
-              <button 
-                type="button"
-                @click="passwordVisible = !passwordVisible"
-                class="absolute right-3.5 border-none bg-transparent cursor-pointer text-brand-secondary/50 hover:text-brand-ink outline-none"
+        <div class="p-6 bg-brand-paper/50 rounded-b-[24px]">
+          <transition name="fade" mode="out-in">
+            <div v-if="mode === 'options'" key="options-view" class="space-y-3">
+              <button
+                @click="mode = 'phone'"
+                class="w-full h-11 bg-brand-primary hover:bg-brand-primary-strong text-white font-sans text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all border-none outline-none shadow-sm"
               >
-                <Eye v-if="passwordVisible" :size="14" />
-                <EyeOff v-else :size="14" />
+                <Smartphone :size="14" />
+                <span>手机号登录/注册</span>
+              </button>
+              <button
+                @click="handleWechatEntry"
+                class="w-full h-11 bg-[#07C160] hover:bg-[#06B055] text-white font-sans text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all border-none outline-none shadow-sm"
+              >
+                <span>微信一键安全授权</span>
+              </button>
+            </div>
+
+            <div v-else-if="mode === 'wechat_loading'" key="wechat-loading" class="py-8 text-center space-y-4">
+              <Loader2 class="w-10 h-10 text-[#07C160] animate-spin mx-auto" />
+              <div class="space-y-1">
+                <p class="text-[12.5px] font-bold text-[#07C160]">微信授权能力预留中...</p>
+                <p class="text-[10px] text-brand-secondary">请先使用手机号登录/注册完成当前测试闭环</p>
+              </div>
+              <button
+                type="button"
+                class="w-full py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer transition-all outline-none"
+                @click="handleBack"
+              >
+                <ChevronLeft :size="12" />
+                <span>返回登录方式</span>
+              </button>
+            </div>
+
+            <div v-else-if="mode === 'forgot_password'" key="forgot-password" class="py-5 space-y-4">
+              <div class="mx-auto w-12 h-12 rounded-full bg-amber-500/10 border border-amber-200 text-amber-600 flex items-center justify-center select-none">
+                <AlertCircle :size="20" />
+              </div>
+              <div class="space-y-2 text-center">
+                <h3 class="text-[13px] font-bold text-brand-ink-strong">忘记密码暂不支持自动重置</h3>
+                <p class="text-[11px] text-brand-secondary leading-relaxed px-1">
+                  由于短信验证和微信验证暂未接入，为保护账号资产，当前版本不开放直接重置密码。
+                  你可以先联系客服人工核验。
+                </p>
+              </div>
+              <button
+                type="button"
+                class="w-full py-2.5 bg-brand-primary hover:bg-brand-primary-strong text-white active:scale-95 font-bold rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer transition-all outline-none border border-transparent shadow-sm"
+                @click="openForgotPasswordCustomerService"
+              >
+                联系客服人工核验
+              </button>
+              <button
+                type="button"
+                class="w-full py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-600 active:scale-95 font-bold rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer transition-all outline-none border border-transparent"
+                @click="handleBack"
+              >
+                <ChevronLeft :size="12" />
+                <span>返回登录</span>
+              </button>
+            </div>
+
+            <form v-else class="space-y-4" @submit.prevent="handleEnterSubmit">
+              <div class="space-y-1">
+                <div class="flex items-center justify-between gap-2">
+                  <label class="text-[9px] text-brand-secondary uppercase tracking-wider font-semibold">大陆手机号码</label>
+                  <button
+                    v-if="mode === 'login'"
+                    type="button"
+                    class="text-[9.5px] text-brand-primary hover:text-brand-primary-strong outline-none cursor-pointer leading-none font-bold"
+                    @click="openForgotPasswordHelp"
+                  >
+                    忘记密码？
+                  </button>
+                </div>
+                <div class="relative flex items-center bg-brand-paper border border-gray-200 rounded-xl focus-within:border-brand-primary transition-all">
+                  <span class="pl-3.5 text-[11px] text-brand-primary font-bold">+86</span>
+                  <span class="h-4 w-px bg-gray-300 mx-2"></span>
+                  <input
+                    ref="phoneInputRef"
+                    v-model="phone"
+                    type="tel"
+                    inputmode="numeric"
+                    autocomplete="tel"
+                    maxlength="11"
+                    placeholder="请输入您的11位大陆号码"
+                    class="w-full bg-transparent border-none text-[12px] text-brand-ink py-2.5 pr-3.5 outline-none font-mono placeholder-gray-400"
+                  />
+                </div>
+              </div>
+
+              <transition name="slide-down">
+                <div v-if="mode !== 'phone'" class="space-y-3">
+                  <div class="space-y-1">
+                    <div class="flex justify-between items-center">
+                      <label class="text-[9px] text-brand-secondary uppercase tracking-wider font-semibold">
+                        {{ isRegisterMode() ? '设置登入密码' : '账户登入密码' }}
+                      </label>
+                      <button
+                        type="button"
+                        class="text-[9.5px] text-brand-primary hover:text-brand-primary-strong outline-none cursor-pointer leading-none font-bold"
+                        @click="mode = isRegisterMode() ? 'login' : 'register'; actionError = ''; phoneHint = ''"
+                      >
+                        {{ isRegisterMode() ? '使用已有密码登录' : '没有账号？立即注册' }}
+                      </button>
+                    </div>
+                    <div class="relative flex items-center bg-brand-paper border border-gray-200 rounded-xl focus-within:border-brand-primary transition-all">
+                      <span class="pl-3.5 text-gray-400 shrink-0"><LockKeyhole :size="12" /></span>
+                      <span class="h-4 w-px bg-gray-300 mx-2"></span>
+                      <input
+                        ref="passwordInputRef"
+                        v-model="password"
+                        :type="passwordVisible ? 'text' : 'password'"
+                        autocomplete="current-password"
+                        placeholder="8-32位，至少包含两类字符"
+                        class="w-full bg-transparent border-none text-[12px] text-brand-ink py-2.5 pr-10 outline-none placeholder-gray-400"
+                      />
+                      <button
+                        type="button"
+                        class="absolute right-3.5 text-gray-400 hover:text-gray-600 cursor-pointer select-none outline-none border-none bg-transparent"
+                        @click="passwordVisible = !passwordVisible"
+                      >
+                        <Eye v-if="passwordVisible" :size="13" />
+                        <EyeOff v-else :size="13" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <transition name="slide-down">
+                    <div v-if="isRegisterMode()" class="space-y-1">
+                      <label class="text-[9px] text-brand-secondary uppercase tracking-wider font-semibold">确认您的登入密码</label>
+                      <div class="relative flex items-center bg-brand-paper border border-gray-200 rounded-xl focus-within:border-brand-primary transition-all">
+                        <span class="pl-3.5 text-gray-400 shrink-0"><LockKeyhole :size="12" /></span>
+                        <span class="h-4 w-px bg-gray-300 mx-2"></span>
+                        <input
+                          v-model="confirmPassword"
+                          type="password"
+                          autocomplete="new-password"
+                          placeholder="重复输入上方相同的安全密码"
+                          class="w-full bg-transparent border-none text-[12px] text-brand-ink py-2.5 pr-3.5 outline-none placeholder-gray-400"
+                        />
+                      </div>
+                    </div>
+                  </transition>
+                </div>
+              </transition>
+
+              <div class="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  class="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer transition-all outline-none"
+                  @click="handleBack"
+                >
+                  <ChevronLeft :size="12" />
+                  <span>{{ mode === 'register' ? '上一步' : '返回' }}</span>
+                </button>
+
+                <button
+                  type="submit"
+                  class="flex-1 py-2.5 bg-brand-primary hover:bg-brand-primary-strong text-white active:scale-95 font-bold rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer transition-all outline-none border border-transparent shadow-sm disabled:opacity-60"
+                  :disabled="submitting"
+                >
+                  <Loader2 v-if="submitting" :size="13" class="animate-spin" />
+                  <ArrowRight v-else :size="13" />
+                  <span>{{ submitting ? '处理中' : primaryActionLabel }}</span>
+                </button>
+              </div>
+            </form>
+          </transition>
+
+          <!-- AI Studio Quick Login Helper -->
+          <div class="mt-4 pt-4 border-t border-gray-100 text-left">
+            <div class="flex items-center gap-1.5 text-brand-primary text-[10.5px] font-bold mb-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-brand-primary animate-pulse"></span>
+              <span>AI Studio 演示账号极速通道</span>
+            </div>
+            <div class="grid grid-cols-1 gap-1.5">
+              <button
+                v-for="acc in demoAccounts"
+                :key="acc.phone"
+                type="button"
+                @click="handleQuickLogin(acc.phone)"
+                class="w-full text-left px-3 py-1.5 bg-brand-paper hover:bg-brand-primary/5 rounded-lg border border-gray-100 hover:border-brand-primary/20 flex items-center justify-between text-xs transition-all cursor-pointer select-none"
+                :disabled="submitting"
+              >
+                <div class="flex flex-col">
+                  <span class="font-mono font-bold text-gray-700 text-[11px]">{{ acc.phone }}</span>
+                  <span class="text-[10px] text-gray-400 font-sans">{{ acc.tag }}</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  <span class="text-[10px] text-brand-primary font-bold bg-brand-primary/5 px-2 py-0.5 rounded-full">{{ acc.label }}</span>
+                  <ArrowRight :size="10" class="text-brand-primary" />
+                </div>
               </button>
             </div>
           </div>
-
-          <div class="flex items-center justify-between font-sans text-[11px] select-none text-brand-secondary">
-            <button @click="mode = 'phone'" class="text-brand-primary hover:underline bg-transparent border-none cursor-pointer outline-none font-bold">更换登录号码</button>
-            <button @click="mode = 'forgot_password'" class="text-zinc-400 hover:text-brand-primary cursor-pointer bg-transparent border-none outline-none font-bold">忘记密码？</button>
-          </div>
-
-          <div class="flex gap-2.5 pt-1">
-            <button
-              @click="mode = 'phone'"
-              class="flex-1 bg-brand-paper hover:bg-zinc-100 text-brand-secondary border border-gray-150 py-3 rounded-2xl cursor-pointer font-sans text-[12.5px] font-bold outline-none"
-            >
-              返回
-            </button>
-            <button
-              @click="handleLogin()"
-              :disabled="isSubmitting"
-              class="flex-2 bg-brand-primary hover:bg-brand-primary/95 text-white border-none py-3 rounded-2xl cursor-pointer font-sans text-[12.5px] font-bold shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-1 outline-none"
-            >
-              <Loader2 v-if="isSubmitting" class="animate-spin text-white" :size="14" />
-              <span>鉴章并登录灵台</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- STATE 4: NEW ACCOUNT REGISTRATION -->
-        <div v-else-if="mode === 'register'" class="space-y-4">
-          <div class="bg-amber-50 rounded-xl px-3.5 py-2.5 select-none border border-amber-100">
-            <p class="font-sans text-[10.5px] text-zinc-600 leading-normal">
-              同修缘起：大陆手机 <strong>{{ phone }}</strong> 是本灵台初呈绑定。我们将自然为您创设专属同修档案，并赠送 <strong>50 灵币积分</strong> 礼。
-            </p>
-          </div>
-
-          <div class="space-y-3">
-            <div class="space-y-1.5">
-              <span class="font-sans text-[11px] font-bold text-brand-secondary block">设定同修安全密码</span>
-              <div class="relative flex items-center">
-                <input 
-                  v-model="password" 
-                  :type="passwordVisible ? 'text' : 'password'" 
-                  placeholder="确保字母+数字任意两类，至少8位..."
-                  class="w-full bg-brand-paper/40 px-4 py-3 rounded-2xl border border-gray-150 outline-none font-sans text-[13px] text-brand-ink pl-10 pr-10"
-                />
-                <Lock :size="14" class="absolute left-3.5 text-brand-secondary/60" />
-                <button 
-                  type="button"
-                  @click="passwordVisible = !passwordVisible"
-                  class="absolute right-3.5 border-none bg-transparent cursor-pointer text-brand-secondary/50 hover:text-brand-ink outline-none"
-                >
-                  <Eye v-if="passwordVisible" :size="14" />
-                  <EyeOff v-else :size="14" />
-                </button>
-              </div>
-            </div>
-
-            <div class="space-y-1.5">
-              <span class="font-sans text-[11px] font-bold text-brand-secondary block">再次输入密码以确印</span>
-              <div class="relative flex items-center">
-                <input 
-                  v-model="confirmPassword" 
-                  type="password" 
-                  placeholder="确保二次录入完全匹配..."
-                  class="w-full bg-brand-paper/40 px-4 py-3 rounded-2xl border border-gray-150 outline-none font-sans text-[13px] text-brand-ink pl-10"
-                />
-                <Key :size="14" class="absolute left-3.5 text-brand-secondary/61" />
-              </div>
-            </div>
-          </div>
-
-          <div class="flex gap-2 pb-1">
-            <button
-              @click="mode = 'phone'"
-              class="flex-1 bg-brand-paper hover:bg-zinc-100 text-brand-secondary border border-gray-150 py-3 rounded-2xl cursor-pointer font-sans text-[12px] font-bold outline-none"
-            >
-              返回更换
-            </button>
-            <button
-              @click="handleRegister()"
-              :disabled="isSubmitting"
-              class="flex-2 bg-brand-primary hover:bg-brand-primary/95 text-white border-none py-3 rounded-2xl cursor-pointer font-sans text-[12px] font-bold shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-1 outline-none"
-            >
-              <Loader2 v-if="isSubmitting" class="animate-spin text-white" :size="14" />
-              <span>同意修册并绑定</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- STATE 5: FORGOT PASSWORD -->
-        <div v-else-if="mode === 'forgot_password'" class="space-y-4 pt-1">
-          <div class="bg-slate-50 border border-gray-100 rounded-2xl p-4 flex flex-col items-center text-center">
-            <ShieldAlert :size="28" class="text-brand-primary mb-2 shrink-0" />
-            <span class="font-serif text-[13px] font-bold text-brand-ink-strong">灵台密寄人工校核</span>
-            <p class="font-sans text-[11px] text-brand-secondary/90 leading-relaxed mt-2.5">
-              为了同修的账号权益安全，目前并不开放免审查的自主修改密码。需要通过官方客服人员进行手机实信对等。
-            </p>
-          </div>
-
-          <div class="flex gap-2">
-            <button
-              @click="mode = 'login'"
-              class="flex-1 bg-brand-paper hover:bg-zinc-100 text-brand-secondary border border-gray-150 py-3 rounded-2xl cursor-pointer font-sans text-[12.5px] font-bold outline-none"
-            >
-              返回
-            </button>
-            <button
-              @click="showSupportScene()"
-              class="flex-1 bg-brand-primary hover:bg-brand-primary/95 text-white border-none py-3 rounded-2xl cursor-pointer font-sans text-[12.5px] font-bold shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 outline-none"
-            >
-              <MessageSquare :size="14" />
-              <span>呼唤客服校正</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- STATE 6: WECHAT LOADING POPUP (Mock placeholder state) -->
-        <div v-else-if="mode === 'wechat_loading'" class="flex flex-col items-center justify-center py-10 select-none">
-          <Loader2 class="animate-spin text-emerald-500 mb-4" :size="32" />
-          <span class="font-serif text-[13.5px] font-bold text-brand-ink-strong">启动微信极速通道中...</span>
-          <span class="font-sans text-[10.5px] text-zinc-400 mt-1.5 animate-pulse">正在连入安全微商接口，寻配凭证</span>
         </div>
       </div>
     </div>
@@ -414,24 +554,24 @@ function showSupportScene() {
 </template>
 
 <style scoped>
-.fade-enter-active, .fade-leave-active {
-  transition: opacity 0.25s ease-out;
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
 }
-.fade-enter-from, .fade-leave-to {
+
+.fade-enter-from,
+.fade-leave-to {
   opacity: 0;
 }
-.shrink-enter-active, .shrink-leave-active {
-  transition: all 0.2s ease-in-out;
+
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.shrink-enter-from, .shrink-leave-to {
-  transform: scaleY(0);
+
+.slide-down-enter-from,
+.slide-down-leave-to {
   opacity: 0;
-}
-.animate-fadeIn {
-  animation: fadeIn 0.2s ease-out;
-}
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  transform: translateY(-10px);
 }
 </style>

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 from lunar_python import Solar
@@ -19,13 +19,28 @@ from .solar_time import calculate_true_solar_time, default_birth_location, resol
 
 FOUR_PILLARS_ASPECTS: list[dict[str, str]] = [
     {"aspect_key": "personality", "title": "性格"},
+    {"aspect_key": "wealth", "title": "财运"},
+    {"aspect_key": "marriage", "title": "婚姻"},
     {"aspect_key": "career", "title": "事业"},
-    {"aspect_key": "wealth", "title": "财富"},
-    {"aspect_key": "love", "title": "婚恋"},
     {"aspect_key": "health", "title": "健康"},
-    {"aspect_key": "family_environment", "title": "家庭环境"},
+    {"aspect_key": "fortune", "title": "运势"},
+    {"aspect_key": "investment", "title": "投资"},
+    {"aspect_key": "social", "title": "人际"},
+    {"aspect_key": "industry", "title": "行业"},
+    {"aspect_key": "fengshui", "title": "风水"},
+    {"aspect_key": "family", "title": "家庭"},
+    {"aspect_key": "pattern", "title": "格局"},
 ]
 FOUR_PILLARS_ASPECT_ORDER = [item["aspect_key"] for item in FOUR_PILLARS_ASPECTS]
+FOUR_PILLARS_ASPECT_ALIASES: dict[str, str] = {
+    "love": "marriage",
+    "annual_trend": "fortune",
+}
+FOUR_PILLARS_ASPECT_EXPANSION_ALIASES: dict[str, tuple[str, ...]] = {
+    "love": ("marriage",),
+    "annual_trend": ("fortune",),
+    "family_environment": ("family", "fengshui"),
+}
 
 PILLAR_KEYS = ("year", "month", "day", "hour")
 PILLAR_LABELS = {"year": "年柱", "month": "月柱", "day": "日柱", "hour": "时柱"}
@@ -145,6 +160,63 @@ STEM_CLASHES = {frozenset(pair): name for pair, name in {
     ("丁", "癸"): "丁癸冲",
 }.items()}
 TOMB_BRANCHES = {"辰": "水库", "戌": "火库", "丑": "金库", "未": "木库"}
+SUMMARY_CARD_ORDER = (
+    "marriage",
+    "wealth",
+    "health",
+    "risk_window",
+    "family_environment",
+    "ancestral_environment",
+    "favorable_strategy",
+    "pattern",
+)
+SUMMARY_CARD_LABELS = {
+    "marriage": "婚恋稳定度",
+    "wealth": "财富格局",
+    "health": "健康消耗点",
+    "risk_window": "风险窗口",
+    "family_environment": "早年家庭",
+    "ancestral_environment": "祖上环境",
+    "favorable_strategy": "喜忌策略",
+    "pattern": "命格主轴",
+}
+RISK_SHEN_SHA_NAMES = {"灾煞", "羊刃", "飞刃", "劫煞", "亡神", "元辰", "五鬼", "勾煞", "绞煞", "魁罡", "阴阳差错"}
+RELATIONSHIP_SHEN_SHA_NAMES = {"桃花", "红鸾", "天喜", "孤辰", "寡宿", "阴阳差错"}
+ENVIRONMENT_SYMBOLS_BY_BRANCH = {
+    "子": ["水边", "低洼处", "流动水气", "夜间或寒湿环境"],
+    "丑": ["坟地", "池塘", "井", "庙宇", "湿土杂物处"],
+    "寅": ["树林", "高坡", "道路转角", "木器或生发之地"],
+    "卯": ["花草", "门窗", "小路", "竹木环境"],
+    "辰": ["水库", "河堤", "土坡", "旧宅或湿土环境"],
+    "巳": ["火炉", "电器", "路口", "热闹明亮处"],
+    "午": ["高地", "阳光强处", "学校礼堂", "马路或开阔地"],
+    "未": ["园地", "坟地", "土堆", "旧墙或杂草处"],
+    "申": ["道路", "金属器物", "车辆", "机器或变动场"],
+    "酉": ["门窗", "金属器物", "小路", "整洁明亮处"],
+    "戌": ["高土", "坟地", "庙宇", "仓库或燥土环境"],
+    "亥": ["河流", "水沟", "低洼寒湿处", "远行或流动环境"],
+}
+ELEMENT_SUPPORT_ENVIRONMENTS = {
+    "木": "多接触学习、生长、绿植、东方感和长期积累型环境",
+    "火": "多接触阳光、表达、曝光、南方感和节奏明快的环境",
+    "土": "多接触稳定作息、土地、收纳、组织流程和长期承诺环境",
+    "金": "多接触规则、工具、财务纪律、清爽空间和标准化环境",
+    "水": "多接触流动信息、复盘、休息、北方感和弹性安排环境",
+}
+ELEMENT_AVOID_PATTERNS = {
+    "木": "少陷入反复开新坑、情绪憋闷或只讲理想不落地",
+    "火": "少陷入熬夜、冲动表达、情绪上头或过度曝光",
+    "土": "少陷入拖延、过度承担、饮食失衡或被琐事困住",
+    "金": "少陷入过度挑剔、硬碰硬、规则压力或冷处理关系",
+    "水": "少陷入犹豫、逃避、寒湿懒散或信息过载",
+}
+ELEMENT_HEALTH_THEMES = {
+    "木": "肝胆、筋膜伸展和情绪疏泄",
+    "火": "睡眠、心火和循环压力",
+    "土": "脾胃、消化和代谢节奏",
+    "金": "呼吸、皮肤和干燥敏感",
+    "水": "肾水、泌尿和寒湿恢复力",
+}
 FIVE_GHOST_BRANCH_BY_MONTH_BRANCH = {
     "子": "辰",
     "丑": "巳",
@@ -257,8 +329,8 @@ def build_four_pillars_review(payload: FourPillarsInput | dict[str, Any], *, inc
     normalized = _normalize_input(payload)
     chart = build_chart(normalized)
     deterministic_facts = build_deterministic_facts(chart, normalized)
-    score_result = score_chart(deterministic_facts)
-    score_template = build_score_template(normalized, chart, deterministic_facts, score_result)
+    score_result: dict[str, Any] = {}
+    score_template = build_review_template(normalized, chart, deterministic_facts)
     result = {
         "input_profile": normalized,
         "chart": chart,
@@ -266,8 +338,6 @@ def build_four_pillars_review(payload: FourPillarsInput | dict[str, Any], *, inc
         "score_result": score_result,
         "score_template": score_template,
     }
-    if include_markdown:
-        result["score_markdown"] = build_score_markdown(result)
     return result
 
 
@@ -425,10 +495,23 @@ def build_deterministic_facts(chart: dict[str, Any], input_profile: dict[str, An
     empty_branches = resolve_empty_branches(chart["day_ganzhi"])
     tombs = [{"branch": branch, "meaning": TOMB_BRANCHES[branch]} for branch in branches if branch in TOMB_BRANCHES]
     ten_god_counts = count_ten_gods(chart)
-    aspect_scores = build_aspect_scores(element_counts, interactions, strength, ten_god_counts)
+    aspect_signals = build_aspect_signals(chart, element_counts, interactions, strength, ten_god_counts, favorable)
     shen_sha_context = build_shen_sha_context(chart, input_profile, empty_branches=empty_branches)
     shen_sha_by_pillar = calculate_chart_shen_sha(shen_sha_context, pillars)
     luck_cycles = build_luck_cycles(input_profile, chart=chart)
+    summary_highlights = build_summary_highlights(
+        chart=chart,
+        input_profile=input_profile,
+        element_counts=element_counts,
+        interactions=interactions,
+        strength=strength,
+        ten_god_counts=ten_god_counts,
+        favorable=favorable,
+        empty_branches=empty_branches,
+        tombs=tombs,
+        shen_sha_by_pillar=shen_sha_by_pillar,
+        luck_cycles=luck_cycles,
+    )
     return {
         "input_summary": {
             "gender": input_profile["gender"],
@@ -455,7 +538,8 @@ def build_deterministic_facts(chart: dict[str, Any], input_profile: dict[str, An
             "by_pillar": shen_sha_by_pillar,
             "summary": summarize_chart_shen_sha(shen_sha_by_pillar),
         },
-        "aspect_scores": aspect_scores,
+        "summary_highlights": summary_highlights,
+        "aspect_signals": aspect_signals,
         "luck_cycles": luck_cycles,
     }
 
@@ -551,58 +635,12 @@ def build_liunian_facts(package: dict[str, Any], cycle_key: str, year: int) -> d
     return _build_luck_render_facts(package, cycle=cycle, year_item=year_item)
 
 
-def score_chart(facts: dict[str, Any]) -> dict[str, Any]:
-    strength = facts["day_master"]["strength"]
-    interactions = facts["interactions"]
-    score = 72
-    if strength["level"] == "balanced":
-        score += 8
-    elif strength["level"] in {"weak", "strong"}:
-        score -= 3
-    else:
-        score -= 8
-    score -= min(16, len(interactions["clashes"]) * 4 + len(interactions["harms"]) * 3 + len(interactions["breaks"]) * 2)
-    score += min(8, len(interactions["combinations"]) * 2 + len(interactions["six_harmonies"]) * 2)
-    score = max(30, min(96, score))
-    return {
-        "final_score": score,
-        "score_band": score_band(score),
-        "strength_level": strength["level"],
-        "risk_count": len(interactions["clashes"]) + len(interactions["harms"]) + len(interactions["breaks"]),
-        "supportive_count": len(interactions["combinations"]) + len(interactions["six_harmonies"]),
-        "aspect_scores": facts["aspect_scores"],
-    }
-
-
-def build_score_template(input_profile: dict[str, Any], chart: dict[str, Any], facts: dict[str, Any], score_result: dict[str, Any]) -> dict[str, Any]:
+def build_review_template(input_profile: dict[str, Any], chart: dict[str, Any], facts: dict[str, Any]) -> dict[str, Any]:
     return {
         "input_profile": input_profile,
         "chart": chart,
         "deterministic_facts": facts,
-        "score_summary": score_result,
     }
-
-
-def build_score_markdown(package: dict[str, Any]) -> str:
-    chart = package["chart"]
-    facts = package["deterministic_facts"]
-    score = package["score_result"]
-    pillars = chart["pillars"]
-    lines = [
-        "# 四柱八字评测事实包",
-        "",
-        f"- 综合分：{score['final_score']}（{score['score_band']}）",
-        f"- 四柱：{pillars['year']['ganzhi']} 年、{pillars['month']['ganzhi']} 月、{pillars['day']['ganzhi']} 日、{pillars['hour']['ganzhi']} 时",
-        f"- 日主：{chart['day_master']}（{chart['day_master_element']}，{chart['day_master_yin_yang']}）",
-        f"- 旺衰初判：{facts['day_master']['strength']['label']}",
-        f"- 喜用候选：{'、'.join(facts['day_master']['favorable_elements'])}",
-        f"- 需要节制：{'、'.join(facts['day_master']['unfavorable_elements'])}",
-        "",
-        "## 五行计数",
-        "",
-    ]
-    lines.extend(f"- {key}: {value}" for key, value in facts["element_counts"].items())
-    return "\n".join(lines)
 
 
 def _normalize_input(payload: FourPillarsInput | dict[str, Any]) -> dict[str, Any]:
@@ -976,35 +1014,510 @@ def count_ten_gods(chart: dict[str, Any]) -> dict[str, int]:
     return counts
 
 
-def build_aspect_scores(element_counts: dict[str, int], interactions: dict[str, list[str]], strength: dict[str, Any], ten_god_counts: dict[str, int]) -> dict[str, dict[str, Any]]:
-    risk_penalty = len(interactions["clashes"]) * 4 + len(interactions["harms"]) * 3 + len(interactions["breaks"]) * 2
-    flow_bonus = len(interactions["combinations"]) * 2 + len(interactions["six_harmonies"]) * 2
-    base = 68 + flow_bonus - risk_penalty
-    strength_bonus = 6 if strength["level"] == "balanced" else 2 if strength["level"] in {"strong", "weak"} else -4
-    profiles = {
-        "personality": ten_god_counts.get("比肩", 0) + ten_god_counts.get("食神", 0),
-        "career": ten_god_counts.get("正官", 0) + ten_god_counts.get("七杀", 0) + element_counts.get("木", 0) // 3,
-        "wealth": ten_god_counts.get("正财", 0) + ten_god_counts.get("偏财", 0),
-        "love": ten_god_counts.get("正官", 0) + ten_god_counts.get("正财", 0),
-        "health": -risk_penalty,
-        "family_environment": len(interactions["six_harmonies"]) - len(interactions["harms"]),
+def build_aspect_signals(
+    chart: dict[str, Any],
+    element_counts: dict[str, int],
+    interactions: dict[str, list[str]],
+    strength: dict[str, Any],
+    ten_god_counts: dict[str, int],
+    favorable: dict[str, list[str]],
+) -> dict[str, Any]:
+    sorted_ten_gods = sorted(ten_god_counts.items(), key=lambda item: (-item[1], item[0]))
+    dominant_ten_gods = [{"name": key, "count": value} for key, value in sorted_ten_gods[:4] if value > 0]
+    pillars = chart.get("pillars", {}) if isinstance(chart.get("pillars"), dict) else {}
+    year_pillar = as_pillar_dict(pillars.get("year"))
+    month_pillar = as_pillar_dict(pillars.get("month"))
+    day_pillar = as_pillar_dict(pillars.get("day"))
+    hour_pillar = as_pillar_dict(pillars.get("hour"))
+    pattern_candidates = [item["name"] for item in dominant_ten_gods[:2]]
+    if strength.get("level") in {"strong", "overstrong"}:
+        pattern_candidates.append("身旺取流通")
+    elif strength.get("level") in {"weak", "overweak"}:
+        pattern_candidates.append("身弱取扶助")
+    else:
+        pattern_candidates.append("中和看流通")
+    return {
+        "dominant_ten_gods": dominant_ten_gods,
+        "pattern_candidates": pattern_candidates[:4],
+        "family_palaces": {
+            "year": {"ganzhi": year_pillar.get("ganzhi"), "stem_ten_god": year_pillar.get("stem_ten_god"), "branch_ten_god": year_pillar.get("branch_ten_god")},
+            "month": {"ganzhi": month_pillar.get("ganzhi"), "stem_ten_god": month_pillar.get("stem_ten_god"), "branch_ten_god": month_pillar.get("branch_ten_god")},
+            "day": {"ganzhi": day_pillar.get("ganzhi"), "branch": day_pillar.get("branch")},
+            "hour": {"ganzhi": hour_pillar.get("ganzhi"), "stem_ten_god": hour_pillar.get("stem_ten_god"), "branch_ten_god": hour_pillar.get("branch_ten_god")},
+        },
+        "career_wealth_signals": {
+            "wealth_star_count": ten_god_counts.get("正财", 0) + ten_god_counts.get("偏财", 0),
+            "officer_star_count": ten_god_counts.get("正官", 0) + ten_god_counts.get("七杀", 0),
+            "output_star_count": ten_god_counts.get("食神", 0) + ten_god_counts.get("伤官", 0),
+            "resource_star_count": ten_god_counts.get("正印", 0) + ten_god_counts.get("偏印", 0),
+        },
+        "environment_signals": {
+            "element_counts": element_counts,
+            "favorable_elements": favorable.get("favorable", []),
+            "unfavorable_elements": favorable.get("unfavorable", []),
+            "supportive_interactions": interactions.get("combinations", []) + interactions.get("six_harmonies", []),
+            "stress_interactions": interactions.get("clashes", []) + interactions.get("harms", []) + interactions.get("breaks", []),
+        },
     }
-    result: dict[str, dict[str, Any]] = {}
-    for aspect_key in FOUR_PILLARS_ASPECT_ORDER:
-        raw_score = base + strength_bonus + int(profiles.get(aspect_key, 0)) * 2
-        score = max(35, min(95, raw_score))
-        result[aspect_key] = {"score": score, "level": score_band(score)}
-    return result
 
 
-def score_band(score: int) -> str:
-    if score >= 85:
+def build_summary_highlights(
+    *,
+    chart: dict[str, Any],
+    input_profile: dict[str, Any],
+    element_counts: dict[str, int],
+    interactions: dict[str, list[str]],
+    strength: dict[str, Any],
+    ten_god_counts: dict[str, int],
+    favorable: dict[str, list[str]],
+    empty_branches: list[str],
+    tombs: list[dict[str, str]],
+    shen_sha_by_pillar: dict[str, list[dict[str, Any]]],
+    luck_cycles: dict[str, Any],
+) -> dict[str, Any]:
+    pillars = chart.get("pillars", {}) if isinstance(chart.get("pillars"), dict) else {}
+    year_pillar = as_pillar_dict(pillars.get("year"))
+    month_pillar = as_pillar_dict(pillars.get("month"))
+    day_pillar = as_pillar_dict(pillars.get("day"))
+    hour_pillar = as_pillar_dict(pillars.get("hour"))
+    gender = str(input_profile.get("gender") or "")
+    day_element = str(chart.get("day_master_element") or "")
+    day_branch = str(day_pillar.get("branch") or chart.get("day_branch") or "")
+    branches = [str(as_pillar_dict(pillars.get(key)).get("branch") or "") for key in PILLAR_KEYS]
+    stems = [str(as_pillar_dict(pillars.get(key)).get("stem") or "") for key in PILLAR_KEYS]
+
+    wealth_star_count = ten_god_counts.get("正财", 0) + ten_god_counts.get("偏财", 0)
+    officer_star_count = ten_god_counts.get("正官", 0) + ten_god_counts.get("七杀", 0)
+    output_star_count = ten_god_counts.get("食神", 0) + ten_god_counts.get("伤官", 0)
+    resource_star_count = ten_god_counts.get("正印", 0) + ten_god_counts.get("偏印", 0)
+    peer_star_count = ten_god_counts.get("比肩", 0) + ten_god_counts.get("劫财", 0)
+    spouse_star_label = "财星" if gender == "male" else "官杀"
+    spouse_star_count = wealth_star_count if gender == "male" else officer_star_count
+    day_branch_interactions = _branch_interaction_names(day_branch, branches)
+    relationship_tags = _pillar_tag_names(shen_sha_by_pillar, "day", RELATIONSHIP_SHEN_SHA_NAMES)
+    risk_tags = _all_tag_names(shen_sha_by_pillar, RISK_SHEN_SHA_NAMES)
+    wealth_element = CONTROLS.get(day_element, "")
+    wealth_tombs = [item for item in tombs if str(item.get("meaning") or "").startswith(wealth_element)]
+    element_spread = max(element_counts.values()) - min(element_counts.values()) if element_counts else 0
+    high_elements = [element for element, count in element_counts.items() if count == max(element_counts.values())]
+    low_elements = [element for element, count in element_counts.items() if count == min(element_counts.values())]
+    pattern_candidates = _summary_pattern_candidates(strength, ten_god_counts)
+    risk_windows = _build_summary_life_risk_windows(
+        chart=chart,
+        luck_cycles=luck_cycles,
+        interactions=interactions,
+        favorable=favorable,
+        empty_branches=empty_branches,
+    )
+    favorable_strategy = _build_summary_favorable_strategy(favorable)
+    early_environment = _environment_reading_for_pillars(year_pillar, month_pillar)
+    ancestral_environment = _environment_reading_for_pillars(year_pillar)
+    special_patterns = _summary_special_patterns(ten_god_counts)
+
+    cards = [
+        {
+            "key": "marriage",
+            "label": SUMMARY_CARD_LABELS["marriage"],
+            "level": _summary_level(len(day_branch_interactions) + len(relationship_tags) + (1 if spouse_star_count == 0 else 0)),
+            "title": "重大关系要看夫妻宫稳定度和配偶星承接",
+            "basis": [
+                f"日支夫妻宫为{day_branch or '-'}",
+                f"{spouse_star_label}数量为{spouse_star_count}",
+                f"夫妻宫相关合冲刑害：{'、'.join(day_branch_interactions) if day_branch_interactions else '未见明显硬冲硬害'}",
+                f"关系类神煞：{'、'.join(relationship_tags) if relationship_tags else '未见突出的关系神煞'}",
+            ],
+            "reading": "用于判断亲密关系是否容易被外部变化、沟通节奏或自我表达牵动，只能写稳定度和多段关系风险，不能写必然几婚。",
+            "related_aspects": ["marriage", "family"],
+        },
+        {
+            "key": "wealth",
+            "label": SUMMARY_CARD_LABELS["wealth"],
+            "level": _summary_level(wealth_star_count + len(wealth_tombs) + (1 if peer_star_count >= 3 else 0)),
+            "title": "财富格局先看财星数量、财库和日主承载",
+            "basis": [
+                f"财星数量为{wealth_star_count}",
+                f"比劫数量为{peer_star_count}",
+                f"财库线索：{'、'.join(item['branch'] + item['meaning'] for item in wealth_tombs) if wealth_tombs else '未见直接财库'}",
+                f"日主状态：{strength.get('label')}",
+            ],
+            "reading": "用于判断赚钱方式、资源聚拢能力和分财竞争，不能写确定发财或投资收益。",
+            "related_aspects": ["wealth", "investment", "career"],
+        },
+        {
+            "key": "health",
+            "label": SUMMARY_CARD_LABELS["health"],
+            "level": _summary_level((2 if element_spread >= 10 else 1 if element_spread >= 6 else 0) + len(risk_tags)),
+            "title": "健康重点看五行偏枯、风险神煞和长期消耗方式",
+            "basis": [
+                f"五行最重：{'、'.join(high_elements)}，最弱：{'、'.join(low_elements)}",
+                f"五行落到生活照护：{_health_theme_text(high_elements + low_elements)}",
+                f"风险类神煞：{'、'.join(risk_tags) if risk_tags else '未见突出的高风险神煞'}",
+            ],
+            "reading": "用于提示容易消耗的生活系统和作息触发因素，不能写疾病诊断、寿命或必然患病。",
+            "related_aspects": ["health", "fortune"],
+        },
+        {
+            "key": "risk_window",
+            "label": SUMMARY_CARD_LABELS["risk_window"],
+            "level": risk_windows[0]["level"] if risk_windows else "low",
+            "title": "人生风险窗口看大运流年是否触发忌神、冲刑、空亡或墓库",
+            "basis": [
+                f"原局合冲刑害：{_risk_interaction_text(interactions)}",
+                f"高亮窗口：{risk_windows[0]['age_range'] + ' ' + risk_windows[0]['risk_type'] if risk_windows else '暂无突出的高风险窗口'}",
+            ],
+            "reading": "用于提示某些阶段更要保守决策、安全管理和减少硬碰硬，不写确定灾难。",
+            "related_aspects": ["fortune", "health"],
+        },
+        {
+            "key": "family_environment",
+            "label": SUMMARY_CARD_LABELS["family_environment"],
+            "level": _summary_level(resource_star_count + peer_star_count + len(_family_stress_interactions(branches))),
+            "title": "早年家庭看年柱、月柱、印星和比劫的牵动",
+            "basis": [
+                f"年柱{year_pillar.get('ganzhi') or '-'}，月柱{month_pillar.get('ganzhi') or '-'}",
+                f"印星数量为{resource_star_count}，比劫数量为{peer_star_count}",
+                f"年/月相关压力：{'、'.join(_family_stress_interactions(branches)) if _family_stress_interactions(branches) else '未见明显硬性冲害'}",
+            ],
+            "reading": "用于判断父母、兄弟姐妹、早年家庭氛围和责任分配，不写父母早亡或具体疾病。",
+            "related_aspects": ["family"],
+        },
+        {
+            "key": "ancestral_environment",
+            "label": SUMMARY_CARD_LABELS["ancestral_environment"],
+            "level": _summary_level(len(tombs) + (1 if year_pillar.get("branch") in {"丑", "辰", "未", "戌"} else 0)),
+            "title": "祖上和早年环境只按地支象意给倾向",
+            "basis": [
+                f"年支象意：{ancestral_environment}",
+                f"年/月综合环境象意：{early_environment}",
+                f"墓库线索：{'、'.join(item['branch'] + item['meaning'] for item in tombs) if tombs else '未见明显墓库'}",
+            ],
+            "reading": "用于提示小时候住处、祖上或坟地周围环境的象意倾向，不替代现场风水实勘。",
+            "related_aspects": ["fengshui", "family"],
+        },
+        {
+            "key": "favorable_strategy",
+            "label": SUMMARY_CARD_LABELS["favorable_strategy"],
+            "level": "medium",
+            "title": "喜忌神决定更顺手的环境和应节制的行为",
+            "basis": [
+                f"喜用候选：{'、'.join(favorable.get('favorable', [])) or '-'}",
+                f"忌神候选：{'、'.join(favorable.get('unfavorable', [])) or '-'}",
+                f"适合环境：{'；'.join(favorable_strategy['supportive_environments'])}",
+            ],
+            "reading": "用于给行动策略，不把喜忌写成绝对吉凶。",
+            "related_aspects": ["industry", "fengshui", "pattern"],
+        },
+        {
+            "key": "pattern",
+            "label": SUMMARY_CARD_LABELS["pattern"],
+            "level": _summary_level(max(ten_god_counts.values()) if ten_god_counts else 0),
+            "title": "命格主轴看最突出的十神如何配合日主强弱",
+            "basis": [
+                f"命格候选：{'、'.join(pattern_candidates)}",
+                f"特殊组合：{'、'.join(item['name'] for item in special_patterns) if special_patterns else '未见突出的强组合'}",
+                f"主导十神：{_dominant_ten_god_text(ten_god_counts)}",
+                f"日主强弱：{strength.get('label')}",
+            ],
+            "reading": "用于说明资源获取、表达方式、压力处理和成长路径，不能只堆正印、伤官、七杀等术语。",
+            "related_aspects": ["pattern", "personality", "career"],
+        },
+    ]
+    return {
+        "version": "summary_v2",
+        "judgement_policy": "强判断 + 概率表达；不写必然婚灾、确诊疾病、确定灾祸或寿命断语。",
+        "card_order": list(SUMMARY_CARD_ORDER),
+        "key_judgement_facts": cards,
+        "life_risk_windows": risk_windows,
+        "special_patterns": special_patterns,
+        "favorable_strategy": favorable_strategy,
+        "environment_symbols": {
+            "early_family": early_environment,
+            "ancestral": ancestral_environment,
+        },
+    }
+
+
+def _summary_special_patterns(ten_god_counts: dict[str, int]) -> list[dict[str, str]]:
+    candidates = [
+        (
+            "伤官见官",
+            ten_god_counts.get("伤官", 0) > 0 and ten_god_counts.get("正官", 0) > 0,
+            "表达突破和规则压力同时出现，现实里容易因说话方式、制度边界或上级评价起冲突。",
+        ),
+        (
+            "伤官重",
+            ten_god_counts.get("伤官", 0) >= 2,
+            "伤官代表表达强、主见重，数量偏多时现实里更容易锋芒外露或挑战规则。",
+        ),
+        (
+            "枭神夺食",
+            ten_god_counts.get("偏印", 0) > 0 and ten_god_counts.get("食神", 0) > 0,
+            "偏印代表敏感钻研，食神代表稳定输出，两者相见时容易想得多、快乐感下降或输出被打断。",
+        ),
+        (
+            "官杀混杂",
+            ten_god_counts.get("正官", 0) > 0 and ten_god_counts.get("七杀", 0) > 0,
+            "规则责任和竞争压力同时出现，现实里容易既想稳定又被高压目标推着走。",
+        ),
+        (
+            "比劫夺财",
+            ten_god_counts.get("比肩", 0) + ten_god_counts.get("劫财", 0) >= 2 and ten_god_counts.get("正财", 0) + ten_god_counts.get("偏财", 0) > 0,
+            "比劫代表同辈竞争和自我主张，遇到财星时容易出现合作分账、资源被分走或冲动支出。",
+        ),
+        (
+            "食伤生财",
+            ten_god_counts.get("食神", 0) + ten_god_counts.get("伤官", 0) > 0 and ten_god_counts.get("正财", 0) + ten_god_counts.get("偏财", 0) > 0,
+            "表达、技能和产品输出能带动资源交换，现实里适合靠专业能力、作品或经营能力赚钱。",
+        ),
+    ]
+    return [
+        {"name": name, "meaning": meaning}
+        for name, matched, meaning in candidates
+        if matched
+    ][:5]
+
+
+def _build_summary_life_risk_windows(
+    *,
+    chart: dict[str, Any],
+    luck_cycles: dict[str, Any],
+    interactions: dict[str, list[str]],
+    favorable: dict[str, list[str]],
+    empty_branches: list[str],
+) -> list[dict[str, Any]]:
+    pillars = chart.get("pillars", {}) if isinstance(chart.get("pillars"), dict) else {}
+    original_stems = [str(as_pillar_dict(pillars.get(key)).get("stem") or "") for key in PILLAR_KEYS]
+    original_branches = [str(as_pillar_dict(pillars.get(key)).get("branch") or "") for key in PILLAR_KEYS]
+    original_stems = [item for item in original_stems if item in STEMS]
+    original_branches = [item for item in original_branches if item in BRANCHES]
+    base_risks = set(interactions.get("clashes", []) + interactions.get("harms", []) + interactions.get("breaks", []) + interactions.get("stem_clashes", []))
+    unfavorable_elements = set(favorable.get("unfavorable", []))
+    windows: list[dict[str, Any]] = []
+    for cycle in luck_cycles.get("cycles", []):
+        if not isinstance(cycle, dict):
+            continue
+        for year_item in cycle.get("year_items", []):
+            if not isinstance(year_item, dict):
+                continue
+            added_stems = [str(cycle.get("stem") or ""), str(year_item.get("stem") or "")]
+            added_branches = [str(cycle.get("branch") or ""), str(year_item.get("branch") or "")]
+            added_stems = [item for item in added_stems if item in STEMS]
+            added_branches = [item for item in added_branches if item in BRANCHES]
+            combined = detect_interactions(original_stems + added_stems, original_branches + added_branches)
+            combined_risks = set(combined.get("clashes", []) + combined.get("harms", []) + combined.get("breaks", []) + combined.get("stem_clashes", []))
+            new_risks = sorted(combined_risks - base_risks)
+            trigger_tags: list[str] = []
+            basis: list[str] = []
+            priority_weight = 0
+            if str(cycle.get("ganzhi") or "") and str(cycle.get("ganzhi") or "") == str(year_item.get("ganzhi") or ""):
+                trigger_tags.append("岁运并临")
+                basis.append(f"大运与流年同为{cycle.get('ganzhi')}")
+                priority_weight += 5
+            added_elements = [
+                str(cycle.get("stem_element") or ""),
+                str(cycle.get("branch_element") or ""),
+                str(year_item.get("stem_element") or ""),
+                str(year_item.get("branch_element") or ""),
+            ]
+            unfavorable_hits = [element for element in added_elements if element and element in unfavorable_elements]
+            if unfavorable_hits:
+                trigger_tags.append("忌神加强")
+                basis.append(f"忌神元素被大运/流年触发：{'、'.join(dict.fromkeys(unfavorable_hits))}")
+                priority_weight += 3
+            if new_risks:
+                trigger_tags.append("刑冲补齐")
+                basis.append(f"新增合冲刑害压力：{'、'.join(new_risks)}")
+                priority_weight += 3
+            empty_hits = [branch for branch in added_branches if branch in empty_branches]
+            if empty_hits:
+                trigger_tags.append("空亡触发")
+                basis.append(f"空亡地支被触发：{'、'.join(dict.fromkeys(empty_hits))}")
+                priority_weight += 2
+            tomb_hits = [branch for branch in added_branches if branch in TOMB_BRANCHES]
+            if tomb_hits:
+                trigger_tags.append("墓库触发")
+                basis.append(f"墓库地支被触发：{'、'.join(branch + TOMB_BRANCHES[branch] for branch in dict.fromkeys(tomb_hits))}")
+                priority_weight += 2
+            risk_shen_sha = _risk_shen_sha_for_luck(cycle, year_item)
+            if risk_shen_sha:
+                trigger_tags.extend(name for name in risk_shen_sha if name not in trigger_tags)
+                basis.append(f"风险类神煞：{'、'.join(risk_shen_sha)}")
+                priority_weight += min(4, len(risk_shen_sha))
+            if priority_weight < 4:
+                continue
+            year = int(year_item.get("year") or 0)
+            age = int(year_item.get("age") or 0)
+            windows.append(
+                {
+                    "start_year": year,
+                    "end_year": year,
+                    "start_age": age,
+                    "end_age": age,
+                    "age_range": f"{age}岁" if age else f"{year}年",
+                    "risk_type": _risk_window_type(trigger_tags),
+                    "level": "high" if priority_weight >= 8 else "medium",
+                    "trigger_tags": list(dict.fromkeys(trigger_tags)),
+                    "basis": basis,
+                    "reality_focus": "这一年更适合保守决策、注意安全与健康管理，减少关系和规则上的硬碰硬。",
+                    "priority_weight": priority_weight,
+                }
+            )
+    windows.sort(key=lambda item: (-int(item.get("priority_weight") or 0), int(item.get("start_year") or 9999)))
+    return [{key: value for key, value in item.items() if key != "priority_weight"} for item in windows[:5]]
+
+
+def _build_summary_favorable_strategy(favorable: dict[str, list[str]]) -> dict[str, Any]:
+    favorable_elements = list(favorable.get("favorable", []))
+    unfavorable_elements = list(favorable.get("unfavorable", []))
+    return {
+        "favorable_elements": favorable_elements,
+        "unfavorable_elements": unfavorable_elements,
+        "supportive_environments": [ELEMENT_SUPPORT_ENVIRONMENTS[element] for element in favorable_elements if element in ELEMENT_SUPPORT_ENVIRONMENTS],
+        "avoid_patterns": [ELEMENT_AVOID_PATTERNS[element] for element in unfavorable_elements if element in ELEMENT_AVOID_PATTERNS],
+        "useful_actions": ["先稳作息和现金流", "把合作边界说清楚", "选择能放大喜用元素的行业、空间和节奏"],
+    }
+
+
+def _summary_pattern_candidates(strength: dict[str, Any], ten_god_counts: dict[str, int]) -> list[str]:
+    sorted_items = sorted(ten_god_counts.items(), key=lambda item: (-item[1], item[0]))
+    candidates = [name for name, count in sorted_items[:3] if count > 0]
+    level = str(strength.get("level") or "")
+    if level in {"strong", "overstrong"}:
+        candidates.append("身旺取流通")
+    elif level in {"weak", "overweak"}:
+        candidates.append("身弱取扶助")
+    else:
+        candidates.append("中和看流通")
+    return candidates[:4]
+
+
+def _branch_interaction_names(branch: str, branches: list[str]) -> list[str]:
+    if branch not in BRANCHES:
+        return []
+    names: list[str] = []
+    for other in branches:
+        if other == branch or other not in BRANCHES:
+            continue
+        pair = frozenset((branch, other))
+        for source in (BRANCH_CLASHES, BRANCH_HARMS, BRANCH_BREAKS, BRANCH_SIX_HARMONIES):
+            name = source.get(pair)
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
+def _family_stress_interactions(branches: list[str]) -> list[str]:
+    family_branches = [branch for branch in branches[:2] if branch in BRANCHES]
+    names: list[str] = []
+    for branch in family_branches:
+        for name in _branch_interaction_names(branch, branches):
+            if name.endswith(("冲", "害", "破")) and name not in names:
+                names.append(name)
+    return names
+
+
+def _pillar_tag_names(shen_sha_by_pillar: dict[str, list[dict[str, Any]]], pillar_key: str, allowed_names: set[str]) -> list[str]:
+    details = shen_sha_by_pillar.get(pillar_key, [])
+    names: list[str] = []
+    if not isinstance(details, list):
+        return names
+    for item in details:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "")
+        if name in allowed_names and name not in names:
+            names.append(name)
+    return names
+
+
+def _all_tag_names(shen_sha_by_pillar: dict[str, list[dict[str, Any]]], allowed_names: set[str]) -> list[str]:
+    names: list[str] = []
+    for pillar_key in PILLAR_KEYS:
+        for name in _pillar_tag_names(shen_sha_by_pillar, pillar_key, allowed_names):
+            if name not in names:
+                names.append(name)
+    return names
+
+
+def _risk_shen_sha_for_luck(cycle: dict[str, Any], year_item: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for details in (cycle.get("shen_sha_details", []), year_item.get("shen_sha_details", [])):
+        if not isinstance(details, list):
+            continue
+        for item in details:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "")
+            if name in RISK_SHEN_SHA_NAMES and name not in names:
+                names.append(name)
+    return names
+
+
+def _environment_reading_for_pillars(*pillars: dict[str, Any]) -> str:
+    symbols: list[str] = []
+    for pillar in pillars:
+        branch = str(pillar.get("branch") or "")
+        for symbol in ENVIRONMENT_SYMBOLS_BY_BRANCH.get(branch, []):
+            if symbol not in symbols:
+                symbols.append(symbol)
+    return "、".join(symbols[:6]) if symbols else "环境象意不突出"
+
+
+def _health_theme_text(elements: list[str]) -> str:
+    themes: list[str] = []
+    for element in elements:
+        theme = ELEMENT_HEALTH_THEMES.get(element)
+        if theme and theme not in themes:
+            themes.append(theme)
+    return "；".join(themes[:4]) if themes else "以作息、饮食和压力管理为主"
+
+
+def _dominant_ten_god_text(ten_god_counts: dict[str, int]) -> str:
+    items = [(name, count) for name, count in sorted(ten_god_counts.items(), key=lambda item: (-item[1], item[0])) if count > 0]
+    return "、".join(f"{name}{count}" for name, count in items[:4]) if items else "十神不突出"
+
+
+def _summary_level(weight: int) -> str:
+    if weight >= 4:
         return "high"
-    if score >= 72:
-        return "good"
-    if score >= 60:
-        return "mixed"
-    return "risk"
+    if weight >= 2:
+        return "medium"
+    return "low"
+
+
+def _risk_interaction_text(interactions: dict[str, list[str]]) -> str:
+    risks = interactions.get("clashes", []) + interactions.get("harms", []) + interactions.get("breaks", []) + interactions.get("stem_clashes", [])
+    return "、".join(risks) if risks else "原局未见明显硬冲硬害"
+
+
+def _risk_window_type(trigger_tags: list[str]) -> str:
+    if "岁运并临" in trigger_tags:
+        return "阶段压力与身份变化"
+    if "忌神加强" in trigger_tags:
+        return "长期消耗与保守决策"
+    if any(tag in RISK_SHEN_SHA_NAMES for tag in trigger_tags):
+        return "安全、是非与健康管理"
+    if "刑冲补齐" in trigger_tags:
+        return "关系变动与计划反复"
+    return "阶段性风险管理"
+
+
+def normalize_four_pillars_aspect_key(aspect_key: str) -> str:
+    normalized = str(aspect_key or "").strip().lower()
+    if normalized == "family_environment":
+        return "family"
+    return FOUR_PILLARS_ASPECT_ALIASES.get(normalized, normalized)
+
+
+def expand_four_pillars_aspect_keys(aspect_keys: Iterable[str]) -> list[str]:
+    expanded: list[str] = []
+    for raw_key in aspect_keys:
+        normalized = str(raw_key or "").strip().lower()
+        candidates = FOUR_PILLARS_ASPECT_EXPANSION_ALIASES.get(normalized, (normalize_four_pillars_aspect_key(normalized),))
+        for candidate in candidates:
+            if candidate in FOUR_PILLARS_ASPECT_ORDER and candidate not in expanded:
+                expanded.append(candidate)
+    return expanded
 
 
 def _pairs(items: list[str]):
@@ -1245,7 +1758,6 @@ def _build_luck_render_facts(
             "day_master": chart.get("day_master"),
             "day_master_element": chart.get("day_master_element"),
         },
-        "base_score": package.get("score_result", {}),
         "day_master": facts.get("day_master", {}),
         "base_element_counts": facts.get("element_counts", {}),
         "base_ten_god_counts": facts.get("ten_god_counts", {}),

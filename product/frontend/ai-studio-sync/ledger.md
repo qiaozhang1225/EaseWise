@@ -282,3 +282,177 @@
 - merge_status: `completed`
 - imported_changes: `four-pillars natal/luck-table shen-sha row order, arrow-only expand controls, +N collapsed overflow, plain text shen-sha styling, luck-table text parity`
 - checks: `npm run build; npm run lint`
+
+### 2026-06-27 - generated reverse sync prompt 20260627-140821-local-four-pillars-post-export7-sync
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260627-140821-local-four-pillars-post-export7-sync`
+- local_git_ref: `897d3c1 + dirty FourPillarsAnalysis.vue manual numeric date inputs`
+- previous_aistudio_zip_sha256: `4059a24cc34a20e6e5e356701529d78ce5be05671ae477902487e606d2b8fd7c`
+- bundle: `product/frontend/ai-studio-sync/cycles/20260627-140821-local-four-pillars-post-export7-sync/bundle.md`
+- prompt: `product/frontend/ai-studio-sync/cycles/20260627-140821-local-four-pillars-post-export7-sync/prompt.md`
+- summary: `product/frontend/ai-studio-sync/cycles/20260627-140821-local-four-pillars-post-export7-sync/local-change-summary.md`
+- gap_analysis: `product/frontend/ai-studio-sync/cycles/20260627-140821-local-four-pillars-post-export7-sync/gap-analysis.md`
+- verification: `product/frontend/ai-studio-sync/cycles/20260627-140821-local-four-pillars-post-export7-sync/verification.md`
+- next_slice: `sync local Four Pillars input drawer, manual numeric date fields, true solar/location data, waiting readiness, natal chart info modal, bone-weight display, and unified entry cards back to AI Studio`
+- merge_status: `reverse-prompt-generated`
+
+### 2026-06-27 - registered AI Studio export 8 and generated picker follow-up
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260627-143942-export-8-date-location-picker-followup`
+- local_cache_cycle: `.aistudio-sync/cycles/20260627-063909-export-8-date-location-picker-focus`
+- local_git_ref: `897d3c1 + dirty local FourPillarsAnalysis.vue/manual input and unrelated backend knowledge changes`
+- aistudio_zip_sha256: `3487a803780ea6935cdc87152eb9673e1dc59f807fe3bb1234a971b6dbcd93ef`
+- source_zip: `.aistudio-sync/aistudio-latest/source.zip`
+- export_summary: `product/frontend/ai-studio-sync/cycles/20260627-143942-export-8-date-location-picker-followup/aistudio-export-summary.md`
+- audit: `product/frontend/ai-studio-sync/cycles/20260627-143942-export-8-date-location-picker-followup/export-8-picker-audit.md`
+- bundle: `product/frontend/ai-studio-sync/cycles/20260627-143942-export-8-date-location-picker-followup/bundle.md`
+- prompt: `product/frontend/ai-studio-sync/cycles/20260627-143942-export-8-date-location-picker-followup/prompt.md`
+- verification: `product/frontend/ai-studio-sync/cycles/20260627-143942-export-8-date-location-picker-followup/verification.md`
+- next_slice: `birth-date picker calendar-mode separation and birth-location picker structured hierarchy only`
+- merge_status: `follow-up-prompt-generated`
+- notes: `Preserve export 8 wins: bone-weight display, manual numeric plus wheel styling, five-element color distinction, and luck-cycle selector styling`
+
+### 2026-06-27 - registered AI Studio export 9 homepage layout and Meihua entry audit
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260627-172941-export-9-home-layout-meihua-entry-audit`
+- local_cache_cycle: `.aistudio-sync/cycles/20260627-092903-export-9-home-layout-meihua-entry`
+- local_git_ref: `897d3c1 + dirty local backend/frontend worktree`
+- aistudio_zip_sha256: `5b39151b0083600cef7e571fed444827d2938ec96f2ff31b57f05fb8169bb177`
+- source_zip: `.aistudio-sync/aistudio-latest/source.zip`
+- export_summary: `product/frontend/ai-studio-sync/cycles/20260627-172941-export-9-home-layout-meihua-entry-audit/aistudio-export-summary.md`
+- conversation_summary: `product/frontend/ai-studio-sync/cycles/20260627-172941-export-9-home-layout-meihua-entry-audit/conversation-summary.md`
+- audit: `product/frontend/ai-studio-sync/cycles/20260627-172941-export-9-home-layout-meihua-entry-audit/export-9-audit.md`
+- local_merge_plan: `product/frontend/ai-studio-sync/cycles/20260627-172941-export-9-home-layout-meihua-entry-audit/local-merge-plan.md`
+- verification: `product/frontend/ai-studio-sync/cycles/20260627-172941-export-9-home-layout-meihua-entry-audit/verification.md`
+- merge_status: `audited`
+- notes: `Homepage card layout and animations are useful design input; MeihuaAnalysis is prototype-only and should not be imported as production business logic without product/backend decision; do not merge mockLocations or FourPillarsAnalysis from export 9 blindly`
+
+### 2026-06-27 - local frontend merge applied for export 9 homepage and Meihua prototype
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260627-172941-export-9-home-layout-meihua-entry-audit`
+- local_git_ref: `897d3c1 + dirty local backend/frontend worktree`
+- source_aistudio_zip_sha256: `5b39151b0083600cef7e571fed444827d2938ec96f2ff31b57f05fb8169bb177`
+- local_merge_verification: `product/frontend/ai-studio-sync/cycles/20260627-172941-export-9-home-layout-meihua-entry-audit/local-merge-verification.md`
+- merge_status: `applied`
+- imported_changes: `homepage unified five-entry card layout, meihua route and frontend prototype page, bazi/meihua icon animations`
+- preserved_boundaries: `did not merge server.ts, mockLocations.ts, or export 9 FourPillarsAnalysis changes; Meihua has no production points/history/backend contract yet`
+- checks: `npm run lint; npm run build`
+
+### 2026-06-27 - local Four Pillars input design merge from export 9
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260627-172941-export-9-home-layout-meihua-entry-audit`
+- source_aistudio_zip_sha256: `5b39151b0083600cef7e571fed444827d2938ec96f2ff31b57f05fb8169bb177`
+- design_merge_note: `product/frontend/ai-studio-sync/cycles/20260627-172941-export-9-home-layout-meihua-entry-audit/four-pillars-input-design-merge.md`
+- merge_status: `applied`
+- imported_changes: `four-pillars birth-date picker row styling, bottom-up sheet motion, manual numeric plus scroll-wheel visual refinement, hour branch labels, birth-location picker animation and preview card`
+- preserved_boundaries: `kept local real location API and true-solar preview; did not import mockLocations.ts or backend changes`
+- checks: `npm run lint; npm run build`
+
+### 2026-06-27 - registered AI Studio export 10 and fully rebuilt Four Pillars input page
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260627-181600-export-10-four-pillars-input-replica`
+- source_aistudio_zip_sha256: `0ad479d7991aeb300c8c80e837e42c2bcd90348497ac8b1ca862dd2a0ba323eb`
+- export_summary: `product/frontend/ai-studio-sync/cycles/20260627-181600-export-10-four-pillars-input-replica/aistudio-export-summary.md`
+- local_merge_verification: `product/frontend/ai-studio-sync/cycles/20260627-181600-export-10-four-pillars-input-replica/local-merge-verification.md`
+- merge_status: `applied`
+- imported_changes: `full export-10 four-pillars input-page structure: centered header, points title card, white form card, segmented controls, birth datetime/location summary rows, card-contained CTA, date and location bottom sheets with manual inputs and wheel selectors`
+- preserved_boundaries: `kept local API/auth/points/polling/true-solar/lunar/location behavior; did not import mockLocations.ts or mock server logic`
+- checks: `npm run lint; npm run build; headless Chrome 390x844 drawer verification`
+
+### 2026-06-28 - generated Markdown source bundle for new AI Studio account
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260628-new-aistudio-account-bootstrap`
+- source_aistudio_zip_sha256: `0ad479d7991aeb300c8c80e837e42c2bcd90348497ac8b1ca862dd2a0ba323eb`
+- bundle: `product/frontend/ai-studio-sync/cycles/20260628-new-aistudio-account-bootstrap/bundle.md`
+- prompt: `product/frontend/ai-studio-sync/cycles/20260628-new-aistudio-account-bootstrap/prompt.md`
+- mode: `new-account-bootstrap-without-zip-upload`
+- notes: `AI Studio cannot upload zip files, so the latest extracted package was expanded into a Markdown bundle with all 38 text files and reconstruction instructions.`
+
+### 2026-06-28 - audited new AI Studio project export and generated repair bundles
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260628-new-aistudio-project-easewise-zip-baseline`
+- source_zip: `/Users/qiaoz-macmini/Downloads/easewise.zip`
+- source_aistudio_zip_sha256: `4e4797899bd17e0ab05875946951933fe261a16baac711fbfb04c36ea285c958`
+- export_summary: `product/frontend/ai-studio-sync/cycles/20260628-new-aistudio-project-easewise-zip-baseline/aistudio-export-summary.md`
+- gap_analysis: `product/frontend/ai-studio-sync/cycles/20260628-new-aistudio-project-easewise-zip-baseline/gap-analysis.md`
+- h5_repair_bundle: `product/frontend/ai-studio-sync/cycles/20260628-new-aistudio-project-easewise-zip-baseline/local-h5-repair-bundle.md`
+- admin_appendix_bundle: `product/frontend/ai-studio-sync/cycles/20260628-new-aistudio-project-easewise-zip-baseline/local-admin-repair-bundle.md`
+- prompt: `product/frontend/ai-studio-sync/cycles/20260628-new-aistudio-project-easewise-zip-baseline/prompt.md`
+- simplified_bundle: `product/frontend/ai-studio-sync/cycles/20260628-new-aistudio-project-easewise-zip-baseline/bundle.md`
+- simplified_prompt: `product/frontend/ai-studio-sync/cycles/20260628-new-aistudio-project-easewise-zip-baseline/Prompt.md`
+- mode: `new-aistudio-project-baseline-repair`
+- notes: `New export is a shell but not local parity: src/index.css only imports Tailwind, active bazi route uses simplified BaziAnalysis.vue, current FourPillarsAnalysis/FourPillarsNatalTable/Profile detail files are missing, and AdminWorkspace is truncated. Final user-facing handoff is simplified to bundle.md + Prompt.md for H5 only; admin appendix is archived but out of scope for the new AI Studio project.`
+
+### 2026-06-29 - audited new AI Studio export 1 after H5 repair bundle
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260629-export-1-env-mock-audit`
+- source_zip: `/Users/qiaoz-macmini/Downloads/easewise (1).zip`
+- source_aistudio_zip_sha256: `64f5ca7c5559490e636694fc9f8e1804c5a104512d9e782892a6105b17caaf9d`
+- manifest: `product/frontend/ai-studio-sync/cycles/20260629-export-1-env-mock-audit/manifest.json`
+- tree: `product/frontend/ai-studio-sync/cycles/20260629-export-1-env-mock-audit/tree.txt`
+- audit: `product/frontend/ai-studio-sync/cycles/20260629-export-1-env-mock-audit/audit.md`
+- prompt: `product/frontend/ai-studio-sync/cycles/20260629-export-1-env-mock-audit/Prompt.md`
+- mode: `gap-iteration`
+- notes: `Export is much closer: CSS restored and FourPillars/NatalTable/Profile detail files exist. Remaining gaps: AI Studio asks for VITE_API_BASE_URL and VITE_APP_BASE_PATH, mock data is thin, FourPillars input regressed to native date/time controls, src/types/api.ts has duplicate conflicting interfaces so npm run lint fails, and fantasy copy such as 同修/灵币 returned in UI/mock content.`
+
+### 2026-06-29 - audited AI Studio export 2 auth and almanac runtime issues
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260629-export-2-auth-almanac-audit`
+- source_zip: `/Users/qiaoz-macmini/Downloads/easewise (2).zip`
+- source_aistudio_zip_sha256: `a77f765a31b9baf9ab0b6fed4a4032ab52b482bb7c8a03c2e83e8726775d0928`
+- manifest: `product/frontend/ai-studio-sync/cycles/20260629-export-2-auth-almanac-audit/manifest.json`
+- tree: `product/frontend/ai-studio-sync/cycles/20260629-export-2-auth-almanac-audit/tree.txt`
+- audit: `product/frontend/ai-studio-sync/cycles/20260629-export-2-auth-almanac-audit/audit.md`
+- prompt: `product/frontend/ai-studio-sync/cycles/20260629-export-2-auth-almanac-audit/Prompt.md`
+- mode: `gap-iteration`
+- notes: `Export 2 passes npm run lint and npm run build after dependency install, and terminology cleanup is mostly done. User-observed login/almanac gaps come from runtime wiring: npm run dev starts plain Vite instead of server.ts, VITE_API_BASE_URL=/api would create /api/api/v1 URLs, and /api/v1/auth/phone/status returns {status} while frontend expects {registered, normalized_phone, next_action}.`
+
+### 2026-06-29 - verified AI Studio export 3 runtime mock wiring
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260629-export-3-runtime-mock-verified`
+- source_zip: `/Users/qiaoz-macmini/Downloads/easewise (3).zip`
+- source_aistudio_zip_sha256: `bab6b0b79d887c10d3b8b5c2060a7c2325da79c411788b81fbad53d27d2ee618`
+- manifest: `product/frontend/ai-studio-sync/cycles/20260629-export-3-runtime-mock-verified/manifest.json`
+- tree: `product/frontend/ai-studio-sync/cycles/20260629-export-3-runtime-mock-verified/tree.txt`
+- audit: `product/frontend/ai-studio-sync/cycles/20260629-export-3-runtime-mock-verified/audit.md`
+- mock_testability_prompt: `product/frontend/ai-studio-sync/cycles/20260629-export-3-runtime-mock-verified/Prompt-mock-testability.md`
+- mode: `verified`
+- notes: `Export 3 confirms runtime fixes: npm run dev uses tsx server.ts, tsx is in devDependencies, .env.example warns against VITE_API_BASE_URL=/api, phone status returns {registered, normalized_phone, next_action}, npm run lint/build pass, and temporary server verification confirmed seeded phone statuses/login plus almanac JSON. Remaining issue from user testing: mock data exists but is not testable enough in the H5 preview. Generated Prompt-mock-testability.md to request demo account helper, mock summary endpoint, richer seeded histories, and visible almanac/mock status.`
+
+### 2026-06-29 - audited AI Studio export 4 mock testability regression
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260629-export-4-mock-testability-regression-audit`
+- source_zip: `/Users/qiaoz-macmini/Downloads/easewise (4).zip`
+- source_aistudio_zip_sha256: `c8c280fdf64cef2a95e818e464d8e52655f8bb6cfbe4abeefba4c6501680654d`
+- manifest: `product/frontend/ai-studio-sync/cycles/20260629-export-4-mock-testability-regression-audit/manifest.json`
+- tree: `product/frontend/ai-studio-sync/cycles/20260629-export-4-mock-testability-regression-audit/tree.txt`
+- audit: `product/frontend/ai-studio-sync/cycles/20260629-export-4-mock-testability-regression-audit/audit.md`
+- prompt: `product/frontend/ai-studio-sync/cycles/20260629-export-4-mock-testability-regression-audit/Prompt.md`
+- mode: `gap-iteration`
+- notes: `Export 4 adds AuthModal demo helper, Home H5 test sandbox, and /api/v1/mock/summary, with lint/build passing. User still sees almanac failure and demo login stuck. Audit points to stale/misconfigured VITE_API_BASE_URL=/api creating /api/api/v1 requests, Vite proxy to 127.0.0.1:8000, lack of request timeout, sticky almanac failure state, and sandbox not consuming mock summary as likely causes.`
+
+### 2026-06-29 - audited AI Studio export 5 pixel-lock gap
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260629-export-5-pixel-lock-audit`
+- source_zip: `/Users/qiaoz-macmini/Downloads/easewise (5).zip`
+- source_aistudio_zip_sha256: `cb25cbd9953cc41e7813314ba34190c6e120878b624efce87afc02bd1e2e9400`
+- manifest: `product/frontend/ai-studio-sync/cycles/20260629-export-5-pixel-lock-audit/manifest.json`
+- tree: `product/frontend/ai-studio-sync/cycles/20260629-export-5-pixel-lock-audit/tree.txt`
+- audit: `product/frontend/ai-studio-sync/cycles/20260629-export-5-pixel-lock-audit/audit.md`
+- bundle: `product/frontend/ai-studio-sync/cycles/20260629-export-5-pixel-lock-audit/bundle.md`
+- prompt: `product/frontend/ai-studio-sync/cycles/20260629-export-5-pixel-lock-audit/Prompt.md`
+- mode: `pixel-lock-replication`
+- notes: `Export 5 improves runtime/testability but remains structurally far from local on key pages: Analysis.vue is 573 lines vs local 2884, FourPillarsAnalysis.vue is 658 vs local 3741, Profile.vue is 230 vs local 1148. Generated focused pixel-lock bundle and prompt requiring AI Studio to replace key local files exactly rather than creatively redesigning.`
+
+### 2026-06-29 - audited AI Studio export 6 pixel-lock not applied
+
+- cycle: `product/frontend/ai-studio-sync/cycles/20260629-export-6-pixel-lock-not-applied`
+- source_zip: `/Users/qiaoz-macmini/Downloads/easewise (6).zip`
+- source_aistudio_zip_sha256: `246a61224736ad1daca3e072cbfbfe9ff2cc04c6505889eb099a82674ac41450`
+- manifest: `product/frontend/ai-studio-sync/cycles/20260629-export-6-pixel-lock-not-applied/manifest.json`
+- tree: `product/frontend/ai-studio-sync/cycles/20260629-export-6-pixel-lock-not-applied/tree.txt`
+- audit: `product/frontend/ai-studio-sync/cycles/20260629-export-6-pixel-lock-not-applied/audit.md`
+- bundle: `product/frontend/ai-studio-sync/cycles/20260629-export-6-pixel-lock-not-applied/bundle.md`
+- prompt: `product/frontend/ai-studio-sync/cycles/20260629-export-6-pixel-lock-not-applied/Prompt.md`
+- mode: `phase-a-pixel-lock`
+- notes: `Export 6 changed shared Agent/session-related files but did not change Analysis.vue, FourPillarsAnalysis.vue, Profile.vue, AIAgent.vue, or Home.vue from export 5. User reports phone and Four Pillars still unusable. Generated narrower Phase A bundle/prompt for only phone review + Four Pillars replacement, with hard line-count acceptance gates.`

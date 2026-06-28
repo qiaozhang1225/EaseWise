@@ -28,6 +28,7 @@ SHARED_FOUNDATION_FILES = (
     "shared/model-baseline.md",
     "shared/interpretation-boundaries.md",
     "shared/user-readable-expression.md",
+    "shared/professional-terms.md",
 )
 
 

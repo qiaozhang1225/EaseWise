@@ -158,6 +158,8 @@ const PHONE_REVIEW_ASPECT_UNLOCK_POINTS_CONFIG_KEY = 'phone_review.aspect_unlock
 const PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY = 'phone_review.free_aspect_keys';
 const PHONE_REVIEW_ASPECT_ORDER_CONFIG_KEY = 'phone_review.aspect_order';
 const PHONE_REVIEW_UNLOCK_ENFORCEMENT_CONFIG_KEY = 'phone_review.unlock_enforcement_enabled';
+const FOUR_PILLARS_FREE_ASPECTS_CONFIG_KEY = 'four_pillars.free_aspect_keys';
+const FOUR_PILLARS_ASPECT_ORDER_CONFIG_KEY = 'four_pillars.aspect_order';
 const FOUR_PILLARS_UNLOCK_ENFORCEMENT_CONFIG_KEY = 'four_pillars.unlock_enforcement_enabled';
 const CUSTOMER_SERVICE_WECHAT_ID_CONFIG_KEY = 'customer_service.wechat_id';
 const CUSTOMER_SERVICE_CONTACT_URL_CONFIG_KEY = 'customer_service.contact_url';
@@ -776,6 +778,8 @@ const featureConfigItems = computed(() => sortRuntimeConfigItems(runtimeConfigSc
 ))));
 const activeFeatureConfigPrefix = computed(() => (activeFeature.value === 'four-pillars' ? 'four_pillars.' : 'phone_review.'));
 const activeFeatureUnlockEnforcementConfigKey = computed(() => (activeFeature.value === 'four-pillars' ? FOUR_PILLARS_UNLOCK_ENFORCEMENT_CONFIG_KEY : PHONE_REVIEW_UNLOCK_ENFORCEMENT_CONFIG_KEY));
+const activeFeatureFreeAspectsConfigKey = computed(() => (activeFeature.value === 'four-pillars' ? FOUR_PILLARS_FREE_ASPECTS_CONFIG_KEY : PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY));
+const activeFeatureAspectOrderConfigKey = computed(() => (activeFeature.value === 'four-pillars' ? FOUR_PILLARS_ASPECT_ORDER_CONFIG_KEY : PHONE_REVIEW_ASPECT_ORDER_CONFIG_KEY));
 const activeFeatureDisplayName = computed(() => (activeFeature.value === 'four-pillars' ? '四柱八字评测' : '手机号评测'));
 const activeFeatureDescriptionText = computed(() => (
   activeFeature.value === 'four-pillars'
@@ -784,11 +788,27 @@ const activeFeatureDescriptionText = computed(() => (
 ));
 const phoneReviewBaseCostItem = computed(() => featureConfigItems.value.find((item) => item.config_key.endsWith('.base_points_cost')));
 const phoneReviewAspectUnlockCostItem = computed(() => featureConfigItems.value.find((item) => item.config_key.endsWith('.aspect_unlock_points_cost')));
-const phoneReviewFreeAspectsItem = computed(() => featureConfigItems.value.find((item) => item.config_key === PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY));
-const phoneReviewAspectOrderItem = computed(() => featureConfigItems.value.find((item) => item.config_key === PHONE_REVIEW_ASPECT_ORDER_CONFIG_KEY));
+const phoneReviewFreeAspectsItem = computed(() => featureConfigItems.value.find((item) => item.config_key === activeFeatureFreeAspectsConfigKey.value));
+const phoneReviewAspectOrderItem = computed(() => featureConfigItems.value.find((item) => item.config_key === activeFeatureAspectOrderConfigKey.value));
+const activeFeatureAspectOptions = computed(() => {
+  const schemaOptions = [...(phoneReviewAspectOrderItem.value?.input_options || []), ...(phoneReviewFreeAspectsItem.value?.input_options || [])];
+  const seenKeys = new Set<string>();
+  const options = schemaOptions
+    .map((item) => ({key: String(item.value || '').trim(), label: String(item.label || item.value || '').trim()}))
+    .filter((item) => {
+      if (!item.key || seenKeys.has(item.key)) {
+        return false;
+      }
+      seenKeys.add(item.key);
+      return true;
+    });
+  return options.length ? options : PHONE_REVIEW_ASPECT_OPTIONS;
+});
 const featureExtraConfigItems = computed(() => featureConfigItems.value.filter((item) => (
   !item.config_key.endsWith('.base_points_cost')
   && !item.config_key.endsWith('.aspect_unlock_points_cost')
+  && item.config_key !== activeFeatureFreeAspectsConfigKey.value
+  && item.config_key !== activeFeatureAspectOrderConfigKey.value
 )));
 const basicSystemConfigItems = computed(() => sortRuntimeConfigItems(runtimeConfigSchema.value.filter((item) => (
   !item.admin_hidden
@@ -882,7 +902,7 @@ const pointsClaimRecordsPageEnd = computed(() => Math.min(pointsClaimRecordsOffs
 const canGoPrevPointsClaimRecordsPage = computed(() => pointsClaimRecordsOffset.value > 0 && !pointsClaimRecordsLoading.value);
 const canGoNextPointsClaimRecordsPage = computed(() => pointsClaimRecordsOffset.value + pointsClaimRecordsPageSize.value < pointsClaimRecordsTotal.value && !pointsClaimRecordsLoading.value);
 const phoneReviewFreeAspectSummary = computed(() => {
-  const keys = runtimeConfigStringList(PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY).filter(isKnownPhoneReviewAspectKey);
+  const keys = runtimeConfigStringList(activeFeatureFreeAspectsConfigKey.value).filter(isKnownPhoneReviewAspectKey);
   return keys.length ? keys.map(aspectLabel).join('、') : '未设置免费专项';
 });
 const phoneReviewOrderedAspectOptions = computed(() => phoneReviewOrderedAspectKeys().map((key, index) => ({
@@ -2203,38 +2223,38 @@ function setRuntimeConfigStringList(configKey: string, values: string[]) {
 }
 
 function isKnownPhoneReviewAspectKey(aspectKey: string | null | undefined) {
-  return PHONE_REVIEW_ASPECT_OPTIONS.some((item) => item.key === aspectKey);
+  return activeFeatureAspectOptions.value.some((item) => item.key === aspectKey);
 }
 
 function isPhoneReviewFreeAspect(aspectKey: string) {
-  return runtimeConfigStringList(PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY).includes(aspectKey);
+  return runtimeConfigStringList(activeFeatureFreeAspectsConfigKey.value).includes(aspectKey);
 }
 
 function togglePhoneReviewFreeAspect(aspectKey: string) {
-  const currentValues = new Set(runtimeConfigStringList(PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY).filter(isKnownPhoneReviewAspectKey));
+  const currentValues = new Set(runtimeConfigStringList(activeFeatureFreeAspectsConfigKey.value).filter(isKnownPhoneReviewAspectKey));
   if (currentValues.has(aspectKey)) {
     currentValues.delete(aspectKey);
   } else {
     currentValues.add(aspectKey);
   }
-  const orderedValues = PHONE_REVIEW_ASPECT_OPTIONS.map((item) => item.key).filter((key) => currentValues.has(key));
-  setRuntimeConfigStringList(PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY, orderedValues);
+  const orderedValues = activeFeatureAspectOptions.value.map((item) => item.key).filter((key) => currentValues.has(key));
+  setRuntimeConfigStringList(activeFeatureFreeAspectsConfigKey.value, orderedValues);
 }
 
 function resetPhoneReviewFreeAspects() {
-  setRuntimeConfigStringList(PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY, []);
+  setRuntimeConfigStringList(activeFeatureFreeAspectsConfigKey.value, []);
 }
 
 function phoneReviewOrderedAspectKeys() {
   const seenKeys = new Set<string>();
-  const configuredKeys = runtimeConfigStringList(PHONE_REVIEW_ASPECT_ORDER_CONFIG_KEY)
+  const configuredKeys = runtimeConfigStringList(activeFeatureAspectOrderConfigKey.value)
     .filter(isKnownPhoneReviewAspectKey)
     .filter((key) => {
       if (seenKeys.has(key)) return false;
       seenKeys.add(key);
       return true;
     });
-  const fallbackKeys = PHONE_REVIEW_ASPECT_OPTIONS.map((item) => item.key).filter((key) => !seenKeys.has(key));
+  const fallbackKeys = activeFeatureAspectOptions.value.map((item) => item.key).filter((key) => !seenKeys.has(key));
   return [...configuredKeys, ...fallbackKeys];
 }
 
@@ -2247,11 +2267,11 @@ function movePhoneReviewAspectOrder(aspectKey: string, direction: -1 | 1) {
   }
   const [item] = orderedKeys.splice(currentIndex, 1);
   orderedKeys.splice(nextIndex, 0, item);
-  setRuntimeConfigStringList(PHONE_REVIEW_ASPECT_ORDER_CONFIG_KEY, orderedKeys);
+  setRuntimeConfigStringList(activeFeatureAspectOrderConfigKey.value, orderedKeys);
 }
 
 function resetPhoneReviewAspectOrder() {
-  setRuntimeConfigStringList(PHONE_REVIEW_ASPECT_ORDER_CONFIG_KEY, PHONE_REVIEW_ASPECT_OPTIONS.map((item) => item.key));
+  setRuntimeConfigStringList(activeFeatureAspectOrderConfigKey.value, activeFeatureAspectOptions.value.map((item) => item.key));
 }
 
 function openPhoneReviewAspectConfigModal(mode: PhoneReviewAspectConfigModal) {
@@ -2293,7 +2313,7 @@ async function saveRuntimeConfig(items: RuntimeConfigSchemaItemResponse[] = runt
   }
   const backgroundRatioEntry = entries.find((item) => item.config_key === 'llm.deepseek.background_max_concurrency_ratio');
   if (Number(backgroundRatioEntry?.value || 0) > 0.8) {
-    globalMessage.value = '后台预热最大并发占比不能超过 80%。';
+    globalMessage.value = '后台低优先级请求最大并发占比不能超过 80%。';
     return;
   }
   runtimeConfigLoading.value = true;
@@ -2979,19 +2999,27 @@ function voiceFailureText(record: UsageRecordResponse) {
 }
 
 function aspectLabel(aspectKey: string | null | undefined) {
+  const configured = activeFeatureAspectOptions.value.find((item) => item.key === aspectKey);
+  if (configured) {
+    return configured.label;
+  }
   const map: Record<string, string> = {
+    personality: '性格',
     career: '事业',
     wealth: '财富',
     love: '感情',
+    marriage: '婚姻',
     health: '健康',
     acad: '学业',
     fortune: '运势',
     investment: '投资',
     travel: '出行',
     social: '社交',
+    industry: '行业',
     family: '家庭',
-    personality: '性格',
     fengshui: '风水',
+    family_environment: '家庭环境',
+    pattern: '格局',
   };
   return map[aspectKey || ''] || aspectKey || '--';
 }
@@ -4311,7 +4339,7 @@ onBeforeUnmount(() => {
                       </label>
                     </div>
 
-                    <div v-if="activeFeature === 'phone-review'" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div v-if="phoneReviewFreeAspectsItem || phoneReviewAspectOrderItem" class="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <button
                         v-if="phoneReviewFreeAspectsItem"
                         type="button"
@@ -4320,7 +4348,7 @@ onBeforeUnmount(() => {
                       >
                         <span class="flex items-center justify-between gap-3">
                           <span class="text-xs font-bold text-brand-ink-strong">{{ phoneReviewFreeAspectsItem.label }}</span>
-                          <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">{{ runtimeConfigStringList(PHONE_REVIEW_FREE_ASPECTS_CONFIG_KEY).length }} 项</span>
+                          <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">{{ runtimeConfigStringList(activeFeatureFreeAspectsConfigKey).length }} 项</span>
                         </span>
                         <span class="block text-[11px] text-brand-secondary mt-1 truncate">{{ phoneReviewFreeAspectSummary }}</span>
                       </button>
@@ -4339,7 +4367,7 @@ onBeforeUnmount(() => {
                       </button>
                     </div>
 
-                    <div v-else class="space-y-3">
+                    <div v-if="featureExtraConfigItems.length" class="space-y-3">
                       <label
                         v-for="item in featureExtraConfigItems"
                         :key="item.config_key"
@@ -5176,7 +5204,7 @@ onBeforeUnmount(() => {
                   <div class="flex flex-wrap items-start justify-between gap-3 pb-2 border-b border-gray-100">
                     <div>
                       <h4 class="text-xs font-bold text-brand-secondary font-mono uppercase">DeepSeek 运行概览</h4>
-                      <p class="text-[11px] text-brand-secondary mt-1">前台请求优先，后台预热按比例让路；Redis URL 只由服务端环境变量提供。</p>
+                      <p class="text-[11px] text-brand-secondary mt-1">前台请求优先，后台低优先级请求按比例让路；Redis URL 只由服务端环境变量提供。</p>
                     </div>
                     <span class="text-[10px] px-2.5 py-1 rounded-full border font-mono" :class="llmConcurrency?.backend_available ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'">
                       {{ llmConcurrency?.backend || 'memory' }} · {{ llmConcurrency?.backend_available ? '可用' : '不可用' }}
@@ -5529,9 +5557,9 @@ onBeforeUnmount(() => {
         <div class="w-full max-w-2xl max-h-[88vh] bg-white border border-gray-100 rounded-2xl shadow-2xl overflow-hidden flex flex-col text-left">
           <div class="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-4">
             <div>
-              <p class="text-[10px] font-mono text-brand-secondary uppercase font-bold">Phone Review Aspect Config</p>
+              <p class="text-[10px] font-mono text-brand-secondary uppercase font-bold">Aspect Config</p>
               <h2 class="font-serif text-lg font-bold text-brand-ink-strong">
-                {{ phoneReviewAspectConfigModal === 'free' ? '免费专项' : '专项顺序' }}
+                {{ activeFeatureDisplayName }} · {{ phoneReviewAspectConfigModal === 'free' ? '免费专项' : '专项顺序' }}
               </h2>
             </div>
             <button
@@ -5547,7 +5575,7 @@ onBeforeUnmount(() => {
           <div class="p-5 overflow-y-auto">
             <div v-if="phoneReviewAspectConfigModal === 'free'" class="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <button
-                v-for="aspect in PHONE_REVIEW_ASPECT_OPTIONS"
+                v-for="aspect in activeFeatureAspectOptions"
                 :key="aspect.key"
                 type="button"
                 @click="togglePhoneReviewFreeAspect(aspect.key)"

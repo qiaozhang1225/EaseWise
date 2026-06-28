@@ -127,10 +127,86 @@ export interface ReviewListResponse {
   offset: number;
 }
 
+export type PhoneReviewCoreStreamSection = 'phone_summary' | 'stability' | string;
+export type PhoneReviewCoreStreamDeltaField = 'title' | 'risk' | 'usage_guidance' | 'verdict' | 'content' | string;
+
+export interface PhoneReviewCoreStreamReviewData {
+  review: ReviewRecord;
+  points: PointsAccountResponse | null;
+}
+
+export type PhoneReviewCoreStreamCreatedData = PhoneReviewCoreStreamReviewData;
+export type PhoneReviewCoreStreamFactsReadyData = PhoneReviewCoreStreamReviewData;
+export type PhoneReviewCoreStreamCompleteData = PhoneReviewCoreStreamReviewData;
+
+export interface PhoneReviewCoreStreamStatusData {
+  section: PhoneReviewCoreStreamSection;
+  message: string;
+}
+
+export interface PhoneReviewCoreStreamDeltaData {
+  section: PhoneReviewCoreStreamSection;
+  field: PhoneReviewCoreStreamDeltaField;
+  delta: string;
+  text: string;
+}
+
+export interface PhoneReviewCoreStreamSectionCompleteData {
+  section: PhoneReviewCoreStreamSection;
+  payload: Record<string, unknown>;
+  model_name?: string | null;
+}
+
+export interface PhoneReviewCoreStreamErrorData {
+  detail: string;
+  message?: string;
+  refunded?: boolean;
+}
+
+export interface FourPillarsSummaryJudgement {
+  key: string;
+  label: string;
+  title: string;
+  content: string;
+  basis?: string;
+  level?: string;
+}
+
+export interface FourPillarsSummaryRiskWindow {
+  age_range: string;
+  year_range: string;
+  risk_type: string;
+  trigger: string;
+  guidance: string;
+  level?: string;
+}
+
+export interface FourPillarsSummaryTimeHighlight {
+  year: string;
+  age?: string;
+  title: string;
+  content: string;
+  trigger?: string;
+}
+
+export interface FourPillarsSummaryFavorableStrategy {
+  favorable_elements?: string[];
+  unfavorable_elements?: string[];
+  supportive_environments?: string[];
+  avoid_patterns?: string[];
+  action_guidance?: string;
+}
+
 export interface FourPillarsSummary {
   title: string;
+  comprehensive_text?: string;
+  overview?: string;
   risk: string;
   usage_guidance: string;
+  key_judgements?: FourPillarsSummaryJudgement[];
+  life_risk_windows?: FourPillarsSummaryRiskWindow[];
+  time_highlights?: FourPillarsSummaryTimeHighlight[];
+  favorable_strategy?: FourPillarsSummaryFavorableStrategy;
   elements_check: Record<string, string>;
 }
 
@@ -174,7 +250,9 @@ export interface FourPillarsDisplayPillar {
 
 export interface FourPillarsChartDisplay {
   profile: {
+    name?: string | null;
     gender_label: string;
+    structure_label?: string | null;
     zodiac: string | null;
     solar_datetime_text: string;
     lunar_date: string;
@@ -182,53 +260,44 @@ export interface FourPillarsChartDisplay {
     birth_place: string | null;
     timezone: string;
     solar_term_context: string | null;
+    input_options?: Array<{value: string; label: string}>;
+    help_text?: string | null;
+    admin_hidden?: boolean;
+    input_mode?: string | null;
+    standard_birth_datetime?: string | null;
+    effective_birth_datetime?: string | null;
+    true_solar_time?: Record<string, unknown> | null;
+    birth_location?: Record<string, unknown> | null;
+    true_solar_time_text?: string | null;
+    constellation?: string | null;
+    xiu?: string | null;
+    tai_yuan?: string | null;
+    tai_xi?: string | null;
+    ming_gong?: string | null;
+    shen_gong?: string | null;
+    life_gua?: string | null;
+    empty_branches_text?: string | null;
+    pillar_xun_kong_text?: string | null;
+    bone_weight?: {
+      total_qian: number;
+      total_label: string;
+      summary: string;
+      fate_pattern?: string | null;
+      verse?: string | null;
+      year_ganzhi: string;
+      lunar_month: number;
+      lunar_day: number;
+      hour_branch: string;
+      parts: Record<string, number>;
+      rules: Record<string, string>;
+      sources: Array<{ title: string; url: string }>;
+    } | null;
   };
   pillars: Record<FourPillarsPillarKey, FourPillarsDisplayPillar>;
   element_status: Array<{
     element: '木' | '火' | '土' | '金' | '水';
     status: '旺' | '相' | '休' | '囚' | '死' | '';
   }>;
-}
-
-export interface FourPillarsReviewRecord {
-  id: string;
-  report_id: string;
-  name: string | null;
-  gender: Gender;
-  birth_date: string;
-  birth_time: string;
-  timezone: string;
-  birth_place: string | null;
-  status: ReviewStatus;
-  progress_stage: ReviewProgressStage | null;
-  progress_message: string | null;
-  score: number | null;
-  score_markdown: string | null;
-  summary: FourPillarsSummary | null;
-  chart: Record<string, any>;
-  chart_display: FourPillarsChartDisplay | null;
-  deterministic_facts: Record<string, any>;
-  aspects: FourPillarsAspect[];
-  aspect_unlock_points: number;
-  luck_analysis: FourPillarsLuckAnalysis | null;
-  error_message?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface FourPillarsReviewSummary {
-  id: string;
-  report_id: string;
-  name: string | null;
-  gender: Gender;
-  birth_date: string;
-  birth_time: string;
-  timezone: string;
-  status: ReviewStatus;
-  progress_message: string | null;
-  score: number | null;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface FourPillarsAspect {
@@ -275,6 +344,7 @@ export interface FourPillarsLuckYearItem {
   stem_element?: string | null;
   branch_element?: string | null;
   di_shi?: string | null;
+  xun_kong?: string | null;
   shen_sha?: string[];
   shen_sha_details?: FourPillarsShenShaDetail[];
   is_current: boolean;
@@ -297,6 +367,7 @@ export interface FourPillarsLuckCycle {
   stem_element?: string | null;
   branch_element?: string | null;
   di_shi?: string | null;
+  xun_kong?: string | null;
   shen_sha?: string[];
   shen_sha_details?: FourPillarsShenShaDetail[];
   render_status: 'not_generated' | ReviewStatus | string;
@@ -323,7 +394,60 @@ export interface FourPillarsCreatePayload {
   timezone?: string | null;
   birth_place?: string | null;
   name?: string | null;
+  input_mode?: 'solar' | 'lunar' | 'bazi' | string | null;
+  calendar_input?: Record<string, unknown> | null;
+  lunar_input?: Record<string, unknown> | null;
+  bazi_input?: Record<string, unknown> | null;
+  birth_location?: Record<string, unknown> | null;
   include_markdown?: boolean;
+}
+
+export interface FourPillarsReviewRecord {
+  id: string;
+  report_id: string;
+  gender: Gender;
+  birth_date: string;
+  birth_time: string;
+  timezone: string;
+  birth_place: string | null;
+  name: string | null;
+  status: ReviewStatus;
+  progress_stage: ReviewProgressStage | null;
+  progress_message: string | null;
+  score: number | null;
+  input_profile: Record<string, unknown>;
+  chart: Record<string, unknown> | null;
+  chart_display: FourPillarsChartDisplay | null;
+  summary: FourPillarsSummary | null;
+  deterministic_facts: Record<string, unknown>;
+  aspects: FourPillarsAspect[];
+  analysis_branches: Record<string, unknown>;
+  luck_analysis: FourPillarsLuckAnalysis | null;
+  aspect_unlock_points: number | null;
+  free_aspect_keys: string[];
+  unlock_enforcement_enabled: boolean | null;
+  score_markdown: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FourPillarsReviewSummary {
+  id: string;
+  report_id: string;
+  gender: Gender;
+  birth_date: string;
+  birth_time: string;
+  timezone: string;
+  birth_place: string | null;
+  name: string | null;
+  status: ReviewStatus;
+  progress_stage: ReviewProgressStage | null;
+  progress_message: string | null;
+  score: number | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface FourPillarsReviewListResponse {
@@ -331,6 +455,42 @@ export interface FourPillarsReviewListResponse {
   total: number;
   limit: number;
   offset: number;
+}
+
+export type FourPillarsCoreStreamSection = 'four_pillars_summary' | string;
+export type FourPillarsCoreStreamDeltaField = 'title' | 'comprehensive_text' | 'overview' | 'risk' | 'usage_guidance' | string;
+
+export interface FourPillarsCoreStreamReviewData {
+  review: FourPillarsReviewRecord;
+  points: PointsAccountResponse | null;
+}
+
+export type FourPillarsCoreStreamCreatedData = FourPillarsCoreStreamReviewData;
+export type FourPillarsCoreStreamFactsReadyData = FourPillarsCoreStreamReviewData;
+export type FourPillarsCoreStreamCompleteData = FourPillarsCoreStreamReviewData;
+
+export interface FourPillarsCoreStreamStatusData {
+  section: FourPillarsCoreStreamSection;
+  message: string;
+}
+
+export interface FourPillarsCoreStreamDeltaData {
+  section: FourPillarsCoreStreamSection;
+  field: FourPillarsCoreStreamDeltaField;
+  delta: string;
+  text: string;
+}
+
+export interface FourPillarsCoreStreamSectionCompleteData {
+  section: FourPillarsCoreStreamSection;
+  payload: Record<string, unknown>;
+  model_name?: string | null;
+}
+
+export interface FourPillarsCoreStreamErrorData {
+  detail: string;
+  message?: string;
+  refunded?: boolean;
 }
 
 export interface FourPillarsAspectUnlockResponse {
@@ -454,6 +614,7 @@ export interface PointsClaimLinkResponse {
   points_amount: number;
   display_value_cents: number;
   status: string;
+  text?: string | null;
   effective_status: string;
   valid_from: string;
   expires_at: string;
@@ -678,6 +839,78 @@ export interface ReviewAspectUnlockResponse {
   unlocked_at: string;
   points: PointsAccountResponse | null;
   aspect: ReviewAspect | null;
+}
+
+export type PhoneReviewAspectStreamDeltaField = 'title' | 'risk' | 'content';
+
+export interface PhoneReviewAspectStreamUnlockData {
+  unlock_id: string;
+  review_id: string;
+  user_id: string;
+  aspect_key: string;
+  points_cost: number;
+  usage_record_id: string;
+  unlocked_at: string;
+  status: string;
+  points: PointsAccountResponse | null;
+}
+
+export interface PhoneReviewAspectStreamStatusData {
+  message: string;
+}
+
+export interface PhoneReviewAspectStreamDeltaData {
+  field: PhoneReviewAspectStreamDeltaField;
+  delta: string;
+  text: string;
+}
+
+export interface PhoneReviewAspectStreamCompleteData {
+  aspect: ReviewAspect | null;
+  review: ReviewRecord;
+  points: PointsAccountResponse | null;
+}
+
+export interface PhoneReviewAspectStreamErrorData {
+  detail: string;
+  message?: string;
+  refunded?: boolean;
+}
+
+export type FourPillarsAspectStreamDeltaField = 'title' | 'risk' | 'content';
+
+export interface FourPillarsAspectStreamUnlockData {
+  unlock_id: string;
+  review_id: string;
+  user_id: string;
+  aspect_key: string;
+  points_cost: number;
+  usage_record_id: string;
+  unlocked_at: string;
+  status: string;
+  points: PointsAccountResponse | null;
+}
+
+export interface FourPillarsAspectStreamStatusData {
+  message: string;
+}
+
+export interface FourPillarsAspectStreamDeltaData {
+  field: FourPillarsAspectStreamDeltaField;
+  delta: string;
+  text: string;
+}
+
+export interface FourPillarsAspectStreamCompleteData {
+  aspect: FourPillarsAspect | null;
+  review: FourPillarsReviewRecord;
+  points: PointsAccountResponse | null;
+}
+
+export interface FourPillarsAspectStreamErrorData {
+  detail: string;
+  message?: string;
+  refunded?: boolean;
 }
 
 export interface InternalUserResponse {
@@ -1172,26 +1405,6 @@ export interface PromotionApplicationListResponse {
   offset: number;
 }
 
-export interface PromotionCommissionResponse {
-  commission_id: string;
-  promoter_user_id: string;
-  promoter_nickname: string | null;
-  invited_user_id: string | null;
-  invited_user_nickname: string | null;
-  order_id: string | null;
-  order_amount_cents: number;
-  commission_rate: number;
-  commission_amount_cents: number;
-  commission_points: number;
-  commission_type: string;
-  status: string;
-  remark: string | null;
-  created_at: string;
-  updated_at: string;
-  settled_at: string | null;
-  revoked_at: string | null;
-}
-
 export interface PromotionCommissionListResponse {
   items: PromotionCommissionResponse[];
   total: number;
@@ -1237,4 +1450,18 @@ export interface PromotionRulesResponse {
   senior_commission_rate: number;
   min_withdraw_cents: number;
   order_completion_days: number;
+}
+
+export interface AgentMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+export interface ChatSessionDetail {
+  id: string;
+  title: string;
+  created_at: string;
+  messages?: AgentMessage[];
 }

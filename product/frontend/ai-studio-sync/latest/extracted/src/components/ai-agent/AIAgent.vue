@@ -1,213 +1,418 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue';
-import { Send, Bot, User, Sparkles, Compass, HelpCircle, ArrowRight } from 'lucide-vue-next';
-import { sendChatToAgent } from '../../lib/api';
+import { computed, nextTick, ref, onMounted, onUnmounted, watch } from 'vue';
+import {
+  AlertCircle, ArrowDown, Bot, CheckCircle2, ChevronRight, CornerDownLeft,
+  HelpCircle, History, Loader2, MessageSquare, Play, Send, Sparkles, Square, Trash2, User, X
+} from 'lucide-vue-next';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
+import { useVoicePlayback } from '../../composables/useVoicePlayback';
+import type { AgentMessage, ChatSessionDetail } from '../../types/api';
 
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
+const {
+  state, isGuestUser, sendAgentChatMessage, createAgentChatSession,
+  listAgentChatSessions, loadAgentChatSession, clearAgentChatSessions,
+  requestRegisteredUser, showToast, openCustomerServiceModal, humanizeError
+} = useEaseWiseApp();
+
+const inputMessage = ref('');
+const sending = ref(false);
+const activeSessionId = ref<string | null>(null);
+const showSessionList = ref(false);
+const showSuggestionList = ref(true);
+
+const chatContainerRef = ref<HTMLDivElement | null>(null);
+const currentStreamingText = ref('');
+const messagesList = ref<AgentMessage[]>([]);
+
+const toastMsg = ref<string | null>(null);
+function triggerToast(msg: string) {
+  toastMsg.value = msg;
+  setTimeout(() => { toastMsg.value = null; }, 2000);
 }
 
-const { requestRegisteredUser } = useEaseWiseApp();
+const voice = useVoicePlayback({
+  getAccessToken: () => state.accessToken,
+  getVoiceConfig: () => (state.runtimeConfig?.modules as any)?.voice || (state.runtimeConfig?.modules as any)?.ai_agent?.voice,
+  showToast: (msg) => triggerToast(msg),
+});
 
-const messages = ref<ChatMessage[]>([
-  {
-    id: 'welcome',
-    role: 'assistant',
-    content: '尊驾好！吾乃「易如反掌玄学智能体」。深谙数字奇门相克生助气场，精通四柱八字调配中和之道。请问尊驾今日有何关于命盘、手机号神位，或五行运势的疑惑？'
-  }
-]);
+const sessions = computed(() => state.chatSessions || []);
+const activeSession = computed(() => sessions.value.find(s => s.id === activeSessionId.value) || null);
+const userPoints = computed(() => state.points?.balance ?? 0);
+const isRegistered = computed(() => !!state.accessToken);
 
-const userInput = ref('');
-const loading = ref(false);
-const chatContainer = ref<HTMLElement | null>(null);
-
-const suggestions = [
-  "如何推演11位手机号生克吉凶？",
-  "流年犯冲太岁如何用五行调衡？",
-  "八字中日主甲木坐申，代表何意？",
-  "我的财位该如何布局最合适？"
+const presetSuggestions = [
+  { text: '如何利用奇门卦理选择最佳合伙人？', title: '奇门合伙' },
+  { text: '我的手机号中出现“天蓬门迫”意味着什么？', title: '手机天蓬' },
+  { text: '日干身弱且财旺的命局，今年如何合理修持？', title: '身弱财旺' },
+  { text: '在梅花易数中，体卦受用卦克制该如何偏转运势？', title: '梅花偏转' },
 ];
+
+onMounted(async () => {
+  if (isRegistered.value) {
+    try {
+      const list = await listAgentChatSessions();
+      if (list.length > 0) {
+        activeSessionId.value = list[0].id;
+        await handleLoadSession(list[0].id);
+      } else {
+        await handleCreateSession();
+      }
+    } catch (e) {
+      console.error('Failed listing chat sessions', e);
+    }
+  } else {
+    // Guest initial placeholder message
+    messagesList.value = [
+      {
+        id: 'welcome',
+        role: 'assistant',
+        content: '您好！我是 EaseWise「易如反掌」玄学AI助理。您可以向我咨询关于奇门遁甲、四柱八字或梅花起卦中的盘局暗示，或者提出生活与事业抉择中的困惑，我会以经典古法卦理解构并给出策略。',
+        created_at: new Date().toISOString()
+      }
+    ];
+  }
+});
+
+onUnmounted(() => {
+  voice.stop();
+});
 
 function scrollToBottom() {
   nextTick(() => {
-    if (chatContainer.value) {
-      chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+    if (chatContainerRef.value) {
+      chatContainerRef.value.scrollTop = chatContainerRef.value.scrollHeight;
     }
   });
 }
 
-async function handleSendMessage(textToSend?: string) {
-  const text = (textToSend || userInput.value).trim();
-  if (!text || loading.value) return;
+async function handleCreateSession() {
+  const authed = await requestRegisteredUser('发起新会话');
+  if (!authed) return;
 
-  // Let guests use, but request login on deep interaction if requested
-  userInput.value = '';
-  
-  messages.value.push({
-    id: `u_${Date.now()}`,
-    role: 'user',
-    content: text
-  });
-  scrollToBottom();
-
-  loading.value = true;
-  
   try {
-    const apiHistory = messages.value
-      .filter(m => m.id !== 'welcome')
-      .slice(-6) // Send recent context
-      .map(m => ({
-        role: m.role === 'user' ? 'user' : 'model',
-        content: m.content
-      }));
-
-    const response = await sendChatToAgent(text, apiHistory);
-    
-    messages.value.push({
-      id: `a_${Date.now()}`,
-      role: 'assistant',
-      content: response.reply
-    });
-  } catch (error: any) {
-    messages.value.push({
-      id: `err_${Date.now()}`,
-      role: 'assistant',
-      content: '深表歉意，吾刚才掐指忽遇紫微星流。你可以稍等片刻，或添加客服获取详细算批！'
-    });
-  } finally {
-    loading.value = false;
+    const session = await createAgentChatSession('新决策咨询会话');
+    activeSessionId.value = session.id;
+    messagesList.value = session.messages || [];
+    showSessionList.value = false;
+    showSuggestionList.value = messagesList.value.length === 0;
     scrollToBottom();
+  } catch (err: any) {
+    triggerToast('创建新会话失败');
   }
 }
 
-onMounted(() => {
+async function handleLoadSession(sessionId: string) {
+  try {
+    const detail = await loadAgentChatSession(sessionId);
+    activeSessionId.value = detail.id;
+    messagesList.value = detail.messages || [];
+    showSessionList.value = false;
+    showSuggestionList.value = messagesList.value.length === 0;
+    scrollToBottom();
+  } catch (err: any) {
+    triggerToast('加载会话失败');
+  }
+}
+
+async function handleClearSessions() {
+  if (!isRegistered.value) return;
+  try {
+    await clearAgentChatSessions();
+    activeSessionId.value = null;
+    messagesList.value = [];
+    showSuggestionList.value = true;
+    triggerToast('会话历史已清空');
+    await handleCreateSession();
+  } catch (e) {
+    triggerToast('清空会话失败');
+  }
+}
+
+async function handleSendMessage(textToSend?: string) {
+  const text = (textToSend || inputMessage.value).trim();
+  if (!text) return;
+
+  const authed = await requestRegisteredUser('AI 咨询对话');
+  if (!authed) return;
+
+  if (userPoints.value < 1) {
+    openCustomerServiceModal('points_insufficient', `AI 助理对话扣费：需要 1 积分，当前 ${userPoints.value}`);
+    triggerToast('对话积分不足，已为您调出客服兑换中心！');
+    return;
+  }
+
+  if (!activeSessionId.value) {
+    await handleCreateSession();
+    if (!activeSessionId.value) return;
+  }
+
+  inputMessage.value = '';
+  showSuggestionList.value = false;
+
+  // Optimistic client addition
+  messagesList.value.push({
+    id: `temp-user-${Date.now()}`,
+    role: 'user',
+    content: text,
+    created_at: new Date().toISOString()
+  });
   scrollToBottom();
-});
+
+  sending.value = true;
+  currentStreamingText.value = '';
+  voice.stop();
+
+  try {
+    await sendAgentChatMessage(activeSessionId.value, text, {
+      onChunk: (chunkText) => {
+        currentStreamingText.value += chunkText;
+        scrollToBottom();
+      },
+      onComplete: (completedSession) => {
+        messagesList.value = completedSession.messages || [];
+        currentStreamingText.value = '';
+        sending.value = false;
+        scrollToBottom();
+
+        // Auto voice play back if configured
+        if (voice.autoplayEnabled.value && messagesList.value.length > 0) {
+          const lastMsg = messagesList.value[messagesList.value.length - 1];
+          if (lastMsg.role === 'assistant') {
+            void voice.speakMessage(completedSession.id, lastMsg);
+          }
+        }
+      },
+      onError: (err) => {
+        triggerToast(humanizeError(err) || '解答通道暂有波动，请稍后再试');
+        sending.value = false;
+      }
+    });
+  } catch (err: any) {
+    triggerToast(humanizeError(err) || '网络异常，发送失败');
+    sending.value = false;
+  }
+}
+
+function speakSingleMessage(msg: AgentMessage) {
+  if (!activeSessionId.value) return;
+  const key = `message:${activeSessionId.value}:${msg.id}`;
+  if (voice.currentKey.value === key) {
+    voice.stop();
+  } else {
+    void voice.speakMessage(activeSessionId.value, msg);
+  }
+}
 </script>
 
 <template>
-  <div class="pt-3 max-w-md mx-auto flex flex-col h-[calc(100dvh-82px)] md:h-[calc(100vh-82px)] text-left relative overflow-hidden pb-0 bg-brand-paper/30">
-    <!-- Upper scrollable area with side margins -->
-    <div class="flex-1 px-margin-mobile flex flex-col min-h-0 min-w-0 mb-3">
-      <!-- Header visual -->
-      <div class="bg-white rounded-2xl p-4 border border-brand-paper shadow-sm mb-3 flex items-center gap-3 shrink-0">
-        <div class="w-12 h-12 rounded-full bg-brand-primary/10 flex items-center justify-center shrink-0">
-          <Bot :size="24" class="text-brand-primary" />
-        </div>
-        <div>
-          <h2 class="font-serif text-[17px] font-bold text-brand-ink-strong flex items-center gap-1.5">
-            玄学命局 AI 智能体
-            <span class="bg-brand-gold-fixed/15 text-brand-gold-fixed font-sans text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider scale-90">ONLINE</span>
-          </h2>
-          <p class="font-sans text-[11.5px] text-brand-secondary leading-normal mt-0.5">
-            基于奇门遁甲、周易六爻、八字命理模型，为您提供极速推算。
-          </p>
-        </div>
+  <div class="pt-4 pb-32 max-w-md mx-auto px-margin-mobile flex flex-col h-[calc(100vh-64px)] overflow-hidden relative text-left">
+
+    <transition name="fade">
+      <div v-if="toastMsg" class="fixed top-4 left-1/2 -translate-x-1/2 z-[110] bg-brand-ink-strong text-white px-4 py-2.5 rounded-full font-sans text-[12.5px] shadow-lg font-medium flex items-center gap-2 max-w-[85%] whitespace-nowrap">
+        <Sparkles :size="14" class="text-brand-accent shrink-0" />
+        <span>{{ toastMsg }}</span>
+      </div>
+    </transition>
+
+    <!-- Top session control header bar -->
+    <div class="flex justify-between items-center mb-3 select-none">
+      <div class="flex items-center gap-2">
+        <button
+          v-if="isRegistered"
+          @click="showSessionList = !showSessionList"
+          class="text-brand-ink-strong hover:text-brand-primary font-sans text-[12px] font-extrabold flex items-center gap-1 cursor-pointer border-none bg-transparent outline-none p-1.5 rounded-xl bg-white border border-gray-100 shadow-sm"
+        >
+          <History :size="14" />
+          <span>{{ showSessionList ? '返回对话大厅' : '历史会话' }}</span>
+        </button>
       </div>
 
-      <!-- Chat container area -->
-      <div class="flex-1 bg-white rounded-2xl border border-brand-paper shadow-sm flex flex-col overflow-hidden min-h-0">
-        <div 
-          ref="chatContainer"
-          class="flex-1 p-4 overflow-y-auto space-y-4 font-sans text-[13px] leading-relaxed select-text"
+      <div class="flex items-center gap-2">
+        <button
+          @click="voice.setEnabled(!voice.enabled.value)"
+          class="px-2.5 py-1.5 rounded-xl text-[10.5px] font-extrabold cursor-pointer border transition-colors outline-none flex items-center gap-1"
+          :class="voice.enabled.value
+            ? 'bg-brand-primary/10 border-brand-primary/20 text-brand-primary'
+            : 'bg-zinc-50 border-gray-150 text-zinc-400 hover:bg-zinc-100'"
         >
-          <div 
-            v-for="msg in messages" 
-            :key="msg.id"
-            class="flex items-start gap-2 max-w-[90%]"
-            :class="msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''"
-          >
-            <!-- User vs Bot Avatar -->
-            <div 
-              class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 shadow-sm"
-              :class="msg.role === 'user' ? 'bg-brand-primary text-white' : 'bg-brand-paper text-brand-ink-strong'"
-            >
-              <User v-if="msg.role === 'user'" :size="14" />
-              <Bot v-else :size="14" class="text-brand-primary" />
-            </div>
+          <span>语音朗读: {{ voice.enabled.value ? '开' : '关' }}</span>
+        </button>
+        <button
+          @click="voice.setAutoplayEnabled(!voice.autoplayEnabled.value)"
+          class="px-2.5 py-1.5 rounded-xl text-[10.5px] font-extrabold cursor-pointer border transition-colors outline-none flex items-center gap-1"
+          :class="voice.autoplayEnabled.value
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+            : 'bg-zinc-50 border-gray-150 text-zinc-400 hover:bg-zinc-100'"
+        >
+          <span>自动播报: {{ voice.autoplayEnabled.value ? '开' : '关' }}</span>
+        </button>
+      </div>
+    </div>
 
-            <!-- Message bubble -->
-            <div 
-              class="p-3 rounded-2xl relative"
-              :class="msg.role === 'user' 
-                ? 'bg-brand-primary text-white rounded-tr-none' 
-                : 'bg-brand-paper/55 text-brand-ink border border-gray-100 rounded-tl-none'"
-            >
-              <div class="whitespace-pre-wrap select-text selection:bg-brand-primary/20">{{ msg.content }}</div>
-            </div>
-          </div>
+    <!-- MAIN CHAT CONTAINER PANEL -->
+    <div class="flex-1 overflow-y-auto no-scrollbar rounded-2xl border border-brand-paper shadow-inner bg-white/70 p-4 mb-3 flex flex-col gap-4 relative">
 
-          <!-- System Loading state -->
-          <div v-if="loading" class="flex items-start gap-2 max-w-[80%]">
-            <div class="w-7 h-7 rounded-full bg-brand-paper flex items-center justify-center shrink-0">
-              <Bot :size="14" class="text-brand-primary animate-spin" />
-            </div>
-            <div class="bg-brand-paper/55 border border-gray-100 p-3 rounded-2xl rounded-tl-none flex items-center gap-2">
-              <span class="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce"></span>
-              <span class="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce delay-100"></span>
-              <span class="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce delay-200"></span>
-              <span class="text-brand-secondary text-[11px] font-serif font-semibold ml-1">神机测算中...</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Quick recommendation blocks -->
-        <div class="p-3 bg-brand-paper/20 border-t border-gray-50 text-left shrink-0">
-          <span class="text-brand-secondary text-[10.5px] font-extrabold flex items-center gap-1 mb-2">
-            <Sparkles :size="11" class="text-brand-gold-fixed" />
-            <span>推荐问题（轻按快速发送）：</span>
-          </span>
-          <div class="flex flex-wrap gap-1.5 max-h-[110px] overflow-y-auto">
-            <button
-              v-for="s in suggestions"
-              :key="s"
-              @click="handleSendMessage(s)"
-              :disabled="loading"
-              class="bg-white border border-gray-150 rounded-xl px-2.5 py-1.5 text-brand-secondary font-medium text-[11px] cursor-pointer hover:border-brand-primary/50 transition-colors flex items-center gap-1 outline-none relative"
-            >
-              <span>{{ s }}</span>
-              <ArrowRight :size="10" class="text-brand-secondary" />
+      <!-- SESSIONS DRAWER -->
+      <transition name="slide-down">
+        <div v-if="showSessionList" class="absolute inset-0 z-30 bg-white p-4 overflow-y-auto flex flex-col gap-3">
+          <div class="flex justify-between items-center border-b border-gray-100 pb-2.5">
+            <h3 class="font-serif text-[14px] font-black text-brand-ink-strong">会话历史列表</h3>
+            <button @click="handleClearSessions" class="text-red-500 hover:text-red-600 text-xs font-bold flex items-center gap-1 cursor-pointer border-none bg-transparent outline-none">
+              <Trash2 :size="12" />
+              <span>清空所有历史</span>
             </button>
           </div>
+
+          <div v-if="sessions.length === 0" class="py-12 text-center text-zinc-400 font-sans text-xs">
+            暂无历史会话，点击下方按钮新建会话。
+          </div>
+          <div v-else class="space-y-2 flex-1">
+            <button
+              v-for="s in sessions"
+              :key="s.id"
+              @click="handleLoadSession(s.id)"
+              class="w-full bg-brand-paper/40 hover:bg-brand-paper/80 border border-gray-100 rounded-xl p-3 text-left flex justify-between items-center transition-all cursor-pointer outline-none"
+              :class="s.id === activeSessionId ? 'border-brand-primary bg-brand-primary/[0.02]' : ''"
+            >
+              <div class="min-w-0 flex-1">
+                <span class="font-sans text-[12.5px] font-extrabold text-brand-ink-strong block truncate">{{ s.title }}</span>
+                <span class="text-[10px] text-brand-secondary/80 mt-1 block">更新于：{{ new Date(s.updated_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) }}</span>
+              </div>
+              <ChevronRight :size="14" class="text-zinc-300" />
+            </button>
+          </div>
+
+          <button @click="handleCreateSession" class="w-full h-11 bg-brand-primary text-white font-sans text-xs font-bold rounded-xl flex items-center justify-center gap-1 border-none shadow-sm cursor-pointer outline-none mt-auto">
+            <span>发起新会话</span>
+          </button>
+        </div>
+      </transition>
+
+      <div ref="chatContainerRef" class="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-4">
+        <div
+          v-for="msg in messagesList"
+          :key="msg.id"
+          class="flex items-start gap-2.5"
+          :class="msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'"
+        >
+          <!-- Avatar icon -->
+          <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border select-none"
+               :class="msg.role === 'user'
+                 ? 'bg-brand-primary/10 border-brand-primary/20 text-brand-primary'
+                 : 'bg-zinc-50 border-gray-200 text-zinc-600'">
+            <User v-if="msg.role === 'user'" :size="15" />
+            <Bot v-else :size="15" />
+          </div>
+
+          <div class="flex flex-col max-w-[80%] gap-1">
+            <div
+              class="rounded-2xl p-3.5 text-[12.5px] leading-relaxed relative whitespace-pre-wrap select-text font-medium"
+              :class="msg.role === 'user'
+                ? 'bg-brand-primary text-white rounded-tr-none'
+                : 'bg-[#F2F4F7] text-brand-ink-strong rounded-tl-none border border-gray-100'"
+            >
+              <p>{{ msg.content }}</p>
+
+              <!-- Speak controls for assistant messages -->
+              <div
+                v-if="msg.role === 'assistant' && msg.id !== 'welcome'"
+                class="mt-2.5 pt-2 border-t border-gray-200/50 flex justify-end select-none"
+              >
+                <button
+                  @click="speakSingleMessage(msg)"
+                  class="px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-brand-primary text-[10px] font-bold cursor-pointer transition-all active:scale-95 flex items-center gap-1 shadow-xs outline-none"
+                >
+                  <span v-if="voice.currentKey.value === `message:${activeSessionId}:${msg.id}`">暂停</span>
+                  <span v-else>播报</span>
+                  <Square v-if="voice.currentKey.value === `message:${activeSessionId}:${msg.id}`" :size="9" />
+                  <Play v-else :size="9" />
+                </button>
+              </div>
+            </div>
+            <span class="text-[9px] text-zinc-400 mt-0.5" :class="msg.role === 'user' ? 'text-right' : 'text-left'">
+              {{ new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+            </span>
+          </div>
+        </div>
+
+        <!-- STREAMING CHUNK PLACEHOLDER -->
+        <div v-if="currentStreamingText" class="flex items-start gap-2.5 flex-row">
+          <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border bg-zinc-50 border-gray-200 text-zinc-600 select-none">
+            <Bot :size="15" />
+          </div>
+          <div class="flex flex-col max-w-[80%] gap-1">
+            <div class="rounded-2xl p-3.5 text-[12.5px] leading-relaxed bg-[#F2F4F7] text-brand-ink-strong rounded-tl-none border border-gray-100 whitespace-pre-wrap select-text font-medium">
+              <span>{{ currentStreamingText }}</span>
+              <span class="inline-block w-1.5 h-3 bg-brand-primary animate-pulse ml-0.5"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Suggestion pills -->
+      <div v-if="showSuggestionList" class="border-t border-gray-100 pt-3 flex flex-col gap-2 z-10">
+        <span class="text-[10px] text-brand-secondary font-extrabold uppercase tracking-wider block">常见咨询入口</span>
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            v-for="sug in presetSuggestions"
+            :key="sug.text"
+            @click="handleSendMessage(sug.text)"
+            class="bg-brand-paper/60 hover:bg-brand-paper border border-gray-100 rounded-xl p-2.5 text-left transition-colors cursor-pointer outline-none flex flex-col gap-1"
+          >
+            <span class="font-serif text-[11.5px] font-black text-brand-primary-strong leading-none">{{ sug.title }}</span>
+            <span class="font-sans text-[9.5px] text-brand-secondary/80 truncate leading-tight pr-1 mt-1">{{ sug.text }}</span>
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- Input Box area (Full-width, flat, touches the navigation bar) -->
-    <div class="bg-white border-t border-gray-100 px-4 py-3 pb-3.5 flex items-center gap-2.5 shrink-0 w-full shadow-[0_-2px_10px_rgba(0,0,0,0.02)]">
-      <div class="flex-1 bg-brand-paper focus-within:bg-white focus-within:ring-1 focus-within:ring-brand-primary/20 rounded-xl px-3 py-2 flex items-center transition-all border border-gray-100/50">
-        <input 
-          v-model="userInput" 
-          @keydown.enter="handleSendMessage()"
-          type="text" 
-          placeholder="在这里输入您想咨询的玄学奥秘..."
-          :disabled="loading"
-          class="flex-1 bg-transparent border-none outline-none font-sans text-[13px] text-brand-ink-strong disabled:text-gray-400 placeholder:text-zinc-400"
-        />
-      </div>
-      <button 
+    <!-- Input text box -->
+    <div class="relative flex items-center select-none bg-white border border-gray-150 rounded-2xl focus-within:border-brand-primary transition-all p-1.5 shadow-sm">
+      <input
+        v-model="inputMessage"
+        type="text"
+        placeholder="输入您在学业、事业或情感中的决策困惑..."
+        class="w-full bg-transparent border-none text-[12px] text-brand-ink-strong py-2 px-3 outline-none placeholder-gray-400 font-sans"
+        @keyup.enter="handleSendMessage()"
+        :disabled="sending"
+      />
+      <button
         @click="handleSendMessage()"
-        :disabled="!userInput.trim() || loading"
-        class="w-9 h-9 rounded-xl bg-brand-primary text-white flex items-center justify-center hover:bg-brand-primary/95 active:scale-95 transition-all disabled:opacity-35 disabled:scale-100 cursor-pointer border-none shadow-sm shrink-0"
+        :disabled="sending || !inputMessage.trim()"
+        class="w-10 h-10 rounded-xl bg-brand-primary text-white flex items-center justify-center cursor-pointer hover:bg-brand-primary/95 transition-all outline-none border-none shrink-0 disabled:opacity-40"
       >
-        <Send :size="14" />
+        <Loader2 v-if="sending" class="animate-spin" :size="15" />
+        <Send v-else :size="15" />
       </button>
     </div>
+
   </div>
 </template>
 
 <style scoped>
-.chat-container::-webkit-scrollbar {
-  width: 4px;
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
 }
-.chat-container::-webkit-scrollbar-track {
-  background: transparent;
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
-.chat-container::-webkit-scrollbar-thumb {
-  background-color: #e2e8f0;
-  border-radius: 99px;
+
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.slide-down-enter-from,
+.slide-down-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 </style>

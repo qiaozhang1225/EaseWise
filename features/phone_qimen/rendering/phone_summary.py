@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Iterator, Literal
 
 from features.phone_qimen.knowledge import (
     load_section_knowledge,
@@ -12,7 +12,8 @@ from features.phone_qimen.knowledge import (
     load_section_taxonomy,
     load_shared_foundation,
 )
-from product.backend.llm import DeepSeekAPIError, DeepSeekClient
+from product.backend.llm import DeepSeekAPIError, DeepSeekClient, build_messages
+from product.backend.llm.streaming_json import build_json_stream_instruction, extract_partial_json_string_field, loads_streamed_json_object
 from features.phone_qimen.scoring.total_score.engine import load_rules, score_phone
 from features.phone_qimen.scoring.total_score.bundle import build_scoring_bundle
 
@@ -74,11 +75,11 @@ def build_phone_summary_prompts(payload: dict[str, Any], *, tone_pack: TonePack 
             "重要事项要提前定边界、留证据、控节奏，别把所有关键关系和资金结果都压在这个号上。"
         ),
         "elements_check": {
-            "宫": "一句话判断底层环境能不能接住这个号，并翻译成现实承接感。",
+            "宫": "一句话判断环境和平台是否有利，并翻译成现实里的推进感和稳定感。",
             "门": "一句话判断行动方式顺不顺，并翻译成做事、合作或推进方式。",
             "神": "一句话判断隐性助力和心理状态，并翻译成用户可感知的状态。",
             "星": "一句话判断性格气质或对象侧，并翻译成用户像不像的表现。",
-            "天干/地干": "一句话判断后段牵扯，并翻译成收尾、兑现或内部压力。",
+            "天干/地干": "一句话判断收尾牵扯，并翻译成兑现、回款、关系后续或内部压力。",
             "特殊组合": "一句话判断放大效应，并翻译成具体容易被放大的场景。",
             "四害": "一句话判断硬伤层，并翻译成落空、受压、收不住或临场出错。",
         },
@@ -98,11 +99,13 @@ def build_phone_summary_prompts(payload: dict[str, Any], *, tone_pack: TonePack 
         "8. usage_guidance 必须基于 elements_check 的七层判断综合成一段话；它不是 elements_check 的复制，但七层判断都要在最终段落里产生影响。\n"
         "9. title 只做一句判断式概括，不要写成摘要列表。\n"
         "10. 如果盘面是 mixed signals，只保留一个主轴和一个主矛盾，不要平均摊开。\n"
-        "11. 可以从最强信号切入，但不得只围绕这一层展开。最终判断必须完成七层覆盖：宫定底盘和环境承接，门定现实动作和使用方式，神定气场和隐性助力，星定性格气质和对象侧，天干/地干定后段格局和内部牵扯，特殊组合定放大效应，四害定现实硬伤。\n"
+        "11. 可以从最强信号切入，但不得只围绕这一层展开。最终判断必须完成七层覆盖：宫看环境和平台是否帮得上忙，门定现实动作和使用方式，神定气场和隐性助力，星定性格气质和对象侧，天干/地干定收尾状态和内部牵扯，特殊组合定放大效应，四害定现实硬伤。\n"
         "12. 还要输出 elements_check，它必须分别包含对宫、门、神、星、天干/地干、特殊组合、四害的简短判断；每项都要写出现实含义，不要只写术语标签。\n"
         "13. 写作时要有主次：强信号深入写，弱信号自然带过；如果某层没有明显风险，也要体现它是助力、背景、放大层，还是无硬伤的稳定层。重点是合断，不是逐项查表。\n"
         "14. 风格要像一个懂盘的人在用普通话把号码说透，而不是像表格说明书。\n"
         "15. 用户主段落中不要连续堆叠宫、门、神、星、干支、四害、空亡、门迫、入墓、击刑等词；必须优先写成用户能验证的表现。\n\n"
+        "16. 专业词不是禁用词，但必须先点名、再翻译、再落到现实场景；例如写“双关”时，要解释为同一组信息同时牵动两个主题，现实里容易一件事连带影响关系或钱。\n"
+        "17. title、risk、usage_guidance 不要出现“结构承接、可用空间、可用之处、现实承接感、底层结构、后段承接、结构封顶”等内部分析词。\n\n"
         f"{knowledge_block}"
     )
 
@@ -119,7 +122,8 @@ def build_phone_summary_prompts(payload: dict[str, Any], *, tone_pack: TonePack 
         "- risk：一段话，2-3 句，讲清楚号码暴露出的核心问题和现实落点；必须出现用户能核实的具体场景。\n"
         "- usage_guidance：一段话，根据 knowledge 和盘面事实进行合断，必须让宫、门、神、星、天干/地干、特殊组合、四害七层判断都影响最终段落；不要求按固定顺序写，但不能只写其中一两层。\n"
         "- elements_check：结构化对象，必须包含宫、门、神、星、天干/地干、特殊组合、四害这七项，每项都用一句话做判断，并把专业层翻译成现实表现。\n"
-        "- 用户主段落不要把专业词连续堆起来；如果写术语，必须紧跟生活化解释。\n"
+        "- 用户主段落不要把专业词连续堆起来；如果写术语，必须紧跟生活化解释和现实场景。\n"
+        "- 允许保留双关、空亡、门迫、入墓、击刑、四害、合十等专业词，但不能只写术语本身。\n"
         "- 最终只输出 JSON object。\n"
     )
 
@@ -191,6 +195,83 @@ def render_phone_summary_from_package(
         tone_pack=tone_pack,
         model_name=model_name,
     )
+
+
+def stream_phone_summary_from_package(
+    package: dict[str, Any],
+    *,
+    tone_pack: TonePack = "customer",
+    client: DeepSeekClient | None = None,
+    model: str = "deepseek-v4-pro",
+    thinking_enabled: bool = False,
+    max_tokens: int = 1800,
+    user_id: str | None = None,
+    request_id: str | None = None,
+) -> Iterator[dict[str, Any]]:
+    score_template = package["score_template"]
+    payload = score_template.get("phone_summary_facts") if isinstance(score_template.get("phone_summary_facts"), dict) else {}
+    if not payload:
+        raise DeepSeekAPIError(DEEPSEEK_PHONE_SUMMARY_ERROR)
+    system_prompt, user_prompt, json_example = build_phone_summary_prompts(payload, tone_pack=tone_pack)
+    messages = build_messages(
+        system_prompt=f"{system_prompt.rstrip()}\n\n{build_json_stream_instruction(json_example)}",
+        user_prompt=user_prompt,
+    )
+
+    raw_content = ""
+    emitted_fields = {"title": "", "risk": "", "usage_guidance": ""}
+    model_name = model
+    try:
+        client = client or DeepSeekClient.from_env()
+        yield {"event": "status", "data": {"message": "正在生成综合评述"}}
+        for chunk in client.stream_chat(
+            messages,
+            model=model,
+            thinking_enabled=thinking_enabled,
+            temperature=0.25,
+            max_tokens=max_tokens,
+            response_format={"type": "json_object"},
+            llm_scene="phone_qimen.summary",
+            priority_class="foreground_core",
+            user_id=user_id,
+            request_id=request_id,
+        ):
+            if chunk.raw.get("model"):
+                model_name = str(chunk.raw.get("model") or model_name)
+            if not chunk.content_delta:
+                continue
+            raw_content += chunk.content_delta
+            for field in ("title", "risk", "usage_guidance"):
+                current_text = extract_partial_json_string_field(raw_content, field)
+                if current_text is None:
+                    continue
+                previous_text = emitted_fields[field]
+                if current_text == previous_text:
+                    continue
+                delta = current_text[len(previous_text):] if current_text.startswith(previous_text) else current_text
+                emitted_fields[field] = current_text
+                if delta:
+                    yield {"event": "delta", "data": {"field": field, "delta": delta, "text": current_text}}
+
+        model_output = loads_streamed_json_object(raw_content)
+        valid, reason = validate_model_output(payload, model_output)
+        if not valid:
+            raise DeepSeekAPIError(DEEPSEEK_PHONE_SUMMARY_ERROR) from ValueError(f"phone_summary_invalid_output:{reason}")
+
+        public_output = _public_output(model_output)
+        result = PhoneSummaryRenderResult(
+            title=str(public_output["title"]).strip(),
+            risk=str(public_output["risk"]).strip(),
+            usage_guidance=str(public_output["usage_guidance"]).strip(),
+            elements_check=dict(public_output["elements_check"]),
+            tone_pack=tone_pack,
+            model_name=model_name,
+        )
+        yield {"event": "result", "data": {"phone_summary": result.to_dict(), "model_name": result.model_name}}
+    except Exception as exc:
+        if isinstance(exc, DeepSeekAPIError):
+            raise
+        raise DeepSeekAPIError(DEEPSEEK_PHONE_SUMMARY_ERROR) from exc
 
 
 def render_phone_summary_from_phone(

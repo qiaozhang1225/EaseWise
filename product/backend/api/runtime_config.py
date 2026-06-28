@@ -23,7 +23,7 @@ from .config import (
 )
 from .database import list_runtime_config_entries
 from .phone_review_view import PUBLIC_ASPECT_ORDER
-from features.four_pillars.engine import FOUR_PILLARS_ASPECT_ORDER
+from features.four_pillars.engine import FOUR_PILLARS_ASPECT_ORDER, expand_four_pillars_aspect_keys
 
 GLOBAL_SCOPE_TYPE = "global"
 CHANNEL_SCOPE_TYPE = "channel"
@@ -211,7 +211,7 @@ def get_runtime_four_pillars_aspect_order(channel_key: str | None = None) -> lis
     config_bundle = resolve_runtime_config_bundle(channel_key)
     configured_order = _coerce_string_list(config_bundle.get(CONFIG_KEY_FOUR_PILLARS_ASPECT_ORDER), fallback=FOUR_PILLARS_ASPECT_ORDER)
     valid_keys = set(FOUR_PILLARS_ASPECT_ORDER)
-    ordered_items = [item for item in configured_order if item in valid_keys]
+    ordered_items = [item for item in expand_four_pillars_aspect_keys(configured_order) if item in valid_keys]
     for item in FOUR_PILLARS_ASPECT_ORDER:
         if item not in ordered_items:
             ordered_items.append(item)
@@ -222,7 +222,7 @@ def get_runtime_four_pillars_free_aspect_keys(channel_key: str | None = None) ->
     config_bundle = resolve_runtime_config_bundle(channel_key)
     configured_keys = _coerce_string_list(config_bundle.get(CONFIG_KEY_FOUR_PILLARS_FREE_ASPECT_KEYS), fallback=[])
     valid_keys = set(FOUR_PILLARS_ASPECT_ORDER)
-    return [item for item in configured_keys if item in valid_keys]
+    return [item for item in expand_four_pillars_aspect_keys(configured_keys) if item in valid_keys]
 
 
 def get_runtime_four_pillars_unlock_enforcement_enabled(channel_key: str | None = None) -> bool:

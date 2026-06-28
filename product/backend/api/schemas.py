@@ -189,8 +189,14 @@ class FourPillarsReviewCreateRequest(BaseModel):
 
 class FourPillarsSummaryResponse(BaseModel):
     title: str = ""
+    comprehensive_text: str = ""
+    overview: str = ""
     risk: str = ""
     usage_guidance: str = ""
+    key_judgements: list[dict[str, Any]] = Field(default_factory=list)
+    life_risk_windows: list[dict[str, Any]] = Field(default_factory=list)
+    time_highlights: list[dict[str, Any]] = Field(default_factory=list)
+    favorable_strategy: dict[str, Any] = Field(default_factory=dict)
     elements_check: dict[str, str] = Field(default_factory=dict)
 
 
@@ -198,7 +204,6 @@ class FourPillarsAspectResponse(BaseModel):
     aspect_key: str
     title: str
     short_title: str | None = None
-    score: int | None = None
     is_unlocked: bool = False
     unlock_points: int = 0
     content: str | None = None
@@ -293,7 +298,6 @@ class FourPillarsReviewRecordResponse(BaseModel):
     status: ReviewStatus
     progress_stage: ReviewProgressStage | None = None
     progress_message: str | None = None
-    score: int | None = None
     input_profile: dict[str, Any] = Field(default_factory=dict)
     chart: dict[str, Any] | None = None
     chart_display: dict[str, Any] | None = None
@@ -305,7 +309,6 @@ class FourPillarsReviewRecordResponse(BaseModel):
     aspect_unlock_points: int | None = None
     free_aspect_keys: list[str] = Field(default_factory=list)
     unlock_enforcement_enabled: bool | None = None
-    score_markdown: str | None = None
     error_message: str | None = None
     created_at: str
     updated_at: str
@@ -323,7 +326,6 @@ class FourPillarsReviewSummaryResponse(BaseModel):
     status: ReviewStatus
     progress_stage: ReviewProgressStage | None = None
     progress_message: str | None = None
-    score: int | None = None
     error_message: str | None = None
     created_at: str
     updated_at: str

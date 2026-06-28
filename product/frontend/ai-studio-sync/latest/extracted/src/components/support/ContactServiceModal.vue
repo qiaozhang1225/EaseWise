@@ -1,123 +1,163 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { Check, Clipboard, MessageSquare, QrCode, Sparkles, X } from 'lucide-vue-next';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
-import { X, Copy, CheckCircle, MessageSquare, AlertCircle, HelpCircle } from 'lucide-vue-next';
 
-const { 
-  state, customerServiceContact, customerServiceQrCodeUrl, customerServiceQrGuidanceText, 
-  customerServiceCopyButtonText, customerServiceUnconfiguredText, customerServiceCopyForScene,
-  customerServiceWechatId, closeCustomerServiceModal 
-} = useEaseWiseApp();
+const { state, closeCustomerServiceModal, humanizeError } = useEaseWiseApp();
 
-const copySuccess = ref(false);
-const qrCodeFailed = ref(false);
+const visible = computed(() => state.customerServiceModalVisible);
+const scene = computed(() => state.customerServiceScene || 'default');
+const debugInfo = ref('');
+const copied = ref(false);
 
-const curSupportText = computed(() => {
-  return customerServiceCopyForScene(state.contactServiceScene);
+const contactDetails = computed(() => {
+  const cfg = state.runtimeConfig?.customer_service;
+  return {
+    wechatId: cfg?.wechat_id || 'easewise_support',
+    email: cfg?.email || 'support@easewise.com',
+    qrCodeUrl: cfg?.qr_code_url || '',
+    note: cfg?.working_hours || '服务时间：每日 09:00 - 22:00（微信回复极速）',
+  };
 });
 
-const isConfigured = computed(() => {
-  const wid = customerServiceWechatId.value;
-  return Boolean(wid && wid.trim() !== '');
+const isInsufficientPoints = computed(() => scene.value === 'points_insufficient');
+const isAccountSecurity = computed(() => scene.value === 'account_security');
+
+const displayTitle = computed(() => {
+  if (isInsufficientPoints.value) return '积分额度获取';
+  if (isAccountSecurity.value) return '账号密保核验';
+  return '联系在线客服';
 });
 
-async function handleCopy() {
-  if (!isConfigured.value) return;
+const displayDescription = computed(() => {
+  if (isInsufficientPoints.value) {
+    return '由于当前为 H5 线下结算，你可以联系客服或加入微信群，获取积分及活动额度。';
+  }
+  if (isAccountSecurity.value) {
+    return '如需找回密码、绑定微信、或遇到账号登录受阻，可联系在线客服人工核对处理。';
+  }
+  return '加入官方客服微信群，不仅可获取测试积分，更能参与每日命理交流。';
+});
+
+watch(scene, (newScene) => {
+  if (newScene && newScene !== 'default') {
+    debugInfo.value = String(state.customerServiceMetadata || '');
+  } else {
+    debugInfo.value = '';
+  }
+});
+
+function copyWechatId(): void {
+  const value = contactDetails.value.wechatId;
+  if (typeof navigator !== 'undefined' && navigator.clipboard) {
+    navigator.clipboard.writeText(value).then(() => {
+      triggerCopiedFeedback();
+    }).catch(() => {
+      fallbackCopy(value);
+    });
+  } else {
+    fallbackCopy(value);
+  }
+}
+
+function fallbackCopy(text: string): void {
   try {
-    const textToCopy = customerServiceContact.value;
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      await navigator.clipboard.writeText(textToCopy);
-      copySuccess.value = true;
-      setTimeout(() => copySuccess.value = false, 2000);
-    } else {
-      const textArea = document.createElement("textarea");
-      textArea.value = textToCopy;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textArea);
-      copySuccess.value = true;
-      setTimeout(() => copySuccess.value = false, 2000);
+    const input = document.createElement('input');
+    input.value = text;
+    input.setAttribute('readonly', '');
+    input.style.position = 'absolute';
+    input.style.left = '-9999px';
+    document.body.appendChild(input);
+    input.select();
+    const result = document.execCommand('copy');
+    document.body.removeChild(input);
+    if (result) {
+      triggerCopiedFeedback();
     }
   } catch (err) {
-    // Falls back silently
+    console.error('Fallback copy failed', err);
   }
+}
+
+function triggerCopiedFeedback(): void {
+  copied.value = true;
+  setTimeout(() => {
+    copied.value = false;
+  }, 2000);
 }
 </script>
 
 <template>
   <transition name="fade">
-    <div 
-      v-if="state.contactServiceModalVisible" 
-      class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
+    <div
+      v-if="visible"
+      class="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4"
+      @click.self="closeCustomerServiceModal"
     >
-      <div class="bg-white rounded-3xl w-full max-w-sm p-6 border border-brand-paper shadow-2xl relative text-left">
-        <!-- Close icon -->
-        <button 
+      <div class="w-full max-w-sm bg-white border border-brand-primary/15 rounded-3xl overflow-hidden shadow-2xl relative text-left">
+        <div class="absolute -top-12 -right-12 text-brand-primary/[0.015] font-serif font-black text-[160px] pointer-events-none select-none">
+          ☯
+        </div>
+
+        <button
+          type="button"
+          class="absolute top-4 right-4 w-7 h-7 rounded-full bg-gray-50 border border-gray-100 hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex items-center justify-center hover:scale-105 active:scale-95 transition-all outline-none cursor-pointer z-10"
           @click="closeCustomerServiceModal"
-          class="absolute top-4.5 right-4.5 text-brand-secondary/50 hover:text-brand-ink-strong cursor-pointer p-1.5 rounded-full hover:bg-gray-100 border-none bg-transparent outline-none transition-colors"
         >
-          <X :size="16" />
+          <X :size="14" />
         </button>
 
-        <!-- Header info -->
-        <div class="flex items-center gap-2.5 mb-4">
-          <div class="p-2.5 rounded-xl bg-brand-primary/10 text-brand-primary shrink-0 select-none">
-            <MessageSquare :size="18" />
+        <div class="p-6 text-center space-y-4">
+          <div class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-brand-primary/10 border border-brand-primary/20 select-none text-brand-primary">
+            <MessageSquare :size="22" />
           </div>
-          <h2 class="font-serif text-[16px] font-bold text-brand-ink-strong leading-none">
-            官方在线客服同修群
-          </h2>
-        </div>
 
-        <!-- Dynamic Context description -->
-        <p class="font-sans text-[11.5px] text-brand-secondary leading-relaxed bg-brand-paper/50 rounded-xl p-3.5 border border-thin border-gray-100/70 mb-4 select-text font-medium">
-          {{ curSupportText }}
-        </p>
+          <div class="space-y-1.5 px-3">
+            <h3 class="font-serif text-[17px] font-black text-brand-ink-strong leading-tight">
+              {{ displayTitle }}
+            </h3>
+            <p class="text-[11px] text-brand-secondary leading-relaxed">
+              {{ displayDescription }}
+            </p>
+          </div>
 
-        <!-- Unconfigured state fallback visual -->
-        <div v-if="!isConfigured" class="py-6 px-4 bg-zinc-50 rounded-2xl border border-dashed text-center">
-          <AlertCircle :size="24" class="text-zinc-400 mx-auto mb-2" />
-          <p class="font-sans text-[12px] text-zinc-500 font-bold">
-            {{ customerServiceUnconfiguredText || '客服专线尚未配置，请联系阁内管理员。' }}
+          <div class="bg-brand-paper/50 rounded-2xl p-4.5 border border-thin text-left space-y-3.5">
+            <div class="flex items-center justify-between gap-3">
+              <div class="space-y-0.5">
+                <span class="text-[9px] text-brand-secondary font-extrabold uppercase tracking-wider block">专属客服微信</span>
+                <span class="font-mono text-[14px] font-black text-brand-ink-strong tracking-wide">{{ contactDetails.wechatId }}</span>
+              </div>
+              <button
+                type="button"
+                @click="copyWechatId"
+                class="px-3.5 py-1.5 rounded-xl border font-sans text-[11px] font-black transition-all flex items-center gap-1 cursor-pointer outline-none select-none"
+                :class="copied
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                  : 'bg-white border-brand-primary/20 text-brand-primary hover:bg-brand-primary/5 active:scale-95'"
+              >
+                <component :is="copied ? Check : Clipboard" :size="12" />
+                <span>{{ copied ? '已复制' : '复制微信' }}</span>
+              </button>
+            </div>
+
+            <div v-if="contactDetails.qrCodeUrl" class="border-t border-gray-100 pt-3.5 flex flex-col items-center">
+              <span class="text-[9px] text-brand-secondary font-extrabold uppercase tracking-wider block mb-2">长按二维码极速扫码加入</span>
+              <img :src="contactDetails.qrCodeUrl" alt="客服二维码" class="w-32 h-32 border border-gray-100 rounded-xl bg-white shadow-sm" />
+            </div>
+            <div v-else class="border-t border-[#EAEFF8] pt-3 flex items-start gap-2 text-[#64748B] text-[10px] leading-relaxed select-none">
+              <QrCode :size="14" class="text-brand-primary shrink-0 mt-0.5" />
+              <span>支持微信扫码加群，若复制微信号后无法搜到，可致信邮箱 <span class="font-mono font-bold">{{ contactDetails.email }}</span></span>
+            </div>
+          </div>
+
+          <div v-if="debugInfo" class="text-left bg-zinc-50 border border-zinc-150 rounded-xl p-3 select-text max-h-[80px] overflow-y-auto no-scrollbar">
+            <span class="text-[8.5px] text-zinc-400 font-black block mb-0.5">场景附言 (故障排查)</span>
+            <p class="font-mono text-[10px] text-zinc-500 leading-tight break-all">{{ debugInfo }}</p>
+          </div>
+
+          <p class="text-[9.5px] text-brand-secondary/80 select-none">
+            {{ contactDetails.note }}
           </p>
-        </div>
-
-        <div v-else class="space-y-4">
-          <!-- QR Code section -->
-          <div class="flex flex-col items-center justify-center bg-zinc-50 rounded-2xl p-4 border border-dashed border-gray-250 text-center">
-            <img 
-              v-if="customerServiceQrCodeUrl && !qrCodeFailed" 
-              :src="customerServiceQrCodeUrl" 
-              @error="qrCodeFailed = true"
-              referrerpolicy="no-referrer"
-              class="w-36 h-36 object-cover rounded-xl shadow-md border-2 border-white select-none pointer-events-none" 
-            />
-            <div v-else class="w-36 h-36 bg-gray-100 rounded-xl flex flex-col items-center justify-center border text-zinc-400 p-2">
-              <HelpCircle :size="24" class="mb-1.5 text-zinc-300" />
-              <span class="text-[10px] text-zinc-450 leading-relaxed">二维码加载失败或未部署</span>
-            </div>
-            <span class="font-sans text-[10px] text-zinc-500 mt-2.5 leading-normal max-w-[85%] block select-none">
-              {{ customerServiceQrGuidanceText }}
-            </span>
-          </div>
-
-          <!-- Copy entries -->
-          <div class="space-y-3 text-center">
-            <div class="flex items-center justify-between bg-brand-paper rounded-xl px-4 py-2.5 border border-gray-100">
-              <span class="font-sans text-[11px] text-brand-secondary select-none">专属客服微信号</span>
-              <span class="font-mono text-[12.5px] font-extrabold text-brand-ink-strong select-all">{{ customerServiceContact }}</span>
-            </div>
-
-            <button 
-              @click="handleCopy"
-              class="w-full bg-brand-primary hover:bg-brand-primary/95 text-white py-3 rounded-2xl cursor-pointer font-sans text-[12.5px] font-bold shadow-md active:scale-95 transition-transform border-none flex items-center justify-center gap-1.5 outline-none select-none"
-            >
-              <CheckCircle v-if="copySuccess" :size="14" class="text-white" />
-              <Copy v-else :size="14" class="text-white" />
-              <span>{{ copySuccess ? '已经复制到系统剪贴板！' : customerServiceCopyButtonText }}</span>
-            </button>
-          </div>
         </div>
       </div>
     </div>
@@ -125,10 +165,21 @@ async function handleCopy() {
 </template>
 
 <style scoped>
-.fade-enter-active, .fade-leave-active {
-  transition: opacity 0.25s ease;
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
 }
-.fade-enter-from, .fade-leave-to {
+
+.fade-enter-from,
+.fade-leave-to {
   opacity: 0;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 </style>

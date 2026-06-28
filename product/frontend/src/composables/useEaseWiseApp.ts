@@ -23,7 +23,16 @@ import {
   resolveApiAssetUrl,
   changeMyPassword,
   registerPhoneWithPassword,
+  streamCreateFourPillarsReview,
+  streamCreatePhoneReview,
+  streamFourPillarsLuckCycleSummary,
+  streamFourPillarsLuckYearSummary,
+  streamFourPillarsReviewAspectUnlock,
   streamPhoneReviewAspectUnlock,
+  type FourPillarsCoreStreamHandlers,
+  type FourPillarsAspectStreamHandlers,
+  type FourPillarsLuckStreamHandlers,
+  type PhoneReviewCoreStreamHandlers,
   type PhoneReviewAspectStreamHandlers,
   uploadMyAvatar,
   updateMyProfile,
@@ -34,15 +43,20 @@ import type {
   AlmanacResponse,
   AuthLoginResponse,
   CurrentUserResponse,
+  FourPillarsAspect,
+  FourPillarsAspectStreamCompleteData,
+  FourPillarsCoreStreamCompleteData,
   FourPillarsCreatePayload,
   FourPillarsLuckAnalysis,
   FourPillarsLuckRenderRecord,
+  FourPillarsLuckStreamCompleteData,
   FourPillarsReviewRecord,
   FourPillarsReviewSummary,
   Gender,
   PhoneStatusResponse,
   PasswordChangeResponse,
   PhoneReviewAspectStreamCompleteData,
+  PhoneReviewCoreStreamCompleteData,
   PointsAccountResponse,
   PointsLedgerEntryResponse,
   PublicRuntimeConfigResponse,
@@ -267,6 +281,33 @@ function mergeUnlockedAspectIntoReview(review: ReviewRecord, aspectKey: string, 
   };
 }
 
+function mergeUnlockedFourPillarsAspectIntoReview(
+  review: FourPillarsReviewRecord,
+  aspectKey: string,
+  aspect: FourPillarsAspect | null | undefined,
+): FourPillarsReviewRecord {
+  if (!aspect) {
+    return review;
+  }
+  return {
+    ...review,
+    aspects: review.aspects.map((item) => {
+      if (item.aspect_key !== aspectKey) {
+        return item;
+      }
+      return {
+        ...item,
+        ...aspect,
+        aspect_key: item.aspect_key,
+        short_title: aspect.short_title ?? item.short_title,
+        is_unlocked: true,
+        unlock_points: item.unlock_points,
+        elements_check: aspect.elements_check ?? item.elements_check,
+      };
+    }),
+  };
+}
+
 function persistCurrentFourPillarsReview(review: FourPillarsReviewRecord | null): void {
   state.currentFourPillarsReview = review;
   if (review) {
@@ -279,7 +320,6 @@ function persistCurrentFourPillarsReview(review: FourPillarsReviewRecord | null)
         birth_date: review.birth_date,
         birth_time: review.birth_time,
         timezone: review.timezone,
-        score: review.score,
         status: review.status,
         created_at: review.created_at,
       }),
@@ -571,6 +611,50 @@ async function submitPhoneReview(payload: { phone: string; gender: Gender; inclu
   });
 }
 
+async function submitPhoneReviewStream(
+  payload: { phone: string; gender: Gender; include_markdown?: boolean },
+  handlers: PhoneReviewCoreStreamHandlers = {},
+): Promise<PhoneReviewCoreStreamCompleteData> {
+  return withAuthRetry(async (accessToken) => {
+    const result = await streamCreatePhoneReview(accessToken, payload, {
+      ...handlers,
+      onCreated: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        if (data.review) {
+          persistCurrentReview(data.review);
+        }
+        handlers.onCreated?.(data);
+      },
+      onFactsReady: (data) => {
+        if (data.review) {
+          persistCurrentReview(data.review);
+        }
+        handlers.onFactsReady?.(data);
+      },
+      onComplete: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        if (data.review) {
+          persistCurrentReview(data.review);
+        }
+        handlers.onComplete?.(data);
+      },
+    });
+    if (result.points) {
+      persistPoints(result.points);
+    }
+    if (result.review) {
+      persistCurrentReview(result.review);
+    }
+    await Promise.allSettled([refreshPointsLedger(), refreshReviewHistory()]);
+    clearConnectionError();
+    return result;
+  });
+}
+
 async function submitFourPillarsReview(payload: FourPillarsCreatePayload): Promise<FourPillarsReviewRecord> {
   return withAuthRetry(async (accessToken) => {
     const review = await createFourPillarsReview(accessToken, payload);
@@ -578,6 +662,50 @@ async function submitFourPillarsReview(payload: FourPillarsCreatePayload): Promi
     await Promise.allSettled([refreshPoints(), refreshFourPillarsHistory(), refreshPointsLedger()]);
     clearConnectionError();
     return review;
+  });
+}
+
+async function submitFourPillarsReviewStream(
+  payload: FourPillarsCreatePayload,
+  handlers: FourPillarsCoreStreamHandlers = {},
+): Promise<FourPillarsCoreStreamCompleteData> {
+  return withAuthRetry(async (accessToken) => {
+    const result = await streamCreateFourPillarsReview(accessToken, payload, {
+      ...handlers,
+      onCreated: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        if (data.review) {
+          persistCurrentFourPillarsReview(data.review);
+        }
+        handlers.onCreated?.(data);
+      },
+      onFactsReady: (data) => {
+        if (data.review) {
+          persistCurrentFourPillarsReview(data.review);
+        }
+        handlers.onFactsReady?.(data);
+      },
+      onComplete: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        if (data.review) {
+          persistCurrentFourPillarsReview(data.review);
+        }
+        handlers.onComplete?.(data);
+      },
+    });
+    if (result.points) {
+      persistPoints(result.points);
+    }
+    if (result.review) {
+      persistCurrentFourPillarsReview(result.review);
+    }
+    await Promise.allSettled([refreshPointsLedger(), refreshFourPillarsHistory()]);
+    clearConnectionError();
+    return result;
   });
 }
 
@@ -647,6 +775,48 @@ async function unlockFourPillarsAspect(reviewId: string, aspectKey: string): Pro
   });
 }
 
+async function streamUnlockFourPillarsAspect(
+  reviewId: string,
+  aspectKey: string,
+  handlers: FourPillarsAspectStreamHandlers = {},
+): Promise<FourPillarsAspectStreamCompleteData> {
+  return withAuthRetry(async (accessToken) => {
+    const result = await streamFourPillarsReviewAspectUnlock(accessToken, reviewId, aspectKey, {
+      ...handlers,
+      onUnlock: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        handlers.onUnlock?.(data);
+      },
+      onComplete: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        const completedData = data.review
+          ? { ...data, review: mergeUnlockedFourPillarsAspectIntoReview(data.review, aspectKey, data.aspect) }
+          : data;
+        if (completedData.review) {
+          persistCurrentFourPillarsReview(completedData.review);
+        }
+        handlers.onComplete?.(completedData);
+      },
+    });
+    const completedResult = result.review
+      ? { ...result, review: mergeUnlockedFourPillarsAspectIntoReview(result.review, aspectKey, result.aspect) }
+      : result;
+    if (result.points) {
+      persistPoints(result.points);
+    }
+    if (completedResult.review) {
+      persistCurrentFourPillarsReview(completedResult.review);
+    }
+    await Promise.allSettled([refreshPointsLedger(), refreshFourPillarsHistory()]);
+    clearConnectionError();
+    return completedResult;
+  });
+}
+
 async function refreshFourPillarsLuckAnalysis(reviewId: string): Promise<FourPillarsLuckAnalysis> {
   return withAuthRetry(async (accessToken) => {
     const response = await getFourPillarsLuckCycles(accessToken, reviewId);
@@ -677,6 +847,81 @@ async function generateFourPillarsLuckYear(reviewId: string, cycleKey: string, y
     await Promise.allSettled([refreshPoints(), refreshPointsLedger(), refreshFourPillarsLuckAnalysis(reviewId)]);
     clearConnectionError();
     return render;
+  });
+}
+
+function persistFourPillarsLuckAnalysis(reviewId: string, luckAnalysis: FourPillarsLuckAnalysis): void {
+  if (state.currentFourPillarsReview?.id !== reviewId) {
+    return;
+  }
+  persistCurrentFourPillarsReview({
+    ...state.currentFourPillarsReview,
+    luck_analysis: luckAnalysis,
+  });
+}
+
+async function streamGenerateFourPillarsLuckCycle(
+  reviewId: string,
+  cycleKey: string,
+  handlers: FourPillarsLuckStreamHandlers = {},
+): Promise<FourPillarsLuckStreamCompleteData> {
+  return withAuthRetry(async (accessToken) => {
+    const result = await streamFourPillarsLuckCycleSummary(accessToken, reviewId, cycleKey, {
+      ...handlers,
+      onRender: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        handlers.onRender?.(data);
+      },
+      onComplete: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        persistFourPillarsLuckAnalysis(reviewId, data.luck_analysis);
+        handlers.onComplete?.(data);
+      },
+    });
+    if (result.points) {
+      persistPoints(result.points);
+    }
+    persistFourPillarsLuckAnalysis(reviewId, result.luck_analysis);
+    await Promise.allSettled([refreshPointsLedger(), refreshFourPillarsHistory()]);
+    clearConnectionError();
+    return result;
+  });
+}
+
+async function streamGenerateFourPillarsLuckYear(
+  reviewId: string,
+  cycleKey: string,
+  year: number,
+  handlers: FourPillarsLuckStreamHandlers = {},
+): Promise<FourPillarsLuckStreamCompleteData> {
+  return withAuthRetry(async (accessToken) => {
+    const result = await streamFourPillarsLuckYearSummary(accessToken, reviewId, cycleKey, year, {
+      ...handlers,
+      onRender: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        handlers.onRender?.(data);
+      },
+      onComplete: (data) => {
+        if (data.points) {
+          persistPoints(data.points);
+        }
+        persistFourPillarsLuckAnalysis(reviewId, data.luck_analysis);
+        handlers.onComplete?.(data);
+      },
+    });
+    if (result.points) {
+      persistPoints(result.points);
+    }
+    persistFourPillarsLuckAnalysis(reviewId, result.luck_analysis);
+    await Promise.allSettled([refreshPointsLedger(), refreshFourPillarsHistory()]);
+    clearConnectionError();
+    return result;
   });
 }
 
@@ -794,6 +1039,12 @@ function closeCustomerServiceModal(): void {
 
 function humanizeError(error: unknown): string {
   if (error instanceof ApiError) {
+    const payloadMessage = error.payload && typeof error.payload === 'object' && 'message' in error.payload
+      ? String((error.payload as { message?: unknown }).message || '').trim()
+      : '';
+    if (error.detail === 'llm_insufficient_balance' && payloadMessage) {
+      return payloadMessage;
+    }
     const messageMap: Record<string, string> = {
       invalid_phone_number: '请输入正确的中国大陆手机号码。',
       phone_already_registered: '该手机号已经注册，请直接登录。',
@@ -811,8 +1062,10 @@ function humanizeError(error: unknown): string {
       module_disabled: '当前功能暂未开放。',
       invalid_birth_datetime: '请输入有效的出生日期和出生时间。',
       invalid_timezone: '请输入有效的时区。',
+      review_not_ready_for_unlock: '专项内容还在准备中，请稍后刷新后再试。',
       aspect_not_ready: '专项内容还在生成中，请稍后再试。',
       aspect_generation_failed: '专项内容生成失败，积分已按规则退回，请稍后重试。',
+      llm_insufficient_balance: 'AI 服务额度不足，本次积分已退回，请联系管理员处理后再试。',
       aspect_generation_in_progress: '该专项正在生成中，请稍后再试。',
       aspect_generation_incomplete: '专项内容生成未完成，请稍后重试。',
       session_not_found: '当前登录态已失效，请重新登录。',
@@ -865,12 +1118,17 @@ export function useEaseWiseApp() {
     refreshCurrentFourPillarsReview,
     refreshFourPillarsLuckAnalysis,
     submitPhoneReview,
+    submitPhoneReviewStream,
     submitFourPillarsReview,
+    submitFourPillarsReviewStream,
     unlockAspect,
     streamUnlockAspect,
     unlockFourPillarsAspect,
+    streamUnlockFourPillarsAspect,
     generateFourPillarsLuckCycle,
     generateFourPillarsLuckYear,
+    streamGenerateFourPillarsLuckCycle,
+    streamGenerateFourPillarsLuckYear,
     requestRegisteredUser,
     cancelAuthRequest,
     checkPhoneAuthStatus,

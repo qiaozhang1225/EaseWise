@@ -497,7 +497,10 @@ function resolveLedgerColor(entry: PointsLedgerEntryResponse): string {
 
 function formatReviewStatus(review: CombinedReviewHistoryItem): string {
   if (review.status === 'completed') {
-    return review.score !== null ? `评分: ${review.score} 分` : '评测已完成';
+    if (review.type === 'phone') {
+      return review.score !== null ? `评分: ${review.score} 分` : '评测已完成';
+    }
+    return '命盘与大运信息已生成';
   }
   if (review.status === 'failed') {
     return '评测失败';

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { 
-  ArrowLeft, Coins, Award, Users, Share2, Check, Sparkles, 
+import {
+  ArrowLeft, Coins, Award, Users, Share2, Check, Sparkles,
   TrendingUp, Users2, ShieldCheck, Landmark, CheckCircle2,
   Gift, Calculator, HelpCircle
 } from 'lucide-vue-next';
@@ -136,7 +136,7 @@ const handleApplyJoin = () => {
   <div class="fixed inset-0 z-[120] bg-brand-paper w-full h-full flex flex-col overflow-hidden font-sans text-left">
     <!-- H5 Dynamic Header -->
     <header class="bg-white border-b border-gray-100 flex items-center justify-between px-4 py-3.5 sticky top-0 z-10 shadow-xs shrink-0">
-      <button 
+      <button
         @click="emit('close')"
         class="flex items-center gap-1 text-brand-secondary hover:text-brand-ink-strong transition-colors cursor-pointer outline-none text-[14px]"
       >
@@ -148,7 +148,7 @@ const handleApplyJoin = () => {
           合伙与推广说明书
         </h1>
       </div>
-      <button 
+      <button
         @click="copyManualText"
         class="p-2 text-brand-primary bg-indigo-50/50 hover:bg-brand-primary/5 rounded-full transition-colors cursor-pointer outline-none relative"
         title="分享大纲"
@@ -160,14 +160,14 @@ const handleApplyJoin = () => {
 
     <!-- Scrollable Main Flow Page (One direct downward H5 scrollable page) -->
     <div class="flex-1 overflow-y-auto no-scrollbar pb-24 bg-gray-50/30">
-      
+
       <!-- 1. H5 Master Hero Banner -->
       <section class="relative bg-brand-ink-strong text-white py-10 px-5 overflow-hidden text-center">
         <!-- Ambient grids and lights -->
         <div class="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(99,102,241,0.18),transparent_70%)] pointer-events-none"></div>
         <div class="absolute inset-0 bg-[linear-gradient(to_bottom,transparent,rgba(15,17,23,0.3))] pointer-events-none"></div>
         <div class="absolute -right-12 -top-12 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none"></div>
-        
+
         <div class="relative z-10 space-y-2.5 max-w-sm mx-auto">
           <div class="inline-flex items-center gap-1 px-3 py-0.5 bg-brand-primary/20 border border-brand-primary/45 rounded-full text-brand-accent text-[10px] font-black tracking-widest uppercase">
             👑 易如反掌 · 创富生态联盟
@@ -193,7 +193,7 @@ const handleApplyJoin = () => {
             <p class="text-[12.5px] text-brand-secondary leading-relaxed font-sans">
               本产品的核心记号代币为<strong>平台积分</strong>。
             </p>
-            
+
             <div class="grid grid-cols-2 gap-2.5 pt-1">
               <div class="bg-brand-paper p-3 rounded-xl border border-gray-100 text-left">
                 <span class="text-[9px] font-bold text-brand-secondary uppercase block">常规原价</span>
@@ -206,7 +206,7 @@ const handleApplyJoin = () => {
                 <span class="text-[8.5px] text-brand-secondary block mt-0.5">高额大礼包回馈</span>
               </div>
             </div>
-            
+
             <p class="text-[10.5px] text-slate-400 leading-tight pt-0.5">
               平均每一次功能使用成本约为 1~2 元，客户体验流畅，高性价比，极易复购。
             </p>
@@ -306,7 +306,7 @@ const handleApplyJoin = () => {
           <!-- Top 6 Privileges List -->
           <div class="bg-white rounded-2xl p-4.5 border border-gray-150/60 shadow-xs space-y-3.5">
             <h4 class="text-[13px] font-black text-brand-ink-strong font-serif mb-1">创始合伙人享有六大顶级专享权</h4>
-            
+
             <div class="space-y-4">
               <!-- Item 1 -->
               <div class="flex gap-2.5 items-start">
@@ -421,7 +421,7 @@ const handleApplyJoin = () => {
 
         <!-- Dynamic Sandbox calculator -->
         <div class="bg-gradient-to-br from-slate-900 to-slate-950 text-white rounded-2xl p-4.5 border border-amber-500/25 shadow-sm space-y-4">
-          
+
           <!-- Header and Tab Selection -->
           <div class="flex flex-col gap-2 border-b border-white/10 pb-3">
             <div class="flex justify-between items-center">
@@ -431,17 +431,17 @@ const handleApplyJoin = () => {
               </div>
               <span class="text-[8.5px] font-mono text-slate-400">年化预估测算系统</span>
             </div>
-            
+
             <!-- Tabs for Version selection -->
             <div class="grid grid-cols-2 gap-1 bg-black/40 p-1 rounded-xl border border-white/5 text-[11px] font-bold mt-1">
-              <button 
+              <button
                 @click="calcVersion = 'partner'"
                 :class="calcVersion === 'partner' ? 'bg-amber-500 text-slate-950 font-black shadow-xs' : 'text-slate-300 hover:text-white'"
                 class="py-1.5 rounded-lg transition-all outline-none cursor-pointer"
               >
                 💼 创始合伙人版
               </button>
-              <button 
+              <button
                 @click="calcVersion = 'ambassador'"
                 :class="calcVersion === 'ambassador' ? 'bg-indigo-600 text-white font-black shadow-xs' : 'text-slate-300 hover:text-white'"
                 class="py-1.5 rounded-lg transition-all outline-none cursor-pointer"
@@ -464,8 +464,8 @@ const handleApplyJoin = () => {
                 <span class="text-amber-400 font-extrabold font-mono">{{ directUsersCount }} 人</span>
               </div>
               <div class="flex items-center gap-2">
-                <input 
-                  type="range" v-model.number="directUsersCount" min="2" max="500" step="1" 
+                <input
+                  type="range" v-model.number="directUsersCount" min="2" max="500" step="1"
                   class="flex-1 accent-amber-500 h-1 bg-slate-800 rounded-lg outline-none cursor-pointer"
                 />
                 <span class="text-[9px] font-mono text-slate-400 bg-black/25 px-1.5 py-0.5 rounded w-10 text-center">{{ directUsersCount }}人</span>
@@ -479,8 +479,8 @@ const handleApplyJoin = () => {
                 <span class="text-amber-400 font-extrabold font-mono">{{ avgAnnualDirectSpend }} 元/年</span>
               </div>
               <div class="flex items-center gap-2">
-                <input 
-                  type="range" v-model.number="avgAnnualDirectSpend" min="50" max="2500" step="10" 
+                <input
+                  type="range" v-model.number="avgAnnualDirectSpend" min="50" max="2500" step="10"
                   class="flex-1 accent-amber-500 h-1 bg-slate-800 rounded-lg outline-none cursor-pointer"
                 />
                 <span class="text-[9px] font-mono text-slate-400 bg-black/25 px-1.5 py-0.5 rounded w-11 text-center font-bold">{{ avgAnnualDirectSpend }}元</span>
@@ -587,21 +587,21 @@ const handleApplyJoin = () => {
             <div class="space-y-1.5">
               <label class="text-[10.5px] text-slate-350 font-bold">已选推广大使等级比例：</label>
               <div class="grid grid-cols-3 gap-1.5 mt-1 font-sans text-[10.5px] font-extrabold">
-                <button 
+                <button
                   @click="selectedAmbassadorTier = 'normal'"
                   :class="selectedAmbassadorTier === 'normal' ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-800 text-slate-300 border-white/5 hover:bg-slate-750'"
                   class="py-1.5 rounded-lg border text-center transition-all cursor-pointer outline-none font-sans"
                 >
                   普通 (10%)
                 </button>
-                <button 
+                <button
                   @click="selectedAmbassadorTier = 'vip'"
                   :class="selectedAmbassadorTier === 'vip' ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-800 text-slate-300 border-white/5 hover:bg-slate-750'"
                   class="py-1.5 rounded-lg border text-center transition-all cursor-pointer outline-none font-sans"
                 >
                   VIP (25%)
                 </button>
-                <button 
+                <button
                   @click="selectedAmbassadorTier = 'svip'"
                   :class="selectedAmbassadorTier === 'svip' ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-800 text-slate-300 border-white/5 hover:bg-slate-750'"
                   class="py-1.5 rounded-lg border text-center transition-all cursor-pointer outline-none font-sans"
@@ -618,8 +618,8 @@ const handleApplyJoin = () => {
                 <span class="text-indigo-350 text-indigo-400 font-extrabold font-mono">{{ directUsersCount }} 人</span>
               </div>
               <div class="flex items-center gap-2">
-                <input 
-                  type="range" v-model.number="directUsersCount" min="2" max="500" step="1" 
+                <input
+                  type="range" v-model.number="directUsersCount" min="2" max="500" step="1"
                   class="flex-1 accent-indigo-500 h-1 bg-slate-800 rounded-lg outline-none cursor-pointer"
                 />
                 <span class="text-[9px] font-mono text-slate-400 bg-black/25 px-1.5 py-0.5 rounded w-10 text-center">{{ directUsersCount }}人</span>
@@ -633,8 +633,8 @@ const handleApplyJoin = () => {
                 <span class="text-indigo-350 text-indigo-400 font-extrabold font-mono">{{ avgAnnualDirectSpend }} 元/年</span>
               </div>
               <div class="flex items-center gap-2">
-                <input 
-                  type="range" v-model.number="avgAnnualDirectSpend" min="50" max="2500" step="10" 
+                <input
+                  type="range" v-model.number="avgAnnualDirectSpend" min="50" max="2500" step="10"
                   class="flex-1 accent-indigo-500 h-1 bg-slate-800 rounded-lg outline-none cursor-pointer"
                 />
                 <span class="text-[9px] font-mono text-slate-400 bg-black/25 px-1.5 py-0.5 rounded w-11 text-center font-bold">{{ avgAnnualDirectSpend }}元</span>

@@ -5,6 +5,7 @@ from .phone_summary import (
     build_phone_summary_prompts,
     render_phone_summary_from_package,
     render_phone_summary_from_phone,
+    stream_phone_summary_from_package,
 )
 from .stability import (
     DEEPSEEK_STABILITY_ERROR,
@@ -12,6 +13,7 @@ from .stability import (
     build_stability_prompts,
     render_stability_from_package,
     render_stability_from_phone,
+    stream_stability_from_package,
 )
 
 __all__ = [
@@ -30,4 +32,6 @@ __all__ = [
     "render_stability_from_package",
     "render_stability_from_phone",
     "stream_aspect_from_package",
+    "stream_phone_summary_from_package",
+    "stream_stability_from_package",
 ]

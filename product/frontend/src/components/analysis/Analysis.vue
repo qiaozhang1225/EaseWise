@@ -27,7 +27,7 @@ import { EASEWISE_STORAGE_KEYS } from '../../constants/storage';
 import { ApiError } from '../../lib/api';
 import { useEaseWiseApp } from '../../composables/useEaseWiseApp';
 import { useVoicePlayback, type VoiceSpeakResult } from '../../composables/useVoicePlayback';
-import type { Gender, PhoneReviewAspectStreamDeltaData, ReviewAspect, ReviewProgressStage, ReviewRecord } from '../../types/api';
+import type { Gender, PhoneReviewAspectStreamDeltaData, PhoneReviewCoreStreamDeltaData, ReviewAspect, ReviewProgressStage, ReviewRecord } from '../../types/api';
 
 const emit = defineEmits<{
   (e: 'back-to-home'): void;
@@ -52,6 +52,19 @@ type DisplayAspect = ReviewAspect & {
 };
 
 type AspectStreamDraft = Partial<Pick<ReviewAspect, 'title' | 'risk' | 'content'>> & {
+  is_streaming: boolean;
+};
+
+type PhoneSummaryStreamDraft = {
+  title?: string;
+  risk?: string;
+  usage_guidance?: string;
+  is_streaming: boolean;
+};
+
+type StabilityStreamDraft = {
+  verdict?: string;
+  content?: string;
   is_streaming: boolean;
 };
 
@@ -88,7 +101,7 @@ const {
   state,
   bootstrapApp,
   isGuestUser,
-  submitPhoneReview,
+  submitPhoneReviewStream,
   refreshCurrentReview,
   streamUnlockAspect,
   requestRegisteredUser,
@@ -118,6 +131,8 @@ const currentProgressMessage = ref('');
 const waitingVisualPhase = ref(0);
 const waitingPoemIndex = ref(0);
 const waitingProgressValue = ref(0);
+const waitingAnimationComplete = ref(false);
+const baseReviewCoreReady = ref(false);
 const pendingCompletedReview = ref<ReviewRecord | null>(null);
 const pendingCompletedReviewShouldToast = ref(false);
 const showReviewConfirmDialog = ref(false);
@@ -130,6 +145,9 @@ const pollingReviewId = ref<string | null>(null);
 const unlockingAspectKey = ref<string | null>(null);
 const unlockWaitingAspectKey = ref<string | null>(null);
 const aspectStreamDrafts = ref<Record<string, AspectStreamDraft>>({});
+const phoneSummaryStreamDraft = ref<PhoneSummaryStreamDraft | null>(null);
+const stabilityStreamDraft = ref<StabilityStreamDraft | null>(null);
+const baseReviewStreamActiveId = ref<string | null>(null);
 let disposed = false;
 let pollingPromise: Promise<ReviewRecord> | null = null;
 let lastCompletedReviewId: string | null = null;
@@ -142,7 +160,7 @@ let aspectUnlockAbortController: AbortController | null = null;
 const REVIEW_READY_RETRY_LIMIT = 180;
 const REVIEW_READY_RETRY_DELAY_MS = 1000;
 const REVIEW_TIMEOUT_MESSAGE = '评测时间比预期更长，请稍后在“我的”页面查看结果。';
-const WAITING_PHASE_DURATION_MS = 4000;
+const WAITING_PHASE_DURATION_MS = 800;
 const WAITING_POEM_INTERVAL_MS = 2000;
 const WAITING_PROGRESS_START_PERCENT = 6;
 const WAITING_PROGRESS_HOLD_PERCENT = 96;
@@ -168,10 +186,6 @@ const waitingSteps = [
     title: '总评建议生成中',
     desc: '智能体正在通过大模型生成总评和长期使用建议',
   },
-  {
-    title: '结果即将呈现',
-    desc: '核心评测完成后，十二项专题可按需实时生成',
-  },
 ];
 
 const waitingPoemLines = [
@@ -184,7 +198,7 @@ const waitingPoemLines = [
 ];
 
 const WAITING_FINAL_PHASE_INDEX = waitingSteps.length - 1;
-const WAITING_LINEAR_PROGRESS_MS = WAITING_PHASE_DURATION_MS * WAITING_FINAL_PHASE_INDEX;
+const WAITING_LINEAR_PROGRESS_MS = WAITING_PHASE_DURATION_MS * waitingSteps.length;
 
 const aspectUiMap: Record<string, { icon: Component; tint: string; textTint: string }> = {
   career: { icon: Shield, tint: 'bg-green-50 text-green-600', textTint: 'text-green-600' },
@@ -310,8 +324,31 @@ const unlockProcessingHeading = computed(
 const reviewPhoneDisplay = computed(() => currentReview.value?.phone_number || phoneNumber.value);
 const reviewGenderDisplay = computed(() => (currentReview.value?.gender || gender.value) === 'male' ? '男' : '女');
 const reviewScore = computed(() => currentReview.value?.score ?? 0);
-const phoneSummary = computed(() => currentReview.value?.phone_summary ?? null);
-const stabilityDetail = computed(() => currentReview.value?.stability_detail ?? null);
+const phoneSummary = computed(() => {
+  const base = currentReview.value?.phone_summary ?? null;
+  const draft = phoneSummaryStreamDraft.value;
+  if (!draft) {
+    return base;
+  }
+  return {
+    title: draft.title ?? base?.title ?? '',
+    risk: draft.risk ?? base?.risk ?? '',
+    usage_guidance: draft.usage_guidance ?? base?.usage_guidance ?? '',
+    elements_check: base?.elements_check ?? {},
+  };
+});
+const stabilityDetail = computed(() => {
+  const base = currentReview.value?.stability_detail ?? null;
+  const draft = stabilityStreamDraft.value;
+  if (!draft) {
+    return base;
+  }
+  return {
+    verdict: draft.verdict ?? base?.verdict ?? '',
+    content: draft.content ?? base?.content ?? '',
+    elements_check: base?.elements_check ?? {},
+  };
+});
 const phoneSummaryTitle = computed(() => cleanDisplayText(phoneSummary.value?.title) || '系统会根据盘面结果生成总评。');
 const phoneSummaryRisk = computed(() => cleanDisplayText(phoneSummary.value?.risk) || '系统会根据盘面结果生成风险提醒。');
 const phoneSummaryUsageGuidance = computed(
@@ -702,8 +739,12 @@ function resetToInput(): void {
   waitingVisualPhase.value = 0;
   waitingPoemIndex.value = 0;
   waitingProgressValue.value = 0;
+  waitingAnimationComplete.value = false;
+  baseReviewCoreReady.value = false;
   pendingCompletedReview.value = null;
   pendingCompletedReviewShouldToast.value = false;
+  clearCoreStreamDrafts();
+  baseReviewStreamActiveId.value = null;
   clearWaitingTimers();
   clearUnlockState({ abort: true });
 }
@@ -715,6 +756,84 @@ function clearUnlockState(options: { abort?: boolean } = {}): void {
   }
   unlockingAspectKey.value = null;
   unlockWaitingAspectKey.value = null;
+}
+
+function clearCoreStreamDrafts(): void {
+  phoneSummaryStreamDraft.value = null;
+  stabilityStreamDraft.value = null;
+}
+
+function markBaseReviewCoreReady(): void {
+  baseReviewCoreReady.value = true;
+  tryRevealWaitingResult();
+}
+
+function applyCoreStreamDelta(data: PhoneReviewCoreStreamDeltaData): void {
+  if (data.section === 'phone_summary') {
+    phoneSummaryStreamDraft.value = {
+      ...(phoneSummaryStreamDraft.value || { is_streaming: true }),
+      [data.field]: data.text,
+      is_streaming: true,
+    };
+    return;
+  }
+  if (data.section === 'stability') {
+    stabilityStreamDraft.value = {
+      ...(stabilityStreamDraft.value || { is_streaming: true }),
+      [data.field]: data.text,
+      is_streaming: true,
+    };
+  }
+}
+
+function completeWaitingAnimation(): void {
+  if (disposed || appState.value !== 'waiting') {
+    return;
+  }
+  waitingAnimationComplete.value = true;
+  waitingProgressValue.value = 100;
+  tryRevealWaitingResult();
+}
+
+function tryRevealWaitingResult(): void {
+  if (appState.value !== 'waiting' || !waitingAnimationComplete.value) {
+    return;
+  }
+
+  if (pendingCompletedReview.value) {
+    const review = pendingCompletedReview.value;
+    const shouldToast = pendingCompletedReviewShouldToast.value;
+    pendingCompletedReview.value = null;
+    pendingCompletedReviewShouldToast.value = false;
+    applyCompletedReviewState(review, { showToastOnComplete: shouldToast });
+    return;
+  }
+
+  if (!baseReviewCoreReady.value || !currentReview.value) {
+    return;
+  }
+
+  revealStreamingReviewShell();
+}
+
+function revealStreamingReviewShell(): void {
+  clearWaitingTimers();
+  waitingProgressValue.value = 100;
+  pendingCompletedReview.value = null;
+  pendingCompletedReviewShouldToast.value = false;
+  if (currentReview.value) {
+    phoneNumber.value = sanitizePhone(currentReview.value.phone_number || currentReview.value.phone || '');
+    gender.value = currentReview.value.gender;
+    currentProgressStage.value = currentReview.value.progress_stage;
+    currentProgressMessage.value = currentReview.value.progress_message || currentProgressMessage.value;
+  }
+  errorType.value = 'none';
+  errorDetail.value = '';
+  closeReviewConfirmDialog();
+  appState.value = 'result';
+  if (activeAspect.value < 0 && reviewAspects.value.length) {
+    activeAspect.value = resolveDefaultAspectIndex(reviewAspects.value);
+  }
 }
 
 function applyAspectStreamDelta(aspectKey: string, data: PhoneReviewAspectStreamDeltaData): void {
@@ -743,7 +862,7 @@ function resolveDefaultAspectIndex(aspects: DisplayAspect[]): number {
 }
 
 function isWaitingFinalPhaseReady(): boolean {
-  return waitingVisualPhase.value >= WAITING_FINAL_PHASE_INDEX;
+  return waitingAnimationComplete.value;
 }
 
 function clearWaitingVisualTimers(): void {
@@ -778,7 +897,7 @@ function updateWaitingProgress(): void {
 }
 
 function applyOrDeferCompletedReviewState(review: ReviewRecord, options: { showToastOnComplete?: boolean } = {}): void {
-  if (appState.value === 'waiting' && !isWaitingFinalPhaseReady()) {
+  if (appState.value === 'waiting' && !waitingAnimationComplete.value) {
     pendingCompletedReview.value = review;
     pendingCompletedReviewShouldToast.value = pendingCompletedReviewShouldToast.value || Boolean(options.showToastOnComplete);
     currentProgressStage.value = review.progress_stage;
@@ -833,7 +952,9 @@ function applyProcessingReviewState(review: ReviewRecord): void {
   errorType.value = 'none';
   errorDetail.value = '';
   closeReviewConfirmDialog();
-  appState.value = 'waiting';
+  if (appState.value !== 'result') {
+    appState.value = 'waiting';
+  }
 }
 
 function applyFailedReviewState(review: ReviewRecord): void {
@@ -905,6 +1026,10 @@ function syncViewFromCurrentReview(review: ReviewRecord | null): void {
 
   applyProcessingReviewState(review);
 
+  if (baseReviewStreamActiveId.value === review.id) {
+    return;
+  }
+
   if (pollingReviewId.value === review.id) {
     return;
   }
@@ -955,16 +1080,9 @@ watch(
 );
 
 watch(
-  waitingVisualPhase,
+  waitingAnimationComplete,
   () => {
-    if (!isWaitingFinalPhaseReady() || !pendingCompletedReview.value) {
-      return;
-    }
-    const review = pendingCompletedReview.value;
-    const shouldToast = pendingCompletedReviewShouldToast.value;
-    pendingCompletedReview.value = null;
-    pendingCompletedReviewShouldToast.value = false;
-    applyCompletedReviewState(review, { showToastOnComplete: shouldToast });
+    tryRevealWaitingResult();
   },
 );
 
@@ -1069,21 +1187,30 @@ async function handleEvaluate(preparedPhone?: string): Promise<void> {
   errorType.value = 'none';
   errorDetail.value = '';
   clearUnlockState();
+  clearCoreStreamDrafts();
+  baseReviewStreamActiveId.value = null;
   clearWaitingTimers();
   currentProgressStage.value = 'queued';
   currentProgressMessage.value = '评测任务已创建，等待开始';
   waitingVisualPhase.value = 0;
   waitingPoemIndex.value = 0;
   waitingProgressValue.value = WAITING_PROGRESS_START_PERCENT;
+  waitingAnimationComplete.value = false;
+  baseReviewCoreReady.value = false;
   waitingStartedAt = Date.now();
   pendingCompletedReview.value = null;
   pendingCompletedReviewShouldToast.value = false;
   appState.value = 'waiting';
-  waitingVisualTimers = waitingSteps.slice(1).map((_, index) => window.setTimeout(() => {
-    if (!disposed && appState.value === 'waiting') {
-      waitingVisualPhase.value = index + 1;
-    }
-  }, WAITING_PHASE_DURATION_MS * (index + 1)));
+  waitingVisualTimers = [
+    ...waitingSteps.slice(1).map((_, index) => window.setTimeout(() => {
+      if (!disposed && appState.value === 'waiting') {
+        waitingVisualPhase.value = index + 1;
+      }
+    }, WAITING_PHASE_DURATION_MS * (index + 1))),
+    window.setTimeout(() => {
+      completeWaitingAnimation();
+    }, WAITING_PHASE_DURATION_MS * waitingSteps.length),
+  ];
   waitingPoemTimer = window.setInterval(() => {
     if (!disposed && appState.value === 'waiting') {
       waitingPoemIndex.value = (waitingPoemIndex.value + 1) % waitingPoemLines.length;
@@ -1097,22 +1224,73 @@ async function handleEvaluate(preparedPhone?: string): Promise<void> {
 
   try {
     await bootstrapApp();
-    const review = await submitPhoneReview({
-      phone: cleanPhone,
-      gender: selectedGender,
-      include_markdown: true,
-    });
-    const completedReview = await startReviewPolling(review);
-
-    if (disposed) {
-      return;
-    }
-
-    applyOrDeferCompletedReviewState(completedReview, { showToastOnComplete: true });
+    await submitPhoneReviewStream(
+      {
+        phone: cleanPhone,
+        gender: selectedGender,
+        include_markdown: true,
+      },
+      {
+        onCreated: (data) => {
+          baseReviewStreamActiveId.value = data.review.id;
+          currentProgressStage.value = data.review.progress_stage;
+          currentProgressMessage.value = data.review.progress_message || '';
+          tryRevealWaitingResult();
+        },
+        onFactsReady: (data) => {
+          baseReviewStreamActiveId.value = data.review.id;
+          currentProgressStage.value = data.review.progress_stage;
+          currentProgressMessage.value = data.review.progress_message || '';
+          tryRevealWaitingResult();
+        },
+        onCoreStatus: (data) => {
+          currentProgressMessage.value = data.message || currentProgressMessage.value;
+          markBaseReviewCoreReady();
+        },
+        onCoreDelta: (data) => {
+          applyCoreStreamDelta(data);
+          markBaseReviewCoreReady();
+        },
+        onSectionComplete: (data) => {
+          markBaseReviewCoreReady();
+          if (data.section === 'phone_summary') {
+            const payload = data.payload as Partial<PhoneSummaryStreamDraft>;
+            phoneSummaryStreamDraft.value = {
+              ...(phoneSummaryStreamDraft.value || { is_streaming: false }),
+              title: typeof payload.title === 'string' ? payload.title : phoneSummaryStreamDraft.value?.title,
+              risk: typeof payload.risk === 'string' ? payload.risk : phoneSummaryStreamDraft.value?.risk,
+              usage_guidance: typeof payload.usage_guidance === 'string' ? payload.usage_guidance : phoneSummaryStreamDraft.value?.usage_guidance,
+              is_streaming: false,
+            };
+          }
+          if (data.section === 'stability') {
+            const payload = data.payload as Partial<StabilityStreamDraft>;
+            stabilityStreamDraft.value = {
+              ...(stabilityStreamDraft.value || { is_streaming: false }),
+              verdict: typeof payload.verdict === 'string' ? payload.verdict : stabilityStreamDraft.value?.verdict,
+              content: typeof payload.content === 'string' ? payload.content : stabilityStreamDraft.value?.content,
+              is_streaming: false,
+            };
+          }
+        },
+        onComplete: (data) => {
+          baseReviewStreamActiveId.value = null;
+          baseReviewCoreReady.value = true;
+          clearCoreStreamDrafts();
+          if (!disposed) {
+            applyOrDeferCompletedReviewState(data.review, { showToastOnComplete: true });
+          }
+        },
+        onError: () => {
+          baseReviewStreamActiveId.value = null;
+        },
+      },
+    );
   } catch (error) {
+    baseReviewStreamActiveId.value = null;
     handleReviewSyncError(error);
   } finally {
-    if (!pendingCompletedReview.value || isWaitingFinalPhaseReady()) {
+    if (appState.value !== 'waiting' || !pendingCompletedReview.value || isWaitingFinalPhaseReady()) {
       clearWaitingTimers();
     }
   }
